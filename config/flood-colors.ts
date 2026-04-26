@@ -76,11 +76,16 @@ export const WATER_STYLE = {
     expandPx: 16,
   },
 
-  fill: {
-    opacity: 0.22,
-    low: { opacity: 0.18 },
-    medium: { opacity: 0.22 },
-    high: { opacity: 0.26 },
+  /** Grayscale noise tile only (no fill-color on this layer). */
+  pattern: {
+    opacity: 0.36,
+  },
+
+  /** Translucent MGB tint layered on top of the pattern. */
+  tint: {
+    low: { opacity: 0.12 },
+    medium: { opacity: 0.15 },
+    high: { opacity: 0.18 },
   },
 
   edge: {

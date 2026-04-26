@@ -1079,9 +1079,8 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
             // the fill via FLOOD_RENDER_ORDER_LINE.
             depthTest: false,
             depthWrite: false,
+            blending: THREE.AdditiveBlending,
           });
-          // Use AdditiveBlending for a soft glow instead of hard outline
-          (mat as any).blending = THREE.AdditiveBlending;
 
           const mesh = new LineSegments2(geom, mat);
           mesh.renderOrder = FLOOD_RENDER_ORDER_LINE;

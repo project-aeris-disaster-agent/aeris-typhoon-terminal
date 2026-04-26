@@ -28,7 +28,7 @@ export type { FloodLevel };
  *
  * Design goals:
  *   - One source of truth: the `/flood-hazard/index.json` manifest.
- *   - Two layers per pack (fill + outline). The 3D "flood slab" we had
+ *   - Four layers per pack (halo + pattern + tint fill + soft edge). The 3D "flood slab" we had
  *     before duplicated signal already carried by the 3D building flood
  *     tint, so it was dropped.
  *   - UI radios derived from the unique `returnPeriod` values in the
@@ -40,10 +40,6 @@ export type { FloodLevel };
 // backwards compat with existing imports.
 
 export const DEFAULT_HAZARD_OPACITY = 0.72;
-
-// The MapLibre fill layer is kept as a faint area tint so flood zones remain
-// identifiable at any zoom. The primary visual is the Three.js fat wireframe.
-const FLOOD_FILL_OPACITY = 0.1;
 
 // ---------------------------------------------------------------------------
 // Manifest types.
@@ -127,12 +123,12 @@ const sourceIdOf = (p: FloodHazardPack) =>
   `src-flood-${p.provinceSlug}-${p.returnPeriod}`;
 const haloIdOf = (p: FloodHazardPack) =>
   `lyr-flood-halo-${p.provinceSlug}-${p.returnPeriod}`;
+const patternIdOf = (p: FloodHazardPack) =>
+  `lyr-flood-pattern-${p.provinceSlug}-${p.returnPeriod}`;
 const fillIdOf = (p: FloodHazardPack) =>
   `lyr-flood-fill-${p.provinceSlug}-${p.returnPeriod}`;
 const edgeIdOf = (p: FloodHazardPack) =>
   `lyr-flood-edge-${p.provinceSlug}-${p.returnPeriod}`;
-const outlineIdOf = (p: FloodHazardPack) =>
-  `lyr-flood-outline-${p.provinceSlug}-${p.returnPeriod}`;
 
 // Per-map registry of loaded packs and the currently active return period.
 const registry = new WeakMap<
@@ -194,7 +190,7 @@ async function fetchPackData(
   return p;
 }
 
-// Data-driven level color expression for fill and outline layers —
+// Data-driven level color expression for fill / line layers —
 // imported from the shared flood palette module.
 const LEVEL_COLOR_EXPR = FLOOD_MGB_COLOR_EXPR;
 
@@ -212,12 +208,17 @@ function registerPack(
     });
   }
 
-  // Ensure water-noise texture is loaded for pattern fill
-  if (!map.hasImage(WATER_STYLE.textureImage)) {
-    map
+  // Ensure water-noise texture is loaded for pattern fill (guarded for test stubs).
+  if (
+    typeof map.hasImage === "function" &&
+    !map.hasImage(WATER_STYLE.textureImage) &&
+    typeof map.loadImage === "function" &&
+    typeof map.addImage === "function"
+  ) {
+    void map
       .loadImage(WATER_STYLE.texturePath)
       .then((img) => {
-        if (img) {
+        if (img && !map.hasImage(WATER_STYLE.textureImage)) {
           map.addImage(WATER_STYLE.textureImage, img.data, { sdf: false });
         }
       })
@@ -249,7 +250,25 @@ function registerPack(
     );
   }
 
-  // Layer 2: Main fill with water-noise pattern + level-based opacity
+  // Layer 2: Noise pattern only (MapLibre ignores fill-color when fill-pattern is set).
+  if (!map.getLayer(patternIdOf(pack))) {
+    map.addLayer(
+      {
+        id: patternIdOf(pack),
+        type: "fill",
+        source: srcId,
+        layout: { visibility: "none" },
+        paint: {
+          "fill-pattern": WATER_STYLE.textureImage,
+          "fill-opacity": WATER_STYLE.pattern.opacity,
+          "fill-antialias": true,
+        },
+      },
+      beforeId,
+    );
+  }
+
+  // Layer 3: Translucent level tint on top of the pattern
   if (!map.getLayer(fillIdOf(pack))) {
     map.addLayer(
       {
@@ -258,18 +277,15 @@ function registerPack(
         source: srcId,
         layout: { visibility: "none" },
         paint: {
-          // Apply water-noise pattern for organic texture
-          "fill-pattern": WATER_STYLE.textureImage,
-          // Tint color via a second translucent fill above the pattern
           "fill-color":
             LEVEL_COLOR_EXPR as unknown as import("maplibre-gl").DataDrivenPropertyValueSpecification<string>,
           "fill-opacity": [
             "case",
             ["==", ["get", "level"], "high"],
-            WATER_STYLE.fill.high.opacity,
+            WATER_STYLE.tint.high.opacity,
             ["==", ["get", "level"], "medium"],
-            WATER_STYLE.fill.medium.opacity,
-            WATER_STYLE.fill.low.opacity,
+            WATER_STYLE.tint.medium.opacity,
+            WATER_STYLE.tint.low.opacity,
           ] as unknown as import("maplibre-gl").DataDrivenPropertyValueSpecification<number>,
           "fill-antialias": true,
         },
@@ -278,7 +294,7 @@ function registerPack(
     );
   }
 
-  // Layer 3: Feathered edge — replaces hard outline with line-blur
+  // Layer 4: Feathered edge — soft border via line-blur
   if (!map.getLayer(edgeIdOf(pack))) {
     map.addLayer(
       {
@@ -301,39 +317,6 @@ function registerPack(
           ],
           "line-blur": WATER_STYLE.edge.blur,
           "line-opacity": WATER_STYLE.edge.opacity,
-        },
-      },
-      beforeId,
-    );
-  }
-
-  // Keep old outline layer for backward compat (optional, can remove later)
-  if (!map.getLayer(outlineIdOf(pack))) {
-    map.addLayer(
-      {
-        id: outlineIdOf(pack),
-        type: "line",
-        source: srcId,
-        layout: {
-          visibility: "none",
-          "line-cap": "round",
-          "line-join": "round",
-        },
-        paint: {
-          "line-color":
-            LEVEL_COLOR_EXPR as unknown as import("maplibre-gl").DataDrivenPropertyValueSpecification<string>,
-          "line-width": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            8,
-            0.6,
-            12,
-            1.4,
-            15,
-            2.0,
-          ],
-          "line-opacity": Math.min(1, DEFAULT_HAZARD_OPACITY + 0.2),
         },
       },
       beforeId,
@@ -375,7 +358,7 @@ export async function ensureFloodHazardLayers(
 }
 
 /**
- * Load the pack GeoJSON (network) and register its fill + outline layers
+ * Load the pack GeoJSON (network) and register halo / pattern / tint / edge layers
  * if not already registered. Idempotent — hitting the in-memory cache +
  * `map.getLayer` guard lets this be called repeatedly without duplicating
  * work.
@@ -400,8 +383,8 @@ async function ensurePackRegistered(
  *
  * RENDERING OWNERSHIP
  * -------------------
- * MapLibre owns three layers per pack — halo, fill (with water-noise pattern),
- * and edge (feathered border) — that are both kept **hidden** while a Three.js
+ * MapLibre owns four layers per pack — halo, pattern (noise tile), tint fill,
+ * and edge (feathered border) — all kept **hidden** while a Three.js
  * custom layer is present. The Three.js scene is the authoritative water-surface
  * renderer in 3D mode: it draws flood polygons as DECALS (depthTest off,
  * deterministic `renderOrder`) so the basemap raster painted onto the terrain
@@ -429,7 +412,12 @@ export async function setActiveFloodPeriod(
   // Hide all currently-registered layers up-front so the user sees an
   // immediate reaction while the new period's packs are being fetched.
   for (const pack of entry.packs) {
-    for (const layerId of [haloIdOf(pack), fillIdOf(pack), edgeIdOf(pack), outlineIdOf(pack)]) {
+    for (const layerId of [
+      haloIdOf(pack),
+      patternIdOf(pack),
+      fillIdOf(pack),
+      edgeIdOf(pack),
+    ]) {
       if (map.getLayer(layerId)) {
         map.setLayoutProperty(layerId, "visibility", "none");
       }
@@ -463,8 +451,8 @@ export async function setActiveFloodPeriod(
 }
 
 export function setFloodHazardOpacity(map: MLMap, opacity: number) {
-  // The MapLibre fill stays at a fixed low opacity (FLOOD_FILL_OPACITY) so
-  // only the Three.js fat wireframe responds to the user-controlled slider.
+  // MapLibre halo / pattern / tint / edge use fixed paint from WATER_STYLE;
+  // only the Three.js decal responds to the user-controlled opacity slider.
   setFloodWireframeOpacity(map, opacity);
 }
 
@@ -494,7 +482,12 @@ export function setFloodLevelFilter(
 
   // Update halo, fill, and edge layers (all respond to level filtering).
   for (const pack of entry.packs) {
-    for (const layerId of [haloIdOf(pack), fillIdOf(pack), edgeIdOf(pack), outlineIdOf(pack)]) {
+    for (const layerId of [
+      haloIdOf(pack),
+      patternIdOf(pack),
+      fillIdOf(pack),
+      edgeIdOf(pack),
+    ]) {
       if (map.getLayer(layerId) && typeof map.setFilter === "function") {
         map.setFilter(layerId, levelFilter as Parameters<typeof map.setFilter>[1]);
       }

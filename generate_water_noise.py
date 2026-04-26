@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Generate a tileable water-noise texture for flood hazard visualization."""
 
+import os
+
 import numpy as np
 from PIL import Image
 
@@ -38,7 +40,8 @@ noise_8bit = (noise * 255).astype(np.uint8)
 
 # Create PIL image and save
 img = Image.fromarray(noise_8bit, mode='L')
-img.save('public/textures/water-noise.png', 'PNG')
+out_path = "public/textures/water-noise.png"
+img.save(out_path, "PNG")
 
-print(f"Generated water-noise.png ({size}x{size}, grayscale)")
-print(f"File size: {img.nbytes / 1024:.1f} KB")
+print(f"Generated {out_path} ({size}x{size}, grayscale)")
+print(f"File size: {os.path.getsize(out_path) / 1024:.1f} KB")

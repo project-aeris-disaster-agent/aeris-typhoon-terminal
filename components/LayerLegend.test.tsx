@@ -54,6 +54,7 @@ function createMapStub() {
     getSource: jest.fn(() => undefined),
     addSource: jest.fn(),
     addLayer: jest.fn(),
+    hasImage: jest.fn(() => true),
     setLayoutProperty: jest.fn(),
     setPaintProperty: jest.fn(),
     flyTo: jest.fn(),
@@ -78,28 +79,24 @@ describe("LayerLegend", () => {
     await user.click(floodButton);
     await waitFor(() => {
       // MapLibre layers stay invisible since the Three.js wireframe is the
-      // primary visual. Verify that visibility is set to "none" for both fill
-      // and outline layers of both packs (Cebu + Metro Manila).
-      expect(map.setLayoutProperty).toHaveBeenCalledWith(
+      // primary visual. Verify visibility "none" for every pack layer
+      // (Cebu + Metro Manila): halo, pattern, tint fill, edge.
+      for (const id of [
+        "lyr-flood-halo-cebu-5yr",
+        "lyr-flood-pattern-cebu-5yr",
         "lyr-flood-fill-cebu-5yr",
-        "visibility",
-        "none",
-      );
-      expect(map.setLayoutProperty).toHaveBeenCalledWith(
-        "lyr-flood-outline-cebu-5yr",
-        "visibility",
-        "none",
-      );
-      expect(map.setLayoutProperty).toHaveBeenCalledWith(
+        "lyr-flood-edge-cebu-5yr",
+        "lyr-flood-halo-metromanila-5yr",
+        "lyr-flood-pattern-metromanila-5yr",
         "lyr-flood-fill-metromanila-5yr",
-        "visibility",
-        "none",
-      );
-      expect(map.setLayoutProperty).toHaveBeenCalledWith(
-        "lyr-flood-outline-metromanila-5yr",
-        "visibility",
-        "none",
-      );
+        "lyr-flood-edge-metromanila-5yr",
+      ]) {
+        expect(map.setLayoutProperty).toHaveBeenCalledWith(
+          id,
+          "visibility",
+          "none",
+        );
+      }
     });
 
     // Simulate a scene pack landing with flood-tagged features. This drives
