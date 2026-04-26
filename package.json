@@ -1,0 +1,54 @@
+{
+  "name": "aeris-typhoon-terminal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Palantir Terminal for Typhoon Resilience in the Philippines. Region-locked disaster response dashboard with live satellite, radar, hazard maps, and crowdsourced incident reporting.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --runInBand",
+    "test:coverage": "jest --runInBand --coverage",
+    "smoke:reports": "node scripts/smoke_supabase_reports.mjs",
+    "smoke:reports:insert": "node scripts/smoke_supabase_reports.mjs --insert"
+  },
+  "dependencies": {
+    "@deck.gl/core": "^9.0.33",
+    "@deck.gl/geo-layers": "^9.0.33",
+    "@deck.gl/layers": "^9.0.33",
+    "@deck.gl/mapbox": "^9.0.33",
+    "@turf/bbox": "^7.1.0",
+    "@turf/buffer": "^7.3.5",
+    "@turf/helpers": "^7.1.0",
+    "@vercel/kv": "^3.0.0",
+    "clsx": "^2.1.1",
+    "maplibre-gl": "^4.7.1",
+    "next": "14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.7.5",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.169.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.15",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}

@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  @apply bg-aeris-bg text-aeris-text;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: "Inter", system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+#__next,
+body > div {
+  height: 100%;
+}
+
+.maplibregl-canvas:focus {
+  outline: none;
+}
+
+.maplibregl-ctrl-attrib {
+  @apply !bg-aeris-surface/80 !text-aeris-muted;
+  backdrop-filter: blur(6px);
+}
+
+.maplibregl-ctrl-attrib a {
+  @apply !text-aeris-muted hover:!text-aeris-accent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-aeris-border rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-aeris-muted;
+}
+
+.panel-glass {
+  @apply bg-aeris-surface/90 backdrop-blur-md border border-aeris-border;
+}
+
+.hud-text {
+  @apply font-mono text-xs tracking-wider uppercase;
+}
+
+.live-dot {
+  @apply w-2 h-2 rounded-full bg-aeris-danger animate-pulse-slow;
+}

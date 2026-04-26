@@ -1,0 +1,154 @@
+{
+  "generatedAt": "2026-04-24T09:32:42Z",
+  "simplifyToleranceDegrees": 0.00025,
+  "attribution": "Mines and Geosciences Bureau (MGB) Philippines",
+  "packs": [
+    {
+      "province": "Albay",
+      "provinceSlug": "albay",
+      "psgc": "050500000",
+      "returnPeriod": "5yr",
+      "path": "/flood-hazard/albay-5yr.json",
+      "bbox": [
+        123.3291741224269,
+        13.009711636139532,
+        123.76642791456769,
+        13.437446745762726
+      ],
+      "featureCounts": {
+        "low": 3868,
+        "medium": 2593,
+        "high": 806
+      },
+      "vertices": 96274,
+      "sizeBytes": 2046291,
+      "source": "MGB Geohazard Maps (Flo-2D)"
+    },
+    {
+      "province": "Cebu",
+      "provinceSlug": "cebu",
+      "psgc": "072200000",
+      "returnPeriod": "5yr",
+      "path": "/flood-hazard/cebu-5yr.json",
+      "bbox": [
+        123.63545211300007,
+        10.178659164908193,
+        124.03277738867199,
+        10.691955907907571
+      ],
+      "featureCounts": {
+        "low": 2534,
+        "medium": 1626,
+        "high": 626
+      },
+      "vertices": 66643,
+      "sizeBytes": 1418684,
+      "source": "MGB Geohazard Maps (Flo-2D)"
+    },
+    {
+      "province": "Davao Del Norte",
+      "provinceSlug": "davaodelnorte",
+      "psgc": "",
+      "returnPeriod": "5yr",
+      "path": "/flood-hazard/davaodelnorte-5yr.json",
+      "bbox": [
+        125.38835659558099,
+        7.22080246199996,
+        125.88112966151397,
+        7.981545893188842
+      ],
+      "featureCounts": {
+        "low": 5770,
+        "medium": 1235,
+        "high": 266
+      },
+      "vertices": 99721,
+      "sizeBytes": 2024284,
+      "source": "MGB Geohazard Maps (Flo-2D)"
+    },
+    {
+      "province": "Davao Del Sur",
+      "provinceSlug": "davaodelsur",
+      "psgc": "",
+      "returnPeriod": "5yr",
+      "path": "/flood-hazard/davaodelsur-5yr.json",
+      "bbox": [
+        125.04730449157144,
+        6.542339872717386,
+        125.68076504540892,
+        7.493502298079936
+      ],
+      "featureCounts": {
+        "low": 6331,
+        "medium": 3378,
+        "high": 1166
+      },
+      "vertices": 176449,
+      "sizeBytes": 3573194,
+      "source": "MGB Geohazard Maps (Flo-2D)"
+    },
+    {
+      "province": "Davao Oriental",
+      "provinceSlug": "davaooriental",
+      "psgc": "",
+      "returnPeriod": "5yr",
+      "path": "/flood-hazard/davaooriental-5yr.json",
+      "bbox": [
+        126.00070741024186,
+        6.861357138024872,
+        126.5651909431828,
+        7.361839872176803
+      ],
+      "featureCounts": {
+        "low": 2421,
+        "medium": 1570,
+        "high": 521
+      },
+      "vertices": 94181,
+      "sizeBytes": 1907934,
+      "source": "MGB Geohazard Maps (Flo-2D)"
+    },
+    {
+      "province": "Leyte",
+      "provinceSlug": "leyte",
+      "psgc": "083700000",
+      "returnPeriod": "5yr",
+      "path": "/flood-hazard/leyte-5yr.json",
+      "bbox": [
+        124.50869101304677,
+        10.31585359551136,
+        125.17409294902886,
+        11.39787032729494
+      ],
+      "featureCounts": {
+        "low": 12803,
+        "medium": 8380,
+        "high": 1728
+      },
+      "vertices": 377077,
+      "sizeBytes": 8005686,
+      "source": "MGB Geohazard Maps (Flo-2D)"
+    },
+    {
+      "province": "Metro Manila",
+      "provinceSlug": "metromanila",
+      "psgc": "",
+      "returnPeriod": "5yr",
+      "path": "/flood-hazard/metromanila-5yr.json",
+      "bbox": [
+        120.90710838503028,
+        14.353892874200941,
+        121.13503641400007,
+        14.785291728000022
+      ],
+      "featureCounts": {
+        "low": 7221,
+        "medium": 3435,
+        "high": 751
+      },
+      "vertices": 158392,
+      "sizeBytes": 3367856,
+      "source": "MGB Geohazard Maps (Flo-2D)"
+    }
+  ]
+}

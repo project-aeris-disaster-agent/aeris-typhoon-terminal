@@ -1,0 +1,30 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+
+.env
+.env.local
+.env.*.local
+
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+.vercel
+.turbo
+.cache
+
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+*.tsbuildinfo
+next-env.d.ts.bak
+
+coverage/
+# Separate repo; do not nest as submodule unless intentional
+AERIS CHAT/06 AERIS CHAT/

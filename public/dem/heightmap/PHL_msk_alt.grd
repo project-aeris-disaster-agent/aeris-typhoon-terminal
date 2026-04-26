@@ -1,0 +1,27 @@
+[general] 
+creator=R package 'raster' 
+created= 2011-11-12 14:51:10 
+[georeference] 
+nrows= 2004 
+ncols= 1188 
+xmin= 116.8 
+ymin= 4.5 
+xmax= 126.7 
+ymax= 21.2 
+projection= +proj=longlat +ellps=WGS84 
+[data] 
+datatype= INT2S 
+byteorder= little 
+nbands= 1 
+bandorder= BIL 
+categorical= FALSE 
+minvalue= -69 
+maxvalue= 2804 
+nodatavalue= -9999 
+[legend] 
+legendtype=  
+values=  
+color=  
+[description] 
+layername= PHL_msk_alt 
+history=  
