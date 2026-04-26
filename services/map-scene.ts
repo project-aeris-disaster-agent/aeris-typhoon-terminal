@@ -2,7 +2,10 @@ import maplibregl, { type GeoJSONSource, type Map as MLMap } from "maplibre-gl";
 import { escapeHtml } from "@/lib/sanitize";
 import { PH_BBOX } from "@/config/region";
 import { FLOOD_LEVEL_COLOR_EXPR } from "@/config/flood-colors";
-import type { FloodVisualizationSettings } from "@/config/flood-visualization";
+import {
+  DEFAULT_FLOOD_VISUALIZATION_SETTINGS,
+  type FloodVisualizationSettings,
+} from "@/config/flood-visualization";
 // NOTE: only `type` imports here — the Three.js-backed scene module is
 // loaded dynamically when the user first enters 3D mode so `three` does
 // not land in the initial JS bundle.
@@ -107,6 +110,20 @@ type SceneState = {
 };
 
 const sceneState = new WeakMap<MLMap, SceneState>();
+
+export function getFloodVisualizationSettings(
+  map: MLMap,
+): FloodVisualizationSettings {
+  return (
+    getSceneState(map).lastFloodVisualizationSettings ??
+    DEFAULT_FLOOD_VISUALIZATION_SETTINGS
+  );
+}
+
+/** Global flood opacity slider (0–1); Three.js decals + MapLibre 2D stack. */
+export function getFloodPolygonOpacity(map: MLMap): number {
+  return getSceneState(map).lastFloodOpacity;
+}
 
 function getSceneState(map: MLMap): SceneState {
   let state = sceneState.get(map);
@@ -331,6 +348,9 @@ export function setFloodVisualizationSettings(
   const state = getSceneState(map);
   state.lastFloodVisualizationSettings = settings;
   state.three?.setFloodVisualizationSettings(settings);
+  void import("@/services/hazard-layers").then(({ applyFloodMapLibreVisualization }) => {
+    applyFloodMapLibreVisualization(map, settings);
+  });
 }
 
 /**

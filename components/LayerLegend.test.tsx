@@ -57,6 +57,7 @@ function createMapStub() {
     hasImage: jest.fn(() => true),
     setLayoutProperty: jest.fn(),
     setPaintProperty: jest.fn(),
+    setFilter: jest.fn(),
     flyTo: jest.fn(),
   };
 }

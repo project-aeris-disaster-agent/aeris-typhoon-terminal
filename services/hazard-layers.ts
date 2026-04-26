@@ -6,7 +6,10 @@ import {
   WATER_STYLE,
   type FloodLevel,
 } from "@/config/flood-colors";
+import type { FloodVisualizationSettings } from "@/config/flood-visualization";
 import {
+  getFloodPolygonOpacity,
+  getFloodVisualizationSettings,
   setFloodWireframe,
   setFloodWireframeOpacity,
   setFloodLevelVisible,
@@ -194,11 +197,114 @@ async function fetchPackData(
 // imported from the shared flood palette module.
 const LEVEL_COLOR_EXPR = FLOOD_MGB_COLOR_EXPR;
 
-function registerPack(
+const WIRE_COLOR_EXPR_FOR_SETTINGS = (
+  s: FloodVisualizationSettings,
+): import("maplibre-gl").DataDrivenPropertyValueSpecification<string> =>
+  [
+    "match",
+    ["get", "level"],
+    "high",
+    s.wireframeColors.high,
+    "medium",
+    s.wireframeColors.medium,
+    "low",
+    s.wireframeColors.low,
+    s.wireframeColors.low,
+  ] as unknown as import("maplibre-gl").DataDrivenPropertyValueSpecification<string>;
+
+/**
+ * Push water color / opacity / wire colors to MapLibre flood layers (2D path).
+ * Safe when layers are missing (e.g. packs not registered yet).
+ */
+export function applyFloodMapLibreVisualization(
+  map: MLMap,
+  settings: FloodVisualizationSettings,
+) {
+  const entry = registry.get(map);
+  if (!entry) return;
+  const sliderMul = Math.max(0, Math.min(1, getFloodPolygonOpacity(map)));
+  const w = Math.max(0, Math.min(1, settings.waterOpacity));
+
+  const tintOpacityExpr: unknown[] = [
+    "*",
+    sliderMul,
+    w,
+    [
+      "case",
+      ["==", ["get", "level"], "high"],
+      WATER_STYLE.tint.high.opacity,
+      ["==", ["get", "level"], "medium"],
+      WATER_STYLE.tint.medium.opacity,
+      ["==", ["get", "level"], "low"],
+      WATER_STYLE.tint.low.opacity,
+      WATER_STYLE.tint.low.opacity,
+    ],
+  ];
+
+  const haloOp = Math.min(1, WATER_STYLE.halo.opacity * w * sliderMul);
+  const patternOp = Math.min(1, WATER_STYLE.pattern.opacity * w * sliderMul);
+  const edgeOp = Math.min(
+    1,
+    WATER_STYLE.edge.opacity * settings.wireframeBrightness * sliderMul,
+  );
+
+  for (const pack of entry.packs) {
+    const halo = haloIdOf(pack);
+    if (map.getLayer(halo) && typeof map.setPaintProperty === "function") {
+      map.setPaintProperty(halo, "fill-color", settings.waterColor);
+      map.setPaintProperty(halo, "fill-opacity", haloOp);
+    }
+    const pattern = patternIdOf(pack);
+    if (map.getLayer(pattern) && typeof map.setPaintProperty === "function") {
+      map.setPaintProperty(pattern, "fill-opacity", patternOp);
+    }
+    const fill = fillIdOf(pack);
+    if (map.getLayer(fill) && typeof map.setPaintProperty === "function") {
+      map.setPaintProperty(fill, "fill-color", settings.waterColor);
+      map.setPaintProperty(
+        fill,
+        "fill-opacity",
+        tintOpacityExpr as Parameters<typeof map.setPaintProperty>[2],
+      );
+    }
+    const edge = edgeIdOf(pack);
+    if (map.getLayer(edge) && typeof map.setPaintProperty === "function") {
+      map.setPaintProperty(
+        edge,
+        "line-color",
+        WIRE_COLOR_EXPR_FOR_SETTINGS(settings),
+      );
+      map.setPaintProperty(edge, "line-opacity", edgeOp);
+    }
+  }
+}
+
+/**
+ * Load the tileable noise PNG into the style before any `fill-pattern` layer
+ * references it — otherwise MapLibre never draws the pattern.
+ */
+async function ensureWaterNoiseImage(map: MLMap): Promise<void> {
+  if (typeof map.hasImage !== "function") return;
+  if (map.hasImage(WATER_STYLE.textureImage)) return;
+  if (typeof map.loadImage !== "function" || typeof map.addImage !== "function")
+    return;
+  try {
+    const res = await map.loadImage(WATER_STYLE.texturePath);
+    if (res && !map.hasImage(WATER_STYLE.textureImage)) {
+      map.addImage(WATER_STYLE.textureImage, res.data, { sdf: false });
+    }
+  } catch (err) {
+    console.warn(`Failed to load water noise texture: ${err}`);
+  }
+}
+
+async function registerPack(
   map: MLMap,
   pack: FloodHazardPack,
   data: GeoJSON.FeatureCollection,
 ) {
+  await ensureWaterNoiseImage(map);
+
   const srcId = sourceIdOf(pack);
   if (!map.getSource(srcId)) {
     map.addSource(srcId, {
@@ -206,25 +312,6 @@ function registerPack(
       data,
       attribution: pack.source,
     });
-  }
-
-  // Ensure water-noise texture is loaded for pattern fill (guarded for test stubs).
-  if (
-    typeof map.hasImage === "function" &&
-    !map.hasImage(WATER_STYLE.textureImage) &&
-    typeof map.loadImage === "function" &&
-    typeof map.addImage === "function"
-  ) {
-    void map
-      .loadImage(WATER_STYLE.texturePath)
-      .then((img) => {
-        if (img && !map.hasImage(WATER_STYLE.textureImage)) {
-          map.addImage(WATER_STYLE.textureImage, img.data, { sdf: false });
-        }
-      })
-      .catch((err) => {
-        console.warn(`Failed to load water noise texture: ${err}`);
-      });
   }
 
   const beforeId = map.getLayer("lyr-osm-facility-labels")
@@ -322,6 +409,8 @@ function registerPack(
       beforeId,
     );
   }
+
+  applyFloodMapLibreVisualization(map, getFloodVisualizationSettings(map));
 }
 
 // ---------------------------------------------------------------------------
@@ -369,7 +458,7 @@ async function ensurePackRegistered(
 ): Promise<GeoJSON.FeatureCollection | null> {
   const data = await fetchPackData(pack.path);
   if (!data) return null;
-  registerPack(map, pack, data);
+  await registerPack(map, pack, data);
   return data;
 }
 
@@ -384,26 +473,23 @@ async function ensurePackRegistered(
  * RENDERING OWNERSHIP
  * -------------------
  * MapLibre owns four layers per pack — halo, pattern (noise tile), tint fill,
- * and edge (feathered border) — all kept **hidden** while a Three.js
- * custom layer is present. The Three.js scene is the authoritative water-surface
- * renderer in 3D mode: it draws flood polygons as DECALS (depthTest off,
- * deterministic `renderOrder`) so the basemap raster painted onto the terrain
- * DEM cannot bleed through, regardless of camera pitch or terrain exaggeration.
- * Building meshes use a higher `renderOrder` and write depth, so they always
- * paint over the water surface even under rotation. See `FLOOD_RENDER_ORDER_*`
- * and `BUILDING_RENDER_ORDER` in `services/three-scene.ts`.
+ * and edge (feathered border).
  *
- * The MapLibre layers exist so that:
- *   1. A 2D-mode fallback is available without touching Three.js.
- *   2. The GeoJSON source is always registered in the style (needed for
- *      setFilter-based level filtering even in 3D).
+ * **2D (`mapMode === "2d"`)** — MapLibre stack is **shown** (noise + tint +
+ * soft edge). The Three.js flood decal is turned **off** so there is no
+ * double-draw.
  *
- * Never make the MapLibre layers visible while Three.js flood patches
- * are also active — doing so would produce a double-draw on the same polygons.
+ * **3D (`mapMode === "3d"`)** — MapLibre stack stays **hidden**. The Three.js
+ * scene is the authoritative water-surface renderer (DECALS, depthTest off;
+ * see `FLOOD_RENDER_ORDER_*` in `services/three-scene.ts`).
+ *
+ * GeoJSON sources stay registered in both modes so `setFloodLevelFilter` can
+ * apply filters even before the user switches views.
  */
 export async function setActiveFloodPeriod(
   map: MLMap,
   period: string | null,
+  mapMode: "2d" | "3d",
 ): Promise<void> {
   const entry = registry.get(map);
   if (!entry) return;
@@ -435,10 +521,6 @@ export async function setActiveFloodPeriod(
   await Promise.all(matching.map((p) => ensurePackRegistered(map, p)));
   if (entry.active !== period) return;
 
-  // MapLibre layers are deliberately kept hidden — the Three.js scene owns
-  // the water surface in 3D (see RENDERING OWNERSHIP in the JSDoc above).
-  // Pushing features to setFloodWireframe() drives the elevated 3D patches;
-  // the MapLibre layers remain as a 2D fallback registry only.
   const allFeatures: FloodPolygonFeature[] = [];
   for (const pack of matching) {
     const data = packDataCache.get(pack.path);
@@ -447,13 +529,31 @@ export async function setActiveFloodPeriod(
       allFeatures.push(feat as FloodPolygonFeature);
     }
   }
-  setFloodWireframe(map, allFeatures, true);
+
+  const showThreeFlood = mapMode === "3d";
+  const showMapLibreFlood = mapMode === "2d";
+  setFloodWireframe(map, allFeatures, showThreeFlood);
+
+  const mapLibreVis = showMapLibreFlood ? "visible" : "none";
+  for (const pack of matching) {
+    for (const layerId of [
+      haloIdOf(pack),
+      patternIdOf(pack),
+      fillIdOf(pack),
+      edgeIdOf(pack),
+    ]) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, "visibility", mapLibreVis);
+      }
+    }
+  }
+
+  applyFloodMapLibreVisualization(map, getFloodVisualizationSettings(map));
 }
 
 export function setFloodHazardOpacity(map: MLMap, opacity: number) {
-  // MapLibre halo / pattern / tint / edge use fixed paint from WATER_STYLE;
-  // only the Three.js decal responds to the user-controlled opacity slider.
   setFloodWireframeOpacity(map, opacity);
+  applyFloodMapLibreVisualization(map, getFloodVisualizationSettings(map));
 }
 
 /**

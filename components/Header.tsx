@@ -26,7 +26,16 @@ export function Header() {
   return (
     <header className="h-11 px-3 flex items-center justify-between border-b border-aeris-border bg-aeris-surface/95 backdrop-blur-md shrink-0">
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <img
+            src="/assets/AERIS%20LOGO.svg"
+            alt=""
+            className="h-7 w-auto shrink-0 object-contain object-left"
+            width={120}
+            height={28}
+            loading="eager"
+            aria-hidden
+          />
           <span className="live-dot" aria-hidden />
           <span className="font-mono text-sm tracking-[0.2em] text-aeris-accent">
             AERIS

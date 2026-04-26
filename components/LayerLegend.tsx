@@ -89,8 +89,8 @@ export function LayerLegend({
 
   useEffect(() => {
     if (!map) return;
-    setActiveFloodPeriod(map, activePeriod);
-  }, [map, activePeriod, floodPacks]);
+    void setActiveFloodPeriod(map, activePeriod, mode);
+  }, [map, activePeriod, floodPacks, mode]);
 
   useEffect(() => {
     if (!map) return;
