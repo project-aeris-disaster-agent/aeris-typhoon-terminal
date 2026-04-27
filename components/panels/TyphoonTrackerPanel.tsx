@@ -10,9 +10,16 @@ import {
   clearTyphoonFromMap,
   type Typhoon,
 } from "@/services/typhoon-tracks";
+import {
+  TYPHOON_FOCUS_EVENT,
+  PAR_STORMS_EVENT,
+  type TyphoonFocusDetail,
+  type ParStormsDetail,
+} from "@/services/live-weather-overlay";
 
 export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
   const [storms, setStorms] = useState<Typhoon[]>([]);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   // Only set `loading` on the first fetch — subsequent 15-min polls must not
   // flicker the panel back to "loading" while valid data is already on screen.
   const [loading, setLoading] = useState(true);
@@ -49,6 +56,47 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
   }, []);
 
   useEffect(() => {
+    if (focusedId && !storms.some((s) => s.id === focusedId)) {
+      setFocusedId(null);
+    }
+  }, [storms, focusedId]);
+
+  useEffect(() => {
+    const storm = focusedId
+      ? (storms.find((s) => s.id === focusedId) ?? null)
+      : null;
+    window.dispatchEvent(
+      new CustomEvent<TyphoonFocusDetail>(TYPHOON_FOCUS_EVENT, {
+        detail: { storm },
+      }),
+    );
+  }, [focusedId, storms]);
+
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent<TyphoonFocusDetail>(TYPHOON_FOCUS_EVENT, {
+          detail: { storm: null },
+        }),
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent<ParStormsDetail>(PAR_STORMS_EVENT, { detail: { storms } }),
+    );
+  }, [storms]);
+
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent<ParStormsDetail>(PAR_STORMS_EVENT, { detail: { storms: [] } }),
+      );
+    };
+  }, []);
+
+  useEffect(() => {
     if (!map) return;
     for (const s of storms) renderTyphoonOnMap(map, s);
     return () => {
@@ -74,15 +122,35 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
       />
 
       {storms.length === 0 && !loading && !error && (
-        <div className="text-xs text-aeris-muted py-2">
-          No active typhoons in or approaching PAR.
+        <div className="py-2 space-y-1">
+          <div className="text-xs font-medium tracking-wide text-aeris-ok">
+            NO TYPHOON THREAT ACTIVE
+          </div>
+          <div className="text-[11px] text-aeris-muted">
+            No tropical cyclone in or approaching PAR on the last advisory check.
+          </div>
         </div>
       )}
 
+      {storms.length > 0 && !loading && (
+        <p className="text-[10px] text-aeris-muted leading-snug">
+          Listed storms feed cyclonic flow on the map. Tap one to boost the{" "}
+          <span className="font-medium text-aeris-text/80">live weather</span> loop.
+        </p>
+      )}
+
       {storms.map((s) => (
-        <div
+        <button
           key={s.id}
-          className="p-2 rounded border border-aeris-border bg-aeris-bg/40 space-y-1.5"
+          type="button"
+          onClick={() =>
+            setFocusedId((cur) => (cur === s.id ? null : s.id))
+          }
+          className={`w-full text-left p-2 rounded border space-y-1.5 transition-colors ${
+            focusedId === s.id
+              ? "border-aeris-accent/60 bg-aeris-accent/10 ring-1 ring-aeris-accent/30"
+              : "border-aeris-border bg-aeris-bg/40 hover:border-aeris-border/80 hover:bg-aeris-bg/55"
+          }`}
         >
           <div className="flex items-center justify-between">
             <div className="font-mono text-sm text-aeris-warn">
@@ -104,13 +172,13 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
               Landfall ETA: {s.landfallEta}
             </div>
           )}
-        </div>
+        </button>
       ))}
 
       <FreshnessTag source="typhoons" />
       {warning && !error && (
-        <div className="text-[11px] text-aeris-warn">
-          Degraded source: {warning}
+        <div className="text-[11px] text-aeris-muted">
+          <span className="text-aeris-warn">Feed note:</span> {warning}
         </div>
       )}
 

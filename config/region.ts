@@ -12,6 +12,9 @@ export type LngLat = [number, number];
 
 export const PH_BBOX: BBox = [116.0, 4.5, 127.0, 21.5];
 
+/** Axis-aligned bounds covering the PAR polygon (PAGASA advisory area). */
+export const PAR_BBOX: BBox = [115.0, 5.0, 135.0, 25.0];
+
 export const PH_CENTER: LngLat = [122.0, 12.5];
 
 export const PH_MAX_BOUNDS: [[number, number], [number, number]] = [
@@ -20,7 +23,8 @@ export const PH_MAX_BOUNDS: [[number, number], [number, number]] = [
 ];
 
 export const DEFAULT_ZOOM = 5.4;
-export const MIN_ZOOM = 4.8;
+/** Lower = wider view; tuned so the full PH footprint fits typical desktop + mobile viewports. */
+export const MIN_ZOOM = 3.85;
 export const MAX_ZOOM = 17;
 
 /**

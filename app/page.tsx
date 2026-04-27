@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { clsx } from "clsx";
 import type { Map as MLMap } from "maplibre-gl";
 import { Header } from "@/components/Header";
 import { MapContainer } from "@/components/MapContainer";
@@ -10,15 +11,18 @@ import { initMapLayers } from "@/services/hazard-layers";
 import { initMapScene } from "@/services/map-scene";
 import { registerHazardPopup } from "@/services/hazard-popup";
 import { attachMapUrlSync } from "@/services/url-state";
+import { initLiveWeatherOverlay } from "@/services/live-weather-overlay";
 
 export default function HomePage() {
   const [map, setMap] = useState<MLMap | null>(null);
+  const [opsSidebarCollapsed, setOpsSidebarCollapsed] = useState(false);
 
   const handleMapReady = useCallback((m: MLMap) => {
     initMapScene(m);
     initMapLayers(m);
     registerHazardPopup(m);
     attachMapUrlSync(m);
+    initLiveWeatherOverlay(m);
     setMap(m);
   }, []);
 
@@ -29,8 +33,14 @@ export default function HomePage() {
         <main className="flex-1 relative min-w-0 min-h-[50vh] md:min-h-0">
           <MapContainer onMapReady={handleMapReady} />
         </main>
-        <div className="flex-none md:flex-initial h-[50vh] md:h-auto border-t md:border-t-0 border-aeris-border overflow-hidden">
-          <Sidebar map={map} />
+        <div
+          className={clsx(
+            "flex-none md:flex-initial min-w-0 border-t md:border-t-0 border-aeris-border overflow-hidden",
+            opsSidebarCollapsed ? "h-auto" : "h-[50vh]",
+            "md:h-auto",
+          )}
+        >
+          <Sidebar map={map} onCollapsedChange={setOpsSidebarCollapsed} />
         </div>
       </div>
       <BottomPanel map={map} />

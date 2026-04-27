@@ -67,7 +67,66 @@ export type ReportReviewAction =
   | "confidence_adjust";
 
 const REPORTS_SOURCE_ID = "src-reports";
+/** Solid ping center (top of stack for hit area). */
 const REPORTS_LAYER_ID = "lyr-reports";
+/** Expanding red halo under the core — animated for radar ping. */
+const REPORTS_PULSE_LAYER_ID = "lyr-reports-pulse";
+
+/** Report pin layers for `queryRenderedFeatures` / hit-testing. */
+export const REPORTS_MAP_LAYER_IDS = [
+  REPORTS_LAYER_ID,
+  REPORTS_PULSE_LAYER_ID,
+] as const;
+
+type PingLoop = { cancelled: boolean };
+const reportPingLoopByMap = new WeakMap<MLMap, PingLoop>();
+
+const PING_RED = "#ef4444";
+const PING_RED_CORE = "#dc2626";
+const PING_STROKE = "#fecaca";
+
+function startReportPingLoop(map: MLMap) {
+  if (reportPingLoopByMap.has(map)) return;
+  const loop = { cancelled: false };
+  reportPingLoopByMap.set(map, loop);
+  const tick = (now: number) => {
+    if (loop.cancelled) return;
+    if (!map.getStyle() || !map.getLayer(REPORTS_PULSE_LAYER_ID)) {
+      loop.cancelled = true;
+      reportPingLoopByMap.delete(map);
+      return;
+    }
+    const t = now * 0.001;
+    const period = 1.75;
+    const phase = (t % period) / period;
+    const radius = 4 + phase * 26;
+    const opacity = 0.55 * (1 - phase) ** 1.4;
+    try {
+      map.setPaintProperty(REPORTS_PULSE_LAYER_ID, "circle-radius", radius);
+      map.setPaintProperty(
+        REPORTS_PULSE_LAYER_ID,
+        "circle-opacity",
+        Math.max(0.04, opacity),
+      );
+      if (map.getLayer(REPORTS_LAYER_ID)) {
+        const blink = 0.78 + 0.22 * (0.5 + 0.5 * Math.sin(t * 4.2));
+        map.setPaintProperty(REPORTS_LAYER_ID, "circle-opacity", blink);
+      }
+    } catch {
+      loop.cancelled = true;
+      reportPingLoopByMap.delete(map);
+      return;
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function stopReportPingLoop(map: MLMap) {
+  const loop = reportPingLoopByMap.get(map);
+  if (loop) loop.cancelled = true;
+  reportPingLoopByMap.delete(map);
+}
 
 export async function fetchReports(): Promise<IncidentReport[]> {
   try {
@@ -165,16 +224,6 @@ function toFeatureCollection(
   };
 }
 
-const CATEGORY_COLOR: Record<ReportCategory, string> = {
-  flood: "#60a5fa",
-  landslide: "#b45309",
-  stranded: "#ffb84d",
-  SOS: "#ff4d6d",
-  infra_damage: "#a78bfa",
-  power_out: "#f59e0b",
-  road_closed: "#8b98a9",
-};
-
 export function renderReportsOnMap(map: MLMap, reports: IncidentReport[]) {
   const data = toFeatureCollection(reports);
   const src = map.getSource(REPORTS_SOURCE_ID);
@@ -184,7 +233,7 @@ export function renderReportsOnMap(map: MLMap, reports: IncidentReport[]) {
     map.addSource(REPORTS_SOURCE_ID, { type: "geojson", data });
   }
 
-  if (!map.getLayer(REPORTS_LAYER_ID)) {
+  if (!map.getLayer(REPORTS_PULSE_LAYER_ID)) {
     // Anchor below facility labels so text stays readable over report
     // markers and so repeated add/remove cycles yield a stable z-order
     // (without `beforeId`, re-adding after removeLayer reinserts the
@@ -192,6 +241,22 @@ export function renderReportsOnMap(map: MLMap, reports: IncidentReport[]) {
     const beforeId = map.getLayer("lyr-osm-facility-labels")
       ? "lyr-osm-facility-labels"
       : undefined;
+
+    map.addLayer(
+      {
+        id: REPORTS_PULSE_LAYER_ID,
+        type: "circle",
+        source: REPORTS_SOURCE_ID,
+        paint: {
+          "circle-radius": 6,
+          "circle-color": PING_RED,
+          "circle-opacity": 0.35,
+          "circle-blur": 0.9,
+        },
+      },
+      beforeId,
+    );
+
     map.addLayer(
       {
         id: REPORTS_LAYER_ID,
@@ -203,65 +268,39 @@ export function renderReportsOnMap(map: MLMap, reports: IncidentReport[]) {
             ["linear"],
             ["coalesce", ["get", "confirmations"], 0],
             0,
-            5,
+            4.5,
             10,
-            10,
+            6.5,
           ],
-          "circle-color": [
-            "match",
-            ["get", "category"],
-            "flood",
-            CATEGORY_COLOR.flood,
-            "landslide",
-            CATEGORY_COLOR.landslide,
-            "stranded",
-            CATEGORY_COLOR.stranded,
-            "SOS",
-            CATEGORY_COLOR.SOS,
-            "infra_damage",
-            CATEGORY_COLOR.infra_damage,
-            "power_out",
-            CATEGORY_COLOR.power_out,
-            "road_closed",
-            CATEGORY_COLOR.road_closed,
-            "#8b98a9",
-          ],
-          "circle-stroke-color": [
-            "match",
-            ["get", "verificationStatus"],
-            "verified",
-            "#22c55e",
-            "unverified",
-            "#f59e0b",
-            "#ffffff",
-          ],
-          "circle-stroke-width": [
-            "case",
-            ["==", ["get", "verificationStatus"], "unverified"],
-            2.5,
-            1.5,
-          ],
-          "circle-opacity": [
-            "case",
-            ["==", ["get", "verificationStatus"], "unverified"],
-            0.72,
-            0.9,
-          ],
+          "circle-color": PING_RED_CORE,
+          "circle-stroke-color": PING_STROKE,
+          "circle-stroke-width": 1.5,
+          "circle-opacity": 1,
         },
       },
       beforeId,
     );
 
-    map.on("mouseenter", REPORTS_LAYER_ID, () => {
+    const setPointer = () => {
       map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", REPORTS_LAYER_ID, () => {
+    };
+    const clearPointer = () => {
       map.getCanvas().style.cursor = "";
-    });
+    };
+    map.on("mouseenter", REPORTS_LAYER_ID, setPointer);
+    map.on("mouseleave", REPORTS_LAYER_ID, clearPointer);
+    map.on("mouseenter", REPORTS_PULSE_LAYER_ID, setPointer);
+    map.on("mouseleave", REPORTS_PULSE_LAYER_ID, clearPointer);
+
+    map.once("remove", () => stopReportPingLoop(map));
+    startReportPingLoop(map);
   }
 }
 
 export function clearReportsFromMap(map: MLMap) {
+  stopReportPingLoop(map);
   if (map.getLayer(REPORTS_LAYER_ID)) map.removeLayer(REPORTS_LAYER_ID);
+  if (map.getLayer(REPORTS_PULSE_LAYER_ID))
+    map.removeLayer(REPORTS_PULSE_LAYER_ID);
   if (map.getSource(REPORTS_SOURCE_ID)) map.removeSource(REPORTS_SOURCE_ID);
 }

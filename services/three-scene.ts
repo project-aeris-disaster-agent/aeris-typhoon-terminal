@@ -193,6 +193,8 @@ const FACILITY_DEFAULT_HEIGHT = 14; // fallback building height when no polygon 
 // transparent-sort flicker against the flood decal under camera rotation.
 const BUILDING_WIREFRAME_OPACITY = 1.0;
 const BUILDING_WIREFRAME_COLOR = 0x3b4454;
+/** Critical facility extrusions (3D); reduced 30% vs former 0.75 for more transparency. */
+const FACILITY_BUILDING_OPACITY = 0.75 * 0.7;
 
 const DEFAULT_MAP_CENTER: [number, number] = [122, 12.5];
 
@@ -681,7 +683,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
           roughness: 0.65,
           metalness: 0.1,
           transparent: true,
-          opacity: 0.75,
+          opacity: FACILITY_BUILDING_OPACITY,
           // polygonOffset keeps facility footprint (coplanar with matching OSM
           // building) from Z-fighting the regular building mesh underneath.
           polygonOffset: true,
@@ -715,7 +717,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
           roughness: 0.65,
           metalness: 0.1,
           transparent: true,
-          opacity: 0.75,
+          opacity: FACILITY_BUILDING_OPACITY,
         });
         const boxMesh = new THREE.Mesh(boxGeom, boxMat);
         // BoxGeometry is centred at origin; shift so its base sits on z = 0.

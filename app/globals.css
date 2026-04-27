@@ -64,3 +64,14 @@ body > div {
 .live-dot {
   @apply w-2 h-2 rounded-full bg-aeris-danger animate-pulse-slow;
 }
+
+/* MapLibre default popup chrome — inner React card owns padding and surface */
+.aeris-popup .maplibregl-popup-content {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.aeris-popup.maplibregl-popup {
+  z-index: 20;
+}

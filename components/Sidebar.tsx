@@ -63,9 +63,11 @@ const NewsPanel = dynamic(
 
 export type SidebarProps = {
   map: MLMap | null;
+  /** Lets the layout shrink the ops column on mobile when collapsed (avoids a tall empty strip). */
+  onCollapsedChange?: (collapsed: boolean) => void;
 };
 
-export function Sidebar({ map }: SidebarProps) {
+export function Sidebar({ map, onCollapsedChange }: SidebarProps) {
   const [open, setOpen] = useState<Record<PanelId, boolean>>(
     () =>
       Object.fromEntries(
@@ -94,12 +96,19 @@ export function Sidebar({ map }: SidebarProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [togglePanel]);
 
+  useEffect(() => {
+    onCollapsedChange?.(collapsed);
+  }, [collapsed, onCollapsedChange]);
+
   return (
     <aside
       className={clsx(
-        "h-full flex flex-col md:border-l border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[width]",
-        "w-full md:w-[360px]",
-        collapsed && "md:w-10",
+        "flex flex-col md:border-l border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[width]",
+        // Mutually exclusive widths: both md:w-[360px] and md:w-10 would compile
+        // with equal specificity — the wider rule can win and block minimize.
+        "w-full",
+        collapsed ? "md:w-10" : "md:w-[360px]",
+        collapsed ? "h-auto md:h-full" : "h-full",
       )}
     >
       <div className="flex items-center justify-between px-2 py-1.5 border-b border-aeris-border">

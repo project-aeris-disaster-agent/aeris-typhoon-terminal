@@ -1,44 +1,73 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { CardHeader, Pill } from "../ui/Card";
 import {
-  ensureGibsLayer,
-  ensureRadarLayer,
-  setFrameTimestamp,
   fetchRadarFrames,
+  gibsAnimationFrames,
   type RadarFramesResult,
   type RadarFrame,
 } from "@/services/satellite-frames";
+import {
+  setLiveWeatherImagerySource,
+  type LiveImagerySource,
+  type LiveWeatherFrameDetail,
+} from "@/services/live-weather-overlay";
 import { FreshnessTag } from "../ui/FreshnessTag";
 
-type SourceKey = "himawari-true" | "himawari-ir" | "radar";
-
-const SOURCES: Record<SourceKey, { label: string; kind: "gibs" | "radar" }> = {
-  "himawari-true": { label: "Himawari True Color", kind: "gibs" },
-  "himawari-ir": { label: "Himawari Infrared", kind: "gibs" },
-  radar: { label: "RainViewer Radar", kind: "radar" },
+const SOURCES: Record<
+  LiveImagerySource,
+  { label: string; short: string; hint: string }
+> = {
+  radar: {
+    label: "RainViewer Radar",
+    short: "Radar",
+    hint: "Precipitation — last ~2h + nowcast",
+  },
+  "himawari-true": {
+    label: "Himawari visible",
+    short: "VIS",
+    hint: "GIBS Band 3 red / visible (1 km) — daylight clouds",
+  },
+  "himawari-ir": {
+    label: "Himawari infrared",
+    short: "IR",
+    hint: "GIBS Band 13 clean IR — cloud tops / night",
+  },
 };
 
 export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
-  const [source, setSource] = useState<SourceKey>("radar");
-  const [playing, setPlaying] = useState(false);
+  const [source, setSource] = useState<LiveImagerySource>("radar");
   const [frames, setFrames] = useState<RadarFrame[]>([]);
   const [frameIdx, setFrameIdx] = useState(0);
+  const [loopCount, setLoopCount] = useState(0);
+  const [loopTime, setLoopTime] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const onFrame = (ev: Event) => {
+      const e = ev as CustomEvent<LiveWeatherFrameDetail>;
+      if (!e.detail || e.detail.source !== source) return;
+      setFrameIdx(e.detail.index);
+      setLoopCount(e.detail.count);
+      setLoopTime(e.detail.time);
+    };
+    window.addEventListener("aeris:live-weather-frame", onFrame as EventListener);
+    return () =>
+      window.removeEventListener("aeris:live-weather-frame", onFrame as EventListener);
+  }, [source]);
 
   useEffect(() => {
     if (!map) return;
+    setLoopTime(null);
+    setLiveWeatherImagerySource(map, source);
     if (source === "radar") {
       setError(null);
       fetchRadarFrames()
         .then((result: RadarFramesResult) => {
           setFrames(result.frames);
-          const nextIndex = Math.max(0, result.frames.length - 1);
-          setFrameIdx(nextIndex);
-          ensureRadarLayer(map, result.frames[nextIndex]);
+          setFrameIdx(Math.max(0, result.frames.length - 1));
         })
         .catch((radarError) => {
           setFrames([]);
@@ -46,94 +75,100 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
           setError((radarError as Error).message);
         });
     } else {
-      ensureGibsLayer(map, source);
       setError(null);
-      const now = new Date();
-      now.setUTCMinutes(0, 0, 0);
-      const hours: RadarFrame[] = [];
-      for (let i = 11; i >= 0; i--) {
-        hours.push({
-          time: new Date(now.getTime() - i * 3600 * 1000).toISOString(),
-          path: "",
-        });
-      }
-      setFrames(hours);
-      setFrameIdx(hours.length - 1);
+      const frames = gibsAnimationFrames();
+      setFrames(frames);
+      setFrameIdx(frames.length - 1);
     }
   }, [map, source]);
 
-  useEffect(() => {
-    if (!map || frames.length === 0) return;
-    const frame = frames[frameIdx];
-    setFrameTimestamp(map, source, frame);
-  }, [map, source, frames, frameIdx]);
-
-  useEffect(() => {
-    if (!playing) return;
-    const step = () => {
-      setFrameIdx((i) => (i + 1) % Math.max(1, frames.length));
-      rafRef.current = window.setTimeout(step, 500) as unknown as number;
-    };
-    rafRef.current = window.setTimeout(step, 500) as unknown as number;
-    return () => {
-      if (rafRef.current !== null) window.clearTimeout(rafRef.current);
-    };
-  }, [playing, frames.length]);
-
-  const currentTime = useMemo(
-    () => frames[frameIdx]?.time ?? "",
-    [frames, frameIdx],
-  );
+  const displayTime =
+    loopTime ?? frames[Math.min(frameIdx, Math.max(0, frames.length - 1))]?.time ?? "";
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <CardHeader
-        title="Animated Imagery"
-        trailing={<Pill tone="accent">{frames.length} frames</Pill>}
+        title="Live weather"
+        trailing={
+          <Pill tone="accent" className="flex items-center gap-1.5">
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.9)]"
+              aria-hidden
+            />
+            Loop
+          </Pill>
+        }
       />
-      {error && <div className="text-xs text-aeris-danger">Error: {error}</div>}
-      {source === "radar" && <FreshnessTag source="radar" />}
 
-      <div className="flex gap-1">
-        {(Object.keys(SOURCES) as SourceKey[]).map((k) => (
+      <p className="text-[10px] text-aeris-muted leading-relaxed">
+        Radar and satellite loop automatically on the{" "}
+        <span className="font-medium text-aeris-text/85">2D</span> map.
+        Wind streaks use PAR synoptic flow (Open-Meteo), active storm circulation
+        (JTWC), and weak lows from the pressure field.
+      </p>
+
+      {error && (
+        <div className="rounded border border-aeris-danger/40 bg-aeris-danger/10 px-2 py-1.5 text-[11px] text-aeris-danger">
+          {error}
+        </div>
+      )}
+
+      {source === "radar" && !error && <FreshnessTag source="radar" />}
+
+      <div className="rounded-lg border border-aeris-border/80 bg-aeris-bg/30 p-0.5 flex gap-0.5">
+        {(Object.keys(SOURCES) as LiveImagerySource[]).map((k) => (
           <button
             key={k}
             type="button"
-            onClick={() => {
-              setPlaying(false);
-              setSource(k);
-            }}
-            className={`flex-1 px-1.5 py-1 rounded text-[10px] font-mono uppercase tracking-wider border ${
+            onClick={() => setSource(k)}
+            title={SOURCES[k].hint}
+            className={`flex-1 min-w-0 rounded-md px-2 py-2 text-left transition-colors ${
               source === k
-                ? "bg-aeris-accent/10 text-aeris-accent border-aeris-accent/30"
-                : "bg-aeris-bg/40 text-aeris-muted border-aeris-border hover:text-aeris-text"
+                ? "bg-aeris-accent/15 text-aeris-accent shadow-sm border border-aeris-accent/25"
+                : "text-aeris-muted hover:text-aeris-text hover:bg-aeris-elev/60 border border-transparent"
             }`}
           >
-            {SOURCES[k].label.split(" ")[0]}
+            <div className="text-[10px] font-mono uppercase tracking-wider opacity-80">
+              {SOURCES[k].short}
+            </div>
+            <div className="text-[11px] font-medium truncate">{SOURCES[k].label}</div>
           </button>
         ))}
       </div>
 
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setPlaying((p) => !p)}
-          className="px-2 py-1 rounded border border-aeris-border text-xs hover:border-aeris-accent hover:text-aeris-accent"
-        >
-          {playing ? "Pause" : "Play"}
-        </button>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(0, frames.length - 1)}
-          value={frameIdx}
-          onChange={(e) => setFrameIdx(Number(e.target.value))}
-          className="flex-1 accent-aeris-accent"
-        />
-      </div>
-
-      <div className="text-[11px] text-aeris-muted font-mono">
-        {currentTime ? new Date(currentTime).toLocaleString() : error ? "Frames unavailable" : "Loading…"}
+      <div className="rounded-md border border-aeris-border/60 bg-gradient-to-br from-aeris-bg/50 to-aeris-surface/40 px-2.5 py-2">
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <span className="text-[10px] uppercase tracking-wider text-aeris-muted">
+            Frame
+          </span>
+          <span className="text-[10px] font-mono text-aeris-accent/90 tabular-nums">
+            {loopCount || frames.length
+              ? `${frameIdx + 1} / ${loopCount || frames.length}`
+              : "—"}
+          </span>
+        </div>
+        <div className="h-1 rounded-full bg-aeris-border/50 overflow-hidden">
+          {(loopCount || frames.length) > 0 && (
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-cyan-500/70 to-aeris-accent transition-[width] duration-300 ease-out"
+              style={{
+                width: `${((frameIdx + 1) / (loopCount || frames.length)) * 100}%`,
+              }}
+            />
+          )}
+        </div>
+        <div className="mt-1.5 text-[11px] text-aeris-muted font-mono text-center">
+          {displayTime
+            ? new Date(displayTime).toLocaleString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : error
+              ? "—"
+              : "Loading…"}
+        </div>
       </div>
     </div>
   );

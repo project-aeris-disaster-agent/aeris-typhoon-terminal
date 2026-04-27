@@ -63,14 +63,17 @@ describe("client data services", () => {
     );
   });
 
-  it("fetchActiveTyphoons surfaces degraded empty responses as errors", async () => {
+  it("fetchActiveTyphoons returns empty storms with warning when upstream is empty+_error", async () => {
     const { fetchActiveTyphoons } = await import("./typhoon-tracks");
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ storms: [], _error: "gdacs unavailable" }),
     }) as typeof fetch;
 
-    await expect(fetchActiveTyphoons()).rejects.toThrow("gdacs unavailable");
+    await expect(fetchActiveTyphoons()).resolves.toEqual({
+      storms: [],
+      warning: "gdacs unavailable",
+    });
   });
 
   it("fetchActiveTyphoons treats RSS-fallback _warning as non-fatal when storms are present", async () => {

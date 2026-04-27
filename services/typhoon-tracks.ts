@@ -56,9 +56,8 @@ export async function fetchActiveTyphoons(): Promise<{
       (typeof data._warning === "string" ? data._warning : null) ??
       (typeof data._error === "string" ? data._error : null);
 
-    if (storms.length === 0 && typeof data._error === "string") {
-      throw new Error(data._error);
-    }
+    // `/api/jtwc` returns 200 with empty storms when upstream feeds fail; treat
+    // that as "no systems in the tracker" for ops UX, not a thrown error.
 
     recordSuccess("typhoons");
     return { storms, warning };

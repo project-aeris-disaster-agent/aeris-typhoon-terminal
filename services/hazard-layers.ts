@@ -14,6 +14,7 @@ import {
   setFloodWireframeOpacity,
   setFloodLevelVisible,
 } from "@/services/map-scene";
+import { pinSatelliteRastersToTop } from "@/services/satellite-frames";
 import type { FloodPolygonFeature } from "@/services/three-scene";
 
 export { FLOOD_LEVEL_STYLE };
@@ -411,6 +412,7 @@ async function registerPack(
   }
 
   applyFloodMapLibreVisualization(map, getFloodVisualizationSettings(map));
+  pinSatelliteRastersToTop(map);
 }
 
 // ---------------------------------------------------------------------------

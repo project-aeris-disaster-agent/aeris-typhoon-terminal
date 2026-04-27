@@ -1,4 +1,6 @@
 import maplibregl, { type GeoJSONSource, type Map as MLMap } from "maplibre-gl";
+import { notifyMapViewModeForSatelliteImagery } from "@/services/satellite-frames";
+import { notifyLiveWeatherMapMode } from "@/services/live-weather-overlay";
 import { escapeHtml } from "@/lib/sanitize";
 import { PH_BBOX } from "@/config/region";
 import { FLOOD_LEVEL_COLOR_EXPR } from "@/config/flood-colors";
@@ -458,7 +460,8 @@ function ensureFacilityLabelLayer(map: MLMap) {
       "text-color": "#e6edf3",
       "text-halo-color": "#081017",
       "text-halo-width": 1.2,
-      "text-opacity": 0.92,
+      // Aligned with 3D facility fill: ~30% more transparent than 0.92
+      "text-opacity": 0.92 * 0.7,
     },
   });
 }
@@ -649,6 +652,9 @@ export function applyMapViewMode(map: MLMap, mode: "2d" | "3d") {
       essential: true,
     });
   }
+
+  notifyMapViewModeForSatelliteImagery(map, mode);
+  notifyLiveWeatherMapMode(map, mode);
 }
 
 type TerrainCapableMap = MLMap & {

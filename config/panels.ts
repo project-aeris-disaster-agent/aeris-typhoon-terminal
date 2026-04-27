@@ -32,9 +32,9 @@ export const PANELS: PanelDef[] = [
   },
   {
     id: "satellite",
-    label: "Satellite / Radar",
+    label: "Live weather",
     hotkey: "3",
-    description: "Himawari-9 loop and RainViewer precipitation animation.",
+    description: "Always-on radar and Himawari loops plus wind-field motion.",
     defaultOpen: false,
   },
   {

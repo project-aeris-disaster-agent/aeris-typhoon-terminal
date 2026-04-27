@@ -38,10 +38,10 @@ export function Header() {
           />
           <span className="live-dot" aria-hidden />
           <span className="font-mono text-sm tracking-[0.2em] text-aeris-accent">
-            AERIS
+            A.E.R.I.S.
           </span>
           <span className="hud-text text-aeris-muted">
-            Typhoon Resilience · PH
+            Autonomous Emergency Response Intelligence System · PH
           </span>
         </div>
       </div>

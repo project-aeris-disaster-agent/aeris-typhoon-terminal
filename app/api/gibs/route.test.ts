@@ -9,16 +9,18 @@ describe("/api/gibs", () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual({
-      base:
-        "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/{layer}/default/{time}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png",
       layers: {
         "himawari-true": {
-          id: "AHI_Geocolor",
-          label: "Himawari True Color",
+          id: "Himawari_AHI_Band3_Red_Visible_1km",
+          tileMatrixSet: "GoogleMapsCompatible_Level7",
+          maxZoom: 6,
+          label: "Himawari visible (Band 3)",
         },
         "himawari-ir": {
-          id: "AHI_Band13_Clean_Infrared_Brightness_Temperature",
-          label: "Himawari Infrared",
+          id: "Himawari_AHI_Band13_Clean_Infrared",
+          tileMatrixSet: "GoogleMapsCompatible_Level6",
+          maxZoom: 6,
+          label: "Himawari infrared (Band 13)",
         },
       },
       attribution: "NASA GIBS / Himawari-9",
