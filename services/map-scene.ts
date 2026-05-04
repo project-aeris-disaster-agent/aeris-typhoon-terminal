@@ -59,6 +59,11 @@ export type SceneSummary = {
 };
 
 export type SceneStatus = string | null;
+export type SceneLoadingState = {
+  threeLoading: boolean;
+  contextLoading: boolean;
+};
+type SceneLoadingListener = (state: SceneLoadingState) => void;
 
 export const DEFAULT_SCENE_VISIBILITY: Record<SceneLayerId, boolean> = {
   hillshade: true,
@@ -94,8 +99,10 @@ type SceneState = {
   sceneVisibility: Record<SceneLayerId, boolean>;
   lastContextKey: ScenePresetId | null;
   refreshInFlight: boolean;
+  contextLoading: boolean;
   three: ThreeSceneHandle | null;
   threePromise: Promise<ThreeSceneHandle | null> | null;
+  threeLoading: boolean;
   mapRef: { current: MLMap | null };
   floodImpactActive: boolean;
   // Cached last payloads so that if the Three.js layer is created *after*
@@ -112,6 +119,7 @@ type SceneState = {
 };
 
 const sceneState = new WeakMap<MLMap, SceneState>();
+const sceneLoadingListeners = new WeakMap<MLMap, Set<SceneLoadingListener>>();
 
 export function getFloodVisualizationSettings(
   map: MLMap,
@@ -136,8 +144,10 @@ function getSceneState(map: MLMap): SceneState {
       sceneVisibility: { ...DEFAULT_SCENE_VISIBILITY },
       lastContextKey: null,
       refreshInFlight: false,
+      contextLoading: false,
       three: null,
       threePromise: null,
+      threeLoading: false,
       mapRef: { current: map },
       floodImpactActive: false,
       lastBuildings: [],
@@ -153,6 +163,41 @@ function getSceneState(map: MLMap): SceneState {
     sceneState.set(map, state);
   }
   return state;
+}
+
+function getSceneLoadingState(map: MLMap): SceneLoadingState {
+  const state = getSceneState(map);
+  return {
+    threeLoading: state.threeLoading,
+    contextLoading: state.contextLoading,
+  };
+}
+
+function emitSceneLoading(map: MLMap) {
+  if (typeof window === "undefined") return;
+  const listeners = sceneLoadingListeners.get(map);
+  if (!listeners || listeners.size === 0) return;
+  const payload = getSceneLoadingState(map);
+  for (const listener of listeners) listener(payload);
+}
+
+export function subscribeSceneLoading(
+  map: MLMap,
+  listener: SceneLoadingListener,
+): () => void {
+  let listeners = sceneLoadingListeners.get(map);
+  if (!listeners) {
+    listeners = new Set<SceneLoadingListener>();
+    sceneLoadingListeners.set(map, listeners);
+  }
+  listeners.add(listener);
+  listener(getSceneLoadingState(map));
+  return () => {
+    const current = sceneLoadingListeners.get(map);
+    if (!current) return;
+    current.delete(listener);
+    if (current.size === 0) sceneLoadingListeners.delete(map);
+  };
 }
 
 function ensureTerrainSource(map: MLMap) {
@@ -393,40 +438,50 @@ async function ensureThreeSceneLayer(
   if (state.three) return state.three;
   if (state.threePromise) return state.threePromise;
 
+  state.threeLoading = true;
+  emitSceneLoading(map);
   state.threePromise = (async () => {
-    // Dynamic import isolates Three.js + three-scene into its own chunk.
-    const mod = await import("@/services/three-scene");
-    const handle = mod.createThreeSceneLayer(state.mapRef);
-    // Insert beneath facility labels so the text stays legible on top of
-    // the 3D buildings and beacons.
-    const beforeId = map.getLayer("lyr-osm-facility-labels")
-      ? "lyr-osm-facility-labels"
-      : undefined;
-    if (!map.getLayer("lyr-three-scene")) {
-      map.addLayer(handle.layer, beforeId);
-    }
-    state.three = handle;
+    try {
+      // Dynamic import isolates Three.js + three-scene into its own chunk.
+      const mod = await import("@/services/three-scene");
+      const handle = mod.createThreeSceneLayer(state.mapRef);
+      // Insert beneath facility labels so the text stays legible on top of
+      // the 3D buildings and beacons.
+      const beforeId = map.getLayer("lyr-osm-facility-labels")
+        ? "lyr-osm-facility-labels"
+        : undefined;
+      if (!map.getLayer("lyr-three-scene")) {
+        map.addLayer(handle.layer, beforeId);
+      }
+      state.three = handle;
 
-    // Replay cached payloads so the scene looks correct immediately.
-    if (state.lastBuildings.length) handle.setBuildings(state.lastBuildings);
-    if (state.lastFacilities.length)
-      handle.setFacilities(state.lastFacilities);
-    handle.setBuildingsVisible(state.sceneVisibility.buildings);
-    handle.setFacilitiesVisible(state.sceneVisibility["critical-facilities"]);
-    handle.setFacilityPriorityFilter(state.facilityPriorityFilter);
-    handle.setFloodHighlight(state.floodImpactActive);
-    if (state.lastFloodFeatures.length)
-      handle.setFloodPolygons(state.lastFloodFeatures);
-    handle.setFloodPolygonsVisible(state.lastFloodVisible);
-    handle.setFloodPolygonOpacity(state.lastFloodOpacity);
-    if (state.lastFloodVisualizationSettings) {
-      handle.setFloodVisualizationSettings(state.lastFloodVisualizationSettings);
+      // Replay cached payloads so the scene looks correct immediately.
+      if (state.lastBuildings.length) handle.setBuildings(state.lastBuildings);
+      if (state.lastFacilities.length)
+        handle.setFacilities(state.lastFacilities);
+      handle.setBuildingsVisible(state.sceneVisibility.buildings);
+      handle.setFacilitiesVisible(state.sceneVisibility["critical-facilities"]);
+      handle.setFacilityPriorityFilter(state.facilityPriorityFilter);
+      handle.setFloodHighlight(state.floodImpactActive);
+      if (state.lastFloodFeatures.length)
+        handle.setFloodPolygons(state.lastFloodFeatures);
+      handle.setFloodPolygonsVisible(state.lastFloodVisible);
+      handle.setFloodPolygonOpacity(state.lastFloodOpacity);
+      if (state.lastFloodVisualizationSettings) {
+        handle.setFloodVisualizationSettings(state.lastFloodVisualizationSettings);
+      }
+      for (const lvl of ["low", "medium", "high"] as const) {
+        handle.setFloodLevelVisible(lvl, state.lastFloodLevelVisibility[lvl]);
+      }
+      handle.setAnimationsEnabled(state.animationsEnabled);
+      return handle;
+    } catch {
+      return null;
+    } finally {
+      state.threePromise = null;
+      state.threeLoading = false;
+      emitSceneLoading(map);
     }
-    for (const lvl of ["low", "medium", "high"] as const) {
-      handle.setFloodLevelVisible(lvl, state.lastFloodLevelVisibility[lvl]);
-    }
-    handle.setAnimationsEnabled(state.animationsEnabled);
-    return handle;
   })();
   return state.threePromise;
 }
@@ -524,6 +579,8 @@ async function refreshOsmContext(map: MLMap) {
 
   const zoom = map.getZoom();
   if (zoom < 10) {
+    state.contextLoading = false;
+    emitSceneLoading(map);
     clearSceneContext(map);
     state.lastContextKey = null;
     return;
@@ -531,13 +588,21 @@ async function refreshOsmContext(map: MLMap) {
 
   const presetId = nearestScenePreset(map);
   if (!presetId) {
+    state.contextLoading = false;
+    emitSceneLoading(map);
     clearSceneContext(map);
     state.lastContextKey = null;
     return;
   }
-  if (presetId === state.lastContextKey) return;
+  if (presetId === state.lastContextKey) {
+    state.contextLoading = false;
+    emitSceneLoading(map);
+    return;
+  }
 
   state.refreshInFlight = true;
+  state.contextLoading = true;
+  emitSceneLoading(map);
   try {
     // OSM context packs are static JSON under /public. They change only
     // when `SCENE_PACK_VERSION` bumps (via the ?v= cache buster), so we
@@ -580,6 +645,8 @@ async function refreshOsmContext(map: MLMap) {
     state.lastContextKey = null;
   } finally {
     state.refreshInFlight = false;
+    state.contextLoading = false;
+    emitSceneLoading(map);
   }
 }
 

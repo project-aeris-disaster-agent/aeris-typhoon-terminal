@@ -11,7 +11,10 @@ import { PANELS, type PanelId } from "@/config/panels";
 // client-only, so `ssr: false` skips the SSR render and lets us show a
 // lightweight skeleton while the chunk streams in on first open.
 const PanelSkeleton = () => (
-  <div className="h-16 rounded-md bg-aeris-bg/60 animate-pulse" />
+  <div className="h-16 rounded-md border border-aeris-border bg-aeris-bg/60 px-3 text-[11px] text-aeris-muted inline-flex items-center gap-2">
+    <span className="inline-block h-1.5 w-1.5 rounded-full bg-aeris-accent animate-pulse" />
+    <span>Loading data, please wait...</span>
+  </div>
 );
 
 const TyphoonTrackerPanel = dynamic(

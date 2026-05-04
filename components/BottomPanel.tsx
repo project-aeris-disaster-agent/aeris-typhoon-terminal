@@ -7,7 +7,10 @@ import { clsx } from "clsx";
 import type { Map as MLMap } from "maplibre-gl";
 
 const PanelSkeleton = () => (
-  <div className="h-24 rounded-md bg-aeris-bg/60 animate-pulse" />
+  <div className="h-24 rounded-md border border-aeris-border bg-aeris-bg/60 px-3 text-[11px] text-aeris-muted inline-flex items-center gap-2">
+    <span className="inline-block h-1.5 w-1.5 rounded-full bg-aeris-accent animate-pulse" />
+    <span>Loading data, please wait...</span>
+  </div>
 );
 
 const LiveWebcamsPanel = dynamic(
@@ -72,7 +75,7 @@ export function BottomPanel({ map }: { map?: MLMap | null }) {
   return (
     <div
       className={clsx(
-        "w-full border-t border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-all duration-300",
+        "w-full border-t border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[height] duration-300",
         collapsed ? "h-8" : "h-[38vh] min-h-[200px] max-h-[500px]",
       )}
     >
@@ -136,7 +139,7 @@ export function BottomPanel({ map }: { map?: MLMap | null }) {
             <div
               key={sp.id}
               className={clsx(
-                "flex flex-col transition-all duration-200 overflow-hidden",
+                "flex flex-col transition-[opacity,width] duration-200 overflow-hidden",
                 "md:flex-1 md:min-w-0",
                 !openPanels[sp.id] && "md:w-0 md:flex-none",
                 openPanels[sp.id]

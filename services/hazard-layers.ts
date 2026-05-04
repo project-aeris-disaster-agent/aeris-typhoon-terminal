@@ -139,6 +139,7 @@ const registry = new WeakMap<
   MLMap,
   { packs: FloodHazardPack[]; active: string | null }
 >();
+const ensureLayersInFlight = new WeakMap<MLMap, Promise<FloodHazardPack[]>>();
 
 // Singleton fetches so the manifest + pack GeoJSON are loaded once even if
 // `initMapLayers` and `LayerLegend`'s effect both call `ensureFloodHazardLayers`.
@@ -438,14 +439,26 @@ export async function ensureFloodHazardLayers(
   const entry = registry.get(map);
   if (entry && entry.packs.length > 0) return entry.packs;
 
-  const manifest = await fetchManifest();
-  if (!manifest || manifest.packs.length === 0) {
-    registry.set(map, { packs: [], active: null });
-    return [];
-  }
+  const inFlight = ensureLayersInFlight.get(map);
+  if (inFlight) return inFlight;
 
-  registry.set(map, { packs: manifest.packs, active: null });
-  return manifest.packs;
+  const resolveOnce = (async () => {
+    const manifest = await fetchManifest();
+    if (!manifest || manifest.packs.length === 0) {
+      registry.set(map, { packs: [], active: null });
+      return [];
+    }
+
+    registry.set(map, { packs: manifest.packs, active: null });
+    return manifest.packs;
+  })();
+  ensureLayersInFlight.set(map, resolveOnce);
+
+  try {
+    return await resolveOnce;
+  } finally {
+    ensureLayersInFlight.delete(map);
+  }
 }
 
 /**

@@ -6,6 +6,8 @@ import { Map2D } from "./Map2D";
 import { MapModeToggle } from "./MapModeToggle";
 import { LayerLegend } from "./LayerLegend";
 import { readUrlState, writeUrlState } from "@/services/url-state";
+import { subscribeSceneLoading } from "@/services/map-scene";
+import { DataLoadingPopup } from "@/components/ui/DataLoadingPopup";
 
 export type MapMode = "2d" | "3d";
 
@@ -20,6 +22,7 @@ export type MapContainerProps = {
 export function MapContainer({ onMapReady }: MapContainerProps) {
   const [mode, setMode] = useState<MapMode>("2d");
   const [map, setMap] = useState<MLMap | null>(null);
+  const [showLoadingPopup, setShowLoadingPopup] = useState(false);
 
   const handleReady = useCallback(
     (m: MLMap) => {
@@ -41,9 +44,39 @@ export function MapContainer({ onMapReady }: MapContainerProps) {
     writeUrlState({ mode });
   }, [mode]);
 
+  useEffect(() => {
+    if (!map) {
+      setShowLoadingPopup(false);
+      return;
+    }
+    let revealTimer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = subscribeSceneLoading(map, ({ threeLoading, contextLoading }) => {
+      const loading = threeLoading || contextLoading;
+      if (loading) {
+        if (revealTimer) return;
+        revealTimer = setTimeout(() => {
+          revealTimer = null;
+          setShowLoadingPopup(true);
+        }, 180);
+        return;
+      }
+
+      if (revealTimer) {
+        clearTimeout(revealTimer);
+        revealTimer = null;
+      }
+      setShowLoadingPopup(false);
+    });
+    return () => {
+      if (revealTimer) clearTimeout(revealTimer);
+      unsubscribe();
+    };
+  }, [map]);
+
   return (
     <div className="relative w-full h-full bg-aeris-bg">
       <Map2D mode={mode} onReady={handleReady} />
+      <DataLoadingPopup active={showLoadingPopup} />
 
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
         <MapModeToggle mode={mode} onChange={setMode} />

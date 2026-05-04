@@ -177,7 +177,7 @@ export function NewsLivestreamsPanel() {
               key={ch.handle}
               type="button"
               onClick={() => setActiveChannel(ch.handle)}
-              className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-[10px] font-mono border transition-all ${
+              className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-[10px] font-mono border transition-colors ${
                 isActive
                   ? "bg-aeris-accent/10 border-aeris-accent/40 text-aeris-accent"
                   : isNewlyLive
