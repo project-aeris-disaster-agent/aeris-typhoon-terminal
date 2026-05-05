@@ -12,7 +12,11 @@
     "test": "jest --runInBand",
     "test:coverage": "jest --runInBand --coverage",
     "smoke:reports": "node scripts/smoke_supabase_reports.mjs",
-    "smoke:reports:insert": "node scripts/smoke_supabase_reports.mjs --insert"
+    "smoke:reports:insert": "node scripts/smoke_supabase_reports.mjs --insert",
+    "vercel:whoami": "npx vercel whoami",
+    "vercel:ls": "npx vercel ls",
+    "vercel:pull": "npx vercel pull --yes",
+    "vercel:deploy:prod": "npx vercel deploy --prod --yes"
   },
   "dependencies": {
     "@deck.gl/core": "^9.0.33",
