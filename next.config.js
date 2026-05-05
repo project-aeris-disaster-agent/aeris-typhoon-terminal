@@ -31,6 +31,19 @@ const nextConfig = {
           },
         ],
       },
+      {
+        source: "/models/:path*.vrm",
+        headers: [
+          { key: "Content-Type", value: "model/gltf-binary" },
+          {
+            key: "Cache-Control",
+            value:
+              process.env.NODE_ENV === "development"
+                ? "no-store"
+                : "public, max-age=86400, stale-while-revalidate=604800",
+          },
+        ],
+      },
     ];
   },
 };

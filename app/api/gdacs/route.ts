@@ -21,8 +21,15 @@ export async function GET() {
       async () => {
         const res = await fetch("https://www.gdacs.org/xml/rss.xml", {
           next: { revalidate: 600 },
-          headers: { accept: "application/rss+xml" },
+          headers: { accept: "application/xml,text/xml;q=0.9,*/*;q=0.8" },
         });
+        if (res.status === 406) {
+          const retry = await fetch("https://www.gdacs.org/xml/rss.xml", {
+            next: { revalidate: 600 },
+          });
+          if (!retry.ok) throw new Error(`GDACS RSS ${retry.status}`);
+          return retry.text();
+        }
         if (!res.ok) throw new Error(`GDACS RSS ${res.status}`);
         return res.text();
       },
@@ -30,12 +37,15 @@ export async function GET() {
     );
 
     const items = parseRss(xml);
+    /** Broader than country name — GDACS text often omits “Philippines” for PAR / TC tracks. */
+    const phRe =
+      /philippines|luzon|visayas|mindanao|philippine\s+sea|filipino|par\b|phl\b|metro\s+manila|manila|cebu|davao|palawan|leyte|samar|bicol|caraga|iloc/i;
     const alerts = items
       .filter(
         (it) =>
-          /philippines|luzon|visayas|mindanao/i.test(it.country ?? "") ||
-          /philippines|luzon|visayas|mindanao/i.test(it.title ?? "") ||
-          /philippines|luzon|visayas|mindanao/i.test(it.description ?? ""),
+          phRe.test(it.country ?? "") ||
+          phRe.test(it.title ?? "") ||
+          phRe.test(it.description ?? ""),
       )
       .slice(0, 30)
       .flatMap((it) => {

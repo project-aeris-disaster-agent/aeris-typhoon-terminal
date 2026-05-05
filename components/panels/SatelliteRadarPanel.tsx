@@ -4,15 +4,13 @@ import { useEffect, useState } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { CardHeader, Pill } from "../ui/Card";
 import {
-  fetchRadarFrames,
-  gibsAnimationFrames,
-  type RadarFramesResult,
-  type RadarFrame,
+  getLiveWeatherSourceContract,
+  type LiveImagerySource,
 } from "@/services/satellite-frames";
 import {
   setLiveWeatherImagerySource,
-  type LiveImagerySource,
-  type LiveWeatherFrameDetail,
+  LIVE_WEATHER_STATUS_EVENT,
+  type LiveWeatherStatusDetail,
 } from "@/services/live-weather-overlay";
 import { FreshnessTag } from "../ui/FreshnessTag";
 
@@ -26,64 +24,53 @@ const SOURCES: Record<
     hint: "Precipitation — last ~2h + nowcast",
   },
   "himawari-true": {
-    label: "Himawari visible",
-    short: "VIS",
-    hint: "GIBS Band 3 red / visible (1 km) — daylight clouds",
+    label: "Satellite enhanced IR",
+    short: "SAT+",
+    hint: "Primary: RainViewer satellite; fallback: GIBS Himawari",
   },
   "himawari-ir": {
-    label: "Himawari infrared",
-    short: "IR",
-    hint: "GIBS Band 13 clean IR — cloud tops / night",
+    label: "Satellite infrared",
+    short: "SAT IR",
+    hint: "Primary: RainViewer satellite IR; fallback: GIBS Himawari IR",
   },
 };
 
 export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
   const [source, setSource] = useState<LiveImagerySource>("radar");
-  const [frames, setFrames] = useState<RadarFrame[]>([]);
-  const [frameIdx, setFrameIdx] = useState(0);
-  const [loopCount, setLoopCount] = useState(0);
-  const [loopTime, setLoopTime] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<LiveWeatherStatusDetail | null>(null);
 
   useEffect(() => {
-    const onFrame = (ev: Event) => {
-      const e = ev as CustomEvent<LiveWeatherFrameDetail>;
+    const onStatus = (ev: Event) => {
+      const e = ev as CustomEvent<LiveWeatherStatusDetail>;
       if (!e.detail || e.detail.source !== source) return;
-      setFrameIdx(e.detail.index);
-      setLoopCount(e.detail.count);
-      setLoopTime(e.detail.time);
+      setStatus(e.detail);
     };
-    window.addEventListener("aeris:live-weather-frame", onFrame as EventListener);
+    window.addEventListener(LIVE_WEATHER_STATUS_EVENT, onStatus as EventListener);
     return () =>
-      window.removeEventListener("aeris:live-weather-frame", onFrame as EventListener);
+      window.removeEventListener(LIVE_WEATHER_STATUS_EVENT, onStatus as EventListener);
   }, [source]);
 
   useEffect(() => {
     if (!map) return;
-    setLoopTime(null);
+    setStatus(null);
     setLiveWeatherImagerySource(map, source);
-    if (source === "radar") {
-      setError(null);
-      fetchRadarFrames()
-        .then((result: RadarFramesResult) => {
-          setFrames(result.frames);
-          setFrameIdx(Math.max(0, result.frames.length - 1));
-        })
-        .catch((radarError) => {
-          setFrames([]);
-          setFrameIdx(0);
-          setError((radarError as Error).message);
-        });
-    } else {
-      setError(null);
-      const frames = gibsAnimationFrames();
-      setFrames(frames);
-      setFrameIdx(frames.length - 1);
-    }
+    setError(null);
   }, [map, source]);
 
-  const displayTime =
-    loopTime ?? frames[Math.min(frameIdx, Math.max(0, frames.length - 1))]?.time ?? "";
+  const contract = getLiveWeatherSourceContract(source);
+  const healthTone =
+    status?.health === "fallback"
+      ? "text-amber-300 border-amber-500/35 bg-amber-500/10"
+      : status?.health === "delayed"
+        ? "text-yellow-300 border-yellow-500/35 bg-yellow-500/10"
+        : "text-emerald-300 border-emerald-500/35 bg-emerald-500/10";
+  const healthLabel =
+    status?.health === "fallback"
+      ? "Fallback"
+      : status?.health === "delayed"
+        ? "Delayed"
+        : "Live";
 
   return (
     <div className="space-y-3">
@@ -100,16 +87,30 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
         }
       />
 
-      <p className="text-[10px] text-aeris-muted leading-relaxed">
-        Radar and satellite loop automatically on the{" "}
-        <span className="font-medium text-aeris-text/85">2D</span> map.
-        Wind streaks use PAR synoptic flow (Open-Meteo), active storm circulation
-        (JTWC), and weak lows from the pressure field.
-      </p>
+      <div className="flex items-center gap-1.5 text-[10px]">
+        <span className="text-aeris-muted uppercase tracking-wider">Status</span>
+        <span className={`rounded border px-1.5 py-0.5 font-medium ${healthTone}`}>
+          {healthLabel}
+        </span>
+        {status?.frameAgeMinutes != null && (
+          <span className="text-aeris-muted">
+            Frame age {status.frameAgeMinutes}m
+            {status.frameAgeMinutes > contract.staleAfterMinutes ? " (stale)" : ""}
+          </span>
+        )}
+      </div>
+      <div className="text-[10px] text-aeris-muted/80">
+        Source: {contract.attribution}
+      </div>
 
       {error && (
         <div className="rounded border border-aeris-danger/40 bg-aeris-danger/10 px-2 py-1.5 text-[11px] text-aeris-danger">
           {error}
+        </div>
+      )}
+      {!error && status?.message && (
+        <div className="rounded border border-amber-500/35 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-300">
+          {status.message}
         </div>
       )}
 
@@ -134,41 +135,6 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
             <div className="text-[11px] font-medium truncate">{SOURCES[k].label}</div>
           </button>
         ))}
-      </div>
-
-      <div className="rounded-md border border-aeris-border/60 bg-gradient-to-br from-aeris-bg/50 to-aeris-surface/40 px-2.5 py-2">
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <span className="text-[10px] uppercase tracking-wider text-aeris-muted">
-            Frame
-          </span>
-          <span className="text-[10px] font-mono text-aeris-accent/90 tabular-nums">
-            {loopCount || frames.length
-              ? `${frameIdx + 1} / ${loopCount || frames.length}`
-              : "—"}
-          </span>
-        </div>
-        <div className="h-1 rounded-full bg-aeris-border/50 overflow-hidden">
-          {(loopCount || frames.length) > 0 && (
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-cyan-500/70 to-aeris-accent transition-[width] duration-300 ease-out"
-              style={{
-                width: `${((frameIdx + 1) / (loopCount || frames.length)) * 100}%`,
-              }}
-            />
-          )}
-        </div>
-        <div className="mt-1.5 text-[11px] text-aeris-muted font-mono text-center">
-          {displayTime
-            ? new Date(displayTime).toLocaleString(undefined, {
-                month: "short",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : error
-              ? "—"
-              : "Loading…"}
-        </div>
       </div>
     </div>
   );

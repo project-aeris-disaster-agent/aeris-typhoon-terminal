@@ -32,9 +32,10 @@ export type { FloodLevel };
  *
  * Design goals:
  *   - One source of truth: the `/flood-hazard/index.json` manifest.
- *   - Four layers per pack (halo + pattern + tint fill + soft edge). The 3D "flood slab" we had
- *     before duplicated signal already carried by the 3D building flood
- *     tint, so it was dropped.
+ *   - Four layers per pack (halo + pattern + tint fill + soft edge). In 2D,
+ *     only tint + edge are shown (halo wash and noise pattern hidden). The 3D
+ *     "flood slab" we had before duplicated signal already carried by the 3D
+ *     building flood tint, so it was dropped.
  *   - UI radios derived from the unique `returnPeriod` values in the
  *     manifest, so adding more provinces is zero UI work.
  */
@@ -357,7 +358,7 @@ async function registerPack(
     );
   }
 
-  // Layer 3: Translucent level tint on top of the pattern
+  // Layer 3: Translucent level tint (2D omits halo + pattern above for a flat read)
   if (!map.getLayer(fillIdOf(pack))) {
     map.addLayer(
       {
@@ -427,8 +428,7 @@ async function registerPack(
  *
  * Pack bodies are loaded lazily by `setActiveFloodPeriod()` when the user
  * selects a period in the LayerLegend. The returned metadata array is
- * enough for `HazardMapPanel` and `LayerLegend` to render their province
- * and return-period lists.
+ * enough for `LayerLegend` to render province and return-period lists.
  *
  * Safe to call multiple times — subsequent calls short-circuit on the
  * per-map registry.
@@ -490,9 +490,9 @@ async function ensurePackRegistered(
  * MapLibre owns four layers per pack — halo, pattern (noise tile), tint fill,
  * and edge (feathered border).
  *
- * **2D (`mapMode === "2d"`)** — MapLibre stack is **shown** (noise + tint +
- * soft edge). The Three.js flood decal is turned **off** so there is no
- * double-draw.
+ * **2D (`mapMode === "2d"`)** — Only **tint fill + edge** are shown; halo and
+ * pattern stay hidden (no gradient wash or grain overlay). The Three.js flood
+ * decal is turned **off** so there is no double-draw.
  *
  * **3D (`mapMode === "3d"`)** — MapLibre stack stays **hidden**. The Three.js
  * scene is the authoritative water-surface renderer (DECALS, depthTest off;
@@ -549,16 +549,16 @@ export async function setActiveFloodPeriod(
   const showMapLibreFlood = mapMode === "2d";
   setFloodWireframe(map, allFeatures, showThreeFlood);
 
-  const mapLibreVis = showMapLibreFlood ? "visible" : "none";
+  const fillEdgeVis = showMapLibreFlood ? "visible" : "none";
   for (const pack of matching) {
-    for (const layerId of [
-      haloIdOf(pack),
-      patternIdOf(pack),
-      fillIdOf(pack),
-      edgeIdOf(pack),
-    ]) {
+    for (const layerId of [haloIdOf(pack), patternIdOf(pack)]) {
       if (map.getLayer(layerId)) {
-        map.setLayoutProperty(layerId, "visibility", mapLibreVis);
+        map.setLayoutProperty(layerId, "visibility", "none");
+      }
+    }
+    for (const layerId of [fillIdOf(pack), edgeIdOf(pack)]) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, "visibility", fillEdgeVis);
       }
     }
   }

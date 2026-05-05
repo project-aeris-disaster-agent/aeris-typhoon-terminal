@@ -8,6 +8,8 @@ export type YtVideo = {
   channelName: string;
   channelHandle: string;
   isLikeLive: boolean;
+  embeddable?: boolean;
+  liveBroadcastContent?: "live" | "upcoming" | "none";
 };
 
 export type YtFeedResult = {
@@ -80,6 +82,12 @@ export function getEmbedUrl(
   videoId: string,
   autoplay = true,
   muted = true,
+  /** Bust iframe cache when feed refreshes (same video id, new player state) */
+  cacheBust?: number,
 ): string {
-  return `https://www.youtube.com/embed/${videoId}?autoplay=${autoplay ? 1 : 0}&mute=${muted ? 1 : 0}`;
+  const base = `https://www.youtube.com/embed/${videoId}?autoplay=${autoplay ? 1 : 0}&mute=${muted ? 1 : 0}`;
+  if (cacheBust != null && cacheBust > 0) {
+    return `${base}&_=${cacheBust}`;
+  }
+  return base;
 }

@@ -10,7 +10,7 @@ import {
 } from "@/services/youtube-feeds";
 
 const JAZBAZ_CHANNEL = "@JazBazPhilippines";
-const REFRESH_INTERVAL_MS = 3 * 60 * 1000;
+const REFRESH_INTERVAL_MS = 90 * 1000;
 
 const GRID_LAYOUTS = [1, 2, 4, 6] as const;
 type GridSize = (typeof GRID_LAYOUTS)[number];
@@ -106,8 +106,15 @@ function SlotFrame({
 
 export function LiveWebcamsPanel() {
   const [videos, setVideos] = useState<YtVideo[]>([]);
-  const [slots, setSlots] = useState<(YtVideo | null)[]>([null, null, null, null]);
-  const [gridSize, setGridSize] = useState<GridSize>(4);
+  const [slots, setSlots] = useState<(YtVideo | null)[]>([
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ]);
+  const [gridSize, setGridSize] = useState<GridSize>(6);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -115,7 +122,9 @@ export function LiveWebcamsPanel() {
 
   const load = useCallback(async () => {
     try {
-      const result = await fetchYouTubeFeeds([JAZBAZ_CHANNEL]);
+      const result = await fetchYouTubeFeeds([JAZBAZ_CHANNEL], {
+        bypassClientCache: true,
+      });
       setVideos(result.videos);
       // Auto-fill empty slots on first load
       setSlots((prev) => {
@@ -219,47 +228,47 @@ export function LiveWebcamsPanel() {
         title="Live Webcams"
         subtitle="JazBaz Philippines • CCTV Grid"
         trailing={
-          liveCount > 0 ? (
-            <Pill tone="danger">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-aeris-danger animate-pulse mr-1" />
-              {liveCount} LIVE
-            </Pill>
-          ) : (
-            <Pill tone="default">RECENT</Pill>
-          )
+          <div className="flex items-center gap-1.5">
+            {liveCount > 0 ? (
+              <Pill tone="danger">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-aeris-danger animate-pulse mr-1" />
+                {liveCount} LIVE
+              </Pill>
+            ) : (
+              <Pill tone="default">RECENT</Pill>
+            )}
+            <div className="flex items-center gap-1 pl-1.5 border-l border-aeris-border/70">
+              {GRID_LAYOUTS.map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => handleGridChange(size)}
+                  className={`w-6 h-6 rounded text-[10px] font-mono border transition-colors ${
+                    gridSize === size
+                      ? "bg-aeris-accent/10 border-aeris-accent/30 text-aeris-accent"
+                      : "border-aeris-border text-aeris-muted hover:text-aeris-text"
+                  }`}
+                  title={`${size} stream${size > 1 ? "s" : ""}`}
+                >
+                  {size}
+                </button>
+              ))}
+            </div>
+          </div>
         }
       />
 
-      {/* Grid size selector */}
-      <div className="flex items-center gap-1 shrink-0">
-        <span className="text-[9px] font-mono text-aeris-muted uppercase mr-1">
-          Grid
-        </span>
-        {GRID_LAYOUTS.map((size) => (
-          <button
-            key={size}
-            type="button"
-            onClick={() => handleGridChange(size)}
-            className={`w-6 h-6 rounded text-[10px] font-mono border transition-colors ${
-              gridSize === size
-                ? "bg-aeris-accent/10 border-aeris-accent/30 text-aeris-accent"
-                : "border-aeris-border text-aeris-muted hover:text-aeris-text"
-            }`}
-            title={`${size} stream${size > 1 ? "s" : ""}`}
-          >
-            {size}
-          </button>
-        ))}
-        {pickMode !== null && (
+      {pickMode !== null && (
+        <div className="flex items-center justify-end shrink-0">
           <button
             type="button"
             onClick={() => setPickMode(null)}
-            className="ml-auto px-2 py-0.5 text-[9px] font-mono text-aeris-muted border border-aeris-border rounded hover:text-aeris-text"
+            className="px-2 py-0.5 text-[9px] font-mono text-aeris-muted border border-aeris-border rounded hover:text-aeris-text"
           >
             ✕ Cancel
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {loading && (
         <div

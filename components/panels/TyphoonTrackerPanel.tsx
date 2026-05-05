@@ -25,7 +25,6 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
   const [loading, setLoading] = useState(true);
   const isFirstRun = useRef(true);
   const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,7 +34,6 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
         const result = await fetchActiveTyphoons();
         if (!cancelled) {
           setStorms(result.storms);
-          setWarning(result.warning);
           setError(null);
         }
       } catch (e) {
@@ -176,11 +174,6 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
       ))}
 
       <FreshnessTag source="typhoons" />
-      {warning && !error && (
-        <div className="text-[11px] text-aeris-muted">
-          <span className="text-aeris-warn">Feed note:</span> {warning}
-        </div>
-      )}
 
       {error && (
         <div className="text-[11px] text-aeris-danger">

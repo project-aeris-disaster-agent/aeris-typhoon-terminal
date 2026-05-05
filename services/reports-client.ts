@@ -80,6 +80,8 @@ export const REPORTS_MAP_LAYER_IDS = [
 
 type PingLoop = { cancelled: boolean };
 const reportPingLoopByMap = new WeakMap<MLMap, PingLoop>();
+export type ReportPingPerformanceProfile = "quality" | "balanced" | "performance";
+const reportPingProfileByMap = new WeakMap<MLMap, ReportPingPerformanceProfile>();
 
 const PING_RED = "#ef4444";
 const PING_RED_CORE = "#dc2626";
@@ -89,6 +91,7 @@ function startReportPingLoop(map: MLMap) {
   if (reportPingLoopByMap.has(map)) return;
   const loop = { cancelled: false };
   reportPingLoopByMap.set(map, loop);
+  let lastPaintAt = 0;
   const tick = (now: number) => {
     if (loop.cancelled) return;
     if (!map.getStyle() || !map.getLayer(REPORTS_PULSE_LAYER_ID)) {
@@ -96,6 +99,24 @@ function startReportPingLoop(map: MLMap) {
       reportPingLoopByMap.delete(map);
       return;
     }
+    const profile = reportPingProfileByMap.get(map) ?? "balanced";
+    const targetFps =
+      profile === "quality" ? 30 : profile === "performance" ? 12 : 20;
+    const minFrameMs = 1000 / targetFps;
+    if (
+      typeof document !== "undefined" &&
+      document.hidden &&
+      now - lastPaintAt < 1000 / 6
+    ) {
+      requestAnimationFrame(tick);
+      return;
+    }
+    if (now - lastPaintAt < minFrameMs) {
+      requestAnimationFrame(tick);
+      return;
+    }
+    lastPaintAt = now;
+
     const t = now * 0.001;
     const period = 1.75;
     const phase = (t % period) / period;
@@ -126,6 +147,14 @@ function stopReportPingLoop(map: MLMap) {
   const loop = reportPingLoopByMap.get(map);
   if (loop) loop.cancelled = true;
   reportPingLoopByMap.delete(map);
+}
+
+export function setReportPingPerformanceMode(
+  map: MLMap | null,
+  profile: ReportPingPerformanceProfile,
+) {
+  if (!map) return;
+  reportPingProfileByMap.set(map, profile);
 }
 
 export async function fetchReports(): Promise<IncidentReport[]> {

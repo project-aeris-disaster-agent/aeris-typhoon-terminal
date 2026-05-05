@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { clsx } from "clsx";
-import { Pill } from "./ui/Card";
 import type { MapMode } from "./MapContainer";
 import {
   DEFAULT_FLOOD_VISUALIZATION_SETTINGS,
@@ -13,22 +12,16 @@ import {
   FLOOD_LEVEL_STYLE,
   OVERLAY_LAYERS,
   ensureFloodHazardLayers,
-  formatReturnPeriodLabel,
   getFloodReturnPeriods,
   setActiveFloodPeriod,
   setFloodLevelFilter,
   setOverlayVisibility,
   type FloodHazardPack,
-  type OverlayLayerId,
 } from "@/services/hazard-layers";
 import {
-  DEFAULT_SCENE_VISIBILITY,
-  DEFAULT_TERRAIN_EXAGGERATION,
   SCENE_PRESETS,
-  SCENE_LAYERS,
   flyToScenePreset,
   setFloodImpactHighlight,
-  setFacilityPriorityFilter,
   setFloodVisualizationSettings,
   setSceneAnimationsEnabled,
   setSceneLayerVisibility,
@@ -36,8 +29,15 @@ import {
   type ScenePresetId,
   type SceneStatus,
   type SceneSummary,
-  type SceneLayerId,
 } from "@/services/map-scene";
+import {
+  fetchWaterLevels,
+  renderWaterLevelsOnMap,
+  setWaterLevelsVisibility,
+} from "@/services/water-levels";
+
+import { setLiveWeatherPerformanceProfile } from "@/services/live-weather-overlay";
+import { setReportPingPerformanceMode } from "@/services/reports-client";
 
 export function LayerLegend({
   map,
@@ -47,27 +47,20 @@ export function LayerLegend({
   mode: MapMode;
 }) {
   const [activePeriod, setActivePeriod] = useState<string | null>(null);
-  const [overlays, setOverlays] = useState<Record<OverlayLayerId, boolean>>({
-    "par-boundary": true,
-  });
-  const [sceneLayers, setSceneLayers] = useState<Record<SceneLayerId, boolean>>(
-    () => ({ ...DEFAULT_SCENE_VISIBILITY }),
-  );
-  const [terrainExaggeration, setTerrainExaggerationValue] = useState(
-    DEFAULT_TERRAIN_EXAGGERATION,
-  );
-  const [selectedPreset, setSelectedPreset] = useState<ScenePresetId>("ncr");
   const [sceneSummary, setSceneSummary] = useState<SceneSummary | null>(null);
   const [sceneStatus, setSceneStatus] = useState<SceneStatus>(null);
   const [expanded, setExpanded] = useState(true);
   const [floodPacks, setFloodPacks] = useState<FloodHazardPack[]>([]);
-  const [criticalFacilitiesOnly, setCriticalFacilitiesOnly] = useState(false);
-  const [animationsEnabled, setAnimationsEnabled] = useState(true);
+  const [waterLevelsActive, setWaterLevelsActive] = useState(false);
+  const [waterLevelsLoading, setWaterLevelsLoading] = useState(false);
+  const [waterLevelsError, setWaterLevelsError] = useState<string | null>(null);
   const [floodVizSettings, setFloodVizSettings] =
     useState<FloodVisualizationSettings>(() => ({
       ...DEFAULT_FLOOD_VISUALIZATION_SETTINGS,
       wireframeColors: {
-        ...DEFAULT_FLOOD_VISUALIZATION_SETTINGS.wireframeColors,
+        low: DEFAULT_FLOOD_VISUALIZATION_SETTINGS.waterColor,
+        medium: DEFAULT_FLOOD_VISUALIZATION_SETTINGS.waterColor,
+        high: DEFAULT_FLOOD_VISUALIZATION_SETTINGS.waterColor,
       },
     }));
 
@@ -75,6 +68,7 @@ export function LayerLegend({
     () => getFloodReturnPeriods(floodPacks),
     [floodPacks],
   );
+  const hazardReadyPeriod = returnPeriods[0] ?? null;
 
   useEffect(() => {
     if (!map) return;
@@ -111,21 +105,52 @@ export function LayerLegend({
   useEffect(() => {
     if (!map) return;
     for (const o of OVERLAY_LAYERS) {
-      setOverlayVisibility(map, o.id, overlays[o.id]);
+      setOverlayVisibility(map, o.id, o.id === "par-boundary");
     }
-  }, [map, overlays]);
+  }, [map]);
 
   useEffect(() => {
     if (!map) return;
-    for (const layer of SCENE_LAYERS) {
-      setSceneLayerVisibility(map, layer.id, mode === "3d" && sceneLayers[layer.id]);
+    if (!waterLevelsActive) {
+      setWaterLevelsVisibility(map, false);
+      return;
     }
-  }, [map, mode, sceneLayers]);
+
+    let cancelled = false;
+    setWaterLevelsLoading(true);
+    setWaterLevelsError(null);
+    fetchWaterLevels()
+      .then((payload) => {
+        if (cancelled) return;
+        renderWaterLevelsOnMap(map, payload.stations);
+        setWaterLevelsVisibility(map, true);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setWaterLevelsError((error as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setWaterLevelsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [map, waterLevelsActive]);
 
   useEffect(() => {
     if (!map) return;
-    setTerrainExaggeration(map, terrainExaggeration);
-  }, [map, terrainExaggeration]);
+    const sceneVisible = mode === "3d";
+    setSceneLayerVisibility(map, "hillshade", sceneVisible);
+    setSceneLayerVisibility(map, "roads", sceneVisible);
+    setSceneLayerVisibility(map, "critical-facilities", sceneVisible);
+    setSceneLayerVisibility(map, "buildings", false);
+  }, [map, mode]);
+
+  useEffect(() => {
+    if (!map) return;
+    setTerrainExaggeration(map, 0.9);
+  }, [map]);
 
   // Propagate flood viz settings to the Three.js layer.
   // Changes that trigger a full geometry rebuild (wireframePolygonCount,
@@ -172,13 +197,14 @@ export function LayerLegend({
 
   useEffect(() => {
     if (!map) return;
-    setFacilityPriorityFilter(map, criticalFacilitiesOnly ? 3 : 0);
-  }, [map, criticalFacilitiesOnly]);
+    setSceneAnimationsEnabled(map, false);
+  }, [map]);
 
   useEffect(() => {
     if (!map) return;
-    setSceneAnimationsEnabled(map, animationsEnabled);
-  }, [map, animationsEnabled]);
+    setLiveWeatherPerformanceProfile(map, "performance");
+    setReportPingPerformanceMode(map, "performance");
+  }, [map]);
 
   useEffect(() => {
     const onSummary = (event: Event) => {
@@ -216,32 +242,41 @@ export function LayerLegend({
             </div>
             <div className="space-y-0.5">
               <LayerRadio
-                label="None"
-                checked={activePeriod === null}
-                onClick={() => setActivePeriod(null)}
+                label="Flood Projections"
+                checked={activePeriod !== null}
+                onClick={() =>
+                  setActivePeriod((current) =>
+                    current === null ? hazardReadyPeriod : null,
+                  )
+                }
+                disabled={!hazardReadyPeriod}
+                swatch={FLOOD_LEVEL_STYLE.medium.color}
               />
-              {returnPeriods.length === 0 ? (
+              <LayerRadio
+                label="Water Levels"
+                checked={waterLevelsActive}
+                onClick={() => setWaterLevelsActive((current) => !current)}
+                swatch="#38bdf8"
+              />
+              {!hazardReadyPeriod ? (
                 <div className="px-1.5 py-1 text-[11px] text-aeris-muted italic">
                   Loading flood hazard packs…
                 </div>
-              ) : (
-                returnPeriods.map((period) => (
-                  <LayerRadio
-                    key={period}
-                    label={formatReturnPeriodLabel(period)}
-                    swatch={FLOOD_LEVEL_STYLE.medium.color}
-                    checked={activePeriod === period}
-                    onClick={() => setActivePeriod(period)}
-                  />
-                ))
-              )}
+              ) : null}
+              {waterLevelsLoading ? (
+                <div className="px-1.5 py-1 text-[11px] text-aeris-muted italic">
+                  Loading water level stations…
+                </div>
+              ) : null}
+              {waterLevelsError ? (
+                <div className="px-1.5 py-1 text-[11px] text-aeris-warn">
+                  Water levels unavailable right now.
+                </div>
+              ) : null}
             </div>
             {activePeriod && (
               <FloodHazardDetails
                 map={map}
-                period={activePeriod}
-                packs={floodPacks}
-                impact={sceneSummary?.floodImpact}
               />
             )}
           </div>
@@ -253,163 +288,52 @@ export function LayerLegend({
             />
           )}
 
-          <div>
-            <div className="text-[10px] text-aeris-muted uppercase tracking-wider mb-1">
-              Overlays
-            </div>
-            <div className="space-y-0.5">
-              {OVERLAY_LAYERS.map((o) => (
-                <LayerCheckbox
-                  key={o.id}
-                  label={o.label}
-                  swatch={o.swatch}
-                  checked={overlays[o.id]}
-                  onChange={(value) =>
-                    setOverlays((prev) => ({ ...prev, [o.id]: value }))
-                  }
-                />
-              ))}
-            </div>
-          </div>
-
-          {mode === "3d" && (
-            <div>
-              <div className="text-[10px] text-aeris-muted uppercase tracking-wider mb-1">
-                3D Scene
-              </div>
-              <div className="mb-1.5 rounded border border-aeris-border/50 bg-aeris-bg/35 px-2 py-1 text-[10px] leading-snug text-aeris-muted">
-                Building shells use 30% fill with 100% wireframe outlines for
-                clearer flood patch and facility context.
-              </div>
-              <div className="space-y-0.5">
-                {SCENE_LAYERS.map((layer) => (
-                  <LayerCheckbox
-                    key={layer.id}
-                    label={layer.label}
-                    swatch={layer.swatch}
-                    checked={sceneLayers[layer.id]}
-                    onChange={(value) =>
-                      setSceneLayers((prev) => ({ ...prev, [layer.id]: value }))
-                    }
-                  />
-                ))}
-              </div>
-
-              {sceneLayers["critical-facilities"] && (
-                <div className="mt-2 pt-2 border-t border-aeris-border/60">
-                  <label className="w-full flex items-center gap-2 px-1.5 py-1 rounded text-xs cursor-pointer hover:bg-aeris-elev">
-                    <input
-                      type="checkbox"
-                      checked={criticalFacilitiesOnly}
-                      onChange={(e) => setCriticalFacilitiesOnly(e.target.checked)}
-                      className="accent-aeris-accent"
-                    />
-                    <span className="flex-1 truncate text-aeris-text/90">
-                      Critical Only
-                    </span>
-                  </label>
-                  <div className="px-1.5 py-1 text-[10px] text-aeris-muted">
-                    {criticalFacilitiesOnly
-                      ? "Hospitals, Fire Stations, Evacuation Sites"
-                      : "All facility types"}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-2 pt-2 border-t border-aeris-border/60">
-                <label className="w-full flex items-center gap-2 px-1.5 py-1 rounded text-xs cursor-pointer hover:bg-aeris-elev">
-                  <input
-                    type="checkbox"
-                    checked={animationsEnabled}
-                    onChange={(e) => setAnimationsEnabled(e.target.checked)}
-                    className="accent-aeris-accent"
-                  />
-                  <span className="flex-1 truncate text-aeris-text/90">
-                    Animations
-                  </span>
-                </label>
-                <div className="px-1.5 py-1 text-[10px] text-aeris-muted">
-                  {animationsEnabled
-                    ? "Pin bobbing + flood pulse active"
-                    : "Disabled — lower GPU load"}
-                </div>
-              </div>
-
-              <div className="mt-2 space-y-1">
-                <div className="text-[10px] text-aeris-muted uppercase tracking-wider">
-                  Quick Views
-                </div>
-                <div className="grid grid-cols-2 gap-1">
-                  {SCENE_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => {
-                        if (!map) return;
-                        setSelectedPreset(preset.id);
-                        flyToScenePreset(map, preset.id);
-                      }}
-                      className={clsx(
-                        "rounded border px-2 py-1 text-[11px] text-left",
-                        selectedPreset === preset.id
-                          ? "border-aeris-accent/40 bg-aeris-accent/10 text-aeris-accent"
-                          : "border-aeris-border text-aeris-muted hover:text-aeris-text",
-                      )}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-2 space-y-1">
-                <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-aeris-muted">
-                  <span>Terrain exaggeration</span>
-                  <span>{terrainExaggeration.toFixed(2)}x</span>
-                </div>
-                <input
-                  type="range"
-                  min={0.8}
-                  max={2.4}
-                  step={0.05}
-                  value={terrainExaggeration}
-                  onChange={(event) =>
-                    setTerrainExaggerationValue(Number(event.target.value))
-                  }
-                  className="w-full accent-aeris-accent"
-                />
-              </div>
-
-              {sceneSummary && (
-                <div className="mt-2 rounded border border-aeris-border/70 bg-aeris-bg/50 px-2 py-1.5 text-[11px]">
-                  <div className="flex items-center justify-between text-aeris-muted">
-                    <span>Viewport context</span>
-                    <span>
-                      {new Date(sceneSummary.generatedAt).toLocaleTimeString("en-PH", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                  <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-1 text-aeris-text/90">
-                    <span>Buildings: {sceneSummary.buildingCount}</span>
-                    <span>Roads: {sceneSummary.roadCount}</span>
-                    <span>Facilities: {sceneSummary.facilityCount}</span>
-                  </div>
-                  <div className="mt-1 text-aeris-muted/80">
-                    Source: {sceneSummary.attribution}
-                  </div>
-                </div>
-              )}
-              {sceneStatus && (
-                <div className="mt-2 text-[11px] text-aeris-warn">
-                  {sceneStatus}
-                </div>
-              )}
-            </div>
+          {mode === "3d" && sceneStatus && (
+            <div className="text-[11px] text-aeris-warn">{sceneStatus}</div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+export function QuickViewsPanel({
+  map,
+}: {
+  map: MLMap | null;
+}) {
+  const [selectedPreset, setSelectedPreset] = useState<ScenePresetId>("ncr");
+
+  return (
+    <div className="panel-glass rounded-md overflow-hidden w-64">
+      <div className="px-2.5 py-1.5 border-b border-aeris-border">
+        <div className="text-[10px] text-aeris-muted uppercase tracking-wider">
+          Quick Views
+        </div>
+      </div>
+      <div className="px-2.5 py-2">
+        <div className="grid grid-cols-2 gap-1">
+          {SCENE_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => {
+                if (!map) return;
+                setSelectedPreset(preset.id);
+                flyToScenePreset(map, preset.id);
+              }}
+              className={clsx(
+                "rounded border px-2 py-1 text-[11px] text-left",
+                selectedPreset === preset.id
+                  ? "border-aeris-accent/40 bg-aeris-accent/10 text-aeris-accent"
+                  : "border-aeris-border text-aeris-muted hover:text-aeris-text",
+              )}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -418,19 +342,23 @@ function LayerRadio({
   label,
   swatch,
   checked,
+  disabled = false,
   onClick,
 }: {
   label: string;
   swatch?: string;
   checked: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       className={clsx(
         "w-full flex items-center gap-2 px-1.5 py-1 rounded text-xs text-left",
+        disabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
         checked
           ? "bg-aeris-accent/10 text-aeris-accent"
           : "text-aeris-text/90 hover:bg-aeris-elev",
@@ -455,146 +383,118 @@ function LayerRadio({
 
 function FloodHazardDetails({
   map,
-  period,
-  packs,
-  impact,
 }: {
   map: MLMap | null;
-  period: string;
-  packs: FloodHazardPack[];
-  impact?: SceneSummary["floodImpact"];
 }) {
-  const [visibleLevels, setVisibleLevels] = useState<
-    Record<"low" | "medium" | "high", boolean>
-  >({
-    low: true,
-    medium: true,
-    high: true,
-  });
+  const rainfallSteps = ["low", "medium", "high"] as const;
+  const [rainfallLevelIndex, setRainfallLevelIndex] = useState(1);
+  const selectedRainfallLevel = rainfallSteps[rainfallLevelIndex];
+
+  const visibleLevels = useMemo(
+    () => ({
+      low: rainfallLevelIndex >= 0,
+      medium: rainfallLevelIndex >= 1,
+      high: rainfallLevelIndex >= 2,
+    }),
+    [rainfallLevelIndex],
+  );
 
   useEffect(() => {
     if (!map) return;
     setFloodLevelFilter(map, visibleLevels);
   }, [map, visibleLevels]);
 
-  const matchingPacks = packs.filter((p) => p.returnPeriod === period);
-  const totalBuildings = impact
-    ? (visibleLevels.low ? impact.buildings.low : 0) +
-      (visibleLevels.medium ? impact.buildings.medium : 0) +
-      (visibleLevels.high ? impact.buildings.high : 0)
-    : 0;
-  const totalRoads = impact
-    ? (visibleLevels.low ? impact.roads.low : 0) +
-      (visibleLevels.medium ? impact.roads.medium : 0) +
-      (visibleLevels.high ? impact.roads.high : 0)
-    : 0;
-  const hasImpact = totalBuildings > 0 || totalRoads > 0;
   return (
     <div className="mt-2 pt-2 space-y-2 border-t border-aeris-border/60">
       <div className="space-y-0.5">
         <div className="text-[10px] text-aeris-muted uppercase tracking-wider">
-          Susceptibility
+          Rainfall
         </div>
-        {(["high", "medium", "low"] as const).map((level) => (
-          <button
-            key={level}
-            type="button"
-            onClick={() =>
-              setVisibleLevels((prev) => ({ ...prev, [level]: !prev[level] }))
-            }
-            className={clsx(
-              "w-full flex items-center gap-2 px-1.5 py-1 rounded text-[11px] text-left",
-              visibleLevels[level]
-                ? "text-aeris-text/90 hover:bg-aeris-elev"
-                : "text-aeris-text/40 hover:bg-aeris-elev",
-            )}
-          >
-            <span
-              className={clsx(
-                "inline-block w-3 h-3 rounded-sm",
-                !visibleLevels[level] && "opacity-40",
-              )}
-              style={{ background: FLOOD_LEVEL_STYLE[level].color }}
-            />
-            <span className="flex-1">{FLOOD_LEVEL_STYLE[level].label}</span>
-          </button>
-        ))}
-      </div>
-      {hasImpact && impact && (
-        <div className="space-y-0.5 rounded border border-aeris-border/60 bg-aeris-bg/40 px-2 py-1.5">
-          <div className="text-[10px] text-aeris-muted uppercase tracking-wider">
-            Affected in view
+        <div className="rounded border border-aeris-border/60 bg-aeris-bg/35 p-2 space-y-1.5">
+          <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-aeris-muted">
+            <span>Level</span>
+            <span>{FLOOD_LEVEL_STYLE[selectedRainfallLevel].label}</span>
           </div>
-          <ImpactRow
-            label="Buildings"
-            total={totalBuildings}
-            counts={impact.buildings}
-            visibleLevels={visibleLevels}
-          />
-          <ImpactRow
-            label="Roads"
-            total={totalRoads}
-            counts={impact.roads}
-            visibleLevels={visibleLevels}
+          <input
+            type="range"
+            min={0}
+            max={2}
+            step={1}
+            value={rainfallLevelIndex}
+            onChange={(event) => setRainfallLevelIndex(Number(event.target.value))}
+            className="w-full accent-aeris-accent"
+            aria-label="Rainfall level"
           />
         </div>
-      )}
-      {matchingPacks.length > 0 ? (
-        <Pill tone="ok">
-          MGB Flo-2D: {matchingPacks.map((p) => p.province).join(", ")}
-        </Pill>
-      ) : (
-        <Pill tone="warn">No packs loaded for this period</Pill>
-      )}
+      </div>
     </div>
   );
 }
 
-function ImpactRow({
-  label,
-  total,
-  counts,
-  visibleLevels,
-}: {
-  label: string;
-  total: number;
-  counts: { low: number; medium: number; high: number };
-  visibleLevels: Record<"low" | "medium" | "high", boolean>;
-}) {
-  return (
-    <div className="flex items-center justify-between text-[11px] text-aeris-text/90">
-      <span className="text-aeris-muted">{label}</span>
-      <span className="tabular-nums">
-        <span
-          style={{
-            color: FLOOD_LEVEL_STYLE.high.color,
-            opacity: visibleLevels.high ? 1 : 0.4,
-          }}
-        >
-          {counts.high}
-        </span>
-        <span className="text-aeris-muted">/</span>
-        <span
-          style={{
-            color: FLOOD_LEVEL_STYLE.medium.color,
-            opacity: visibleLevels.medium ? 1 : 0.4,
-          }}
-        >
-          {counts.medium}
-        </span>
-        <span className="text-aeris-muted">/</span>
-        <span
-          style={{
-            color: FLOOD_LEVEL_STYLE.low.color,
-            opacity: visibleLevels.low ? 1 : 0.4,
-          }}
-        >
-          {counts.low}
-        </span>
-        <span className="ml-1 text-aeris-muted">({total})</span>
-      </span>
-    </div>
-  );
+/** Fixed H/S/L for the water-color hue slider (stable, readable blues–cyans). */
+const WATER_COLOR_SLIDER_S = 0.72;
+const WATER_COLOR_SLIDER_L = 0.52;
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  const l = (max + min) / 2;
+  let s = 0;
+  if (d !== 0) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        break;
+      case g:
+        h = ((b - r) / d + 2) / 6;
+        break;
+      default:
+        h = ((r - g) / d + 4) / 6;
+        break;
+    }
+  }
+  return { h: h * 360, s, l };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const hh = ((h % 360) + 360) % 360;
+  const ss = Math.max(0, Math.min(1, s));
+  const ll = Math.max(0, Math.min(1, l));
+  const c = (1 - Math.abs(2 * ll - 1)) * ss;
+  const x = c * (1 - Math.abs(((hh / 60) % 2) - 1));
+  const m = ll - c / 2;
+  let rp = 0;
+  let gp = 0;
+  let bp = 0;
+  if (hh < 60) [rp, gp, bp] = [c, x, 0];
+  else if (hh < 120) [rp, gp, bp] = [x, c, 0];
+  else if (hh < 180) [rp, gp, bp] = [0, c, x];
+  else if (hh < 240) [rp, gp, bp] = [0, x, c];
+  else if (hh < 300) [rp, gp, bp] = [x, 0, c];
+  else [rp, gp, bp] = [c, 0, x];
+  const r = Math.round((rp + m) * 255);
+  const g = Math.round((gp + m) * 255);
+  const b = Math.round((bp + m) * 255);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
+function waterHueFromHex(hex: string): number {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 199;
+  return Math.round(rgbToHsl(rgb.r, rgb.g, rgb.b).h);
 }
 
 function FloodHazardSettings({
@@ -604,40 +504,35 @@ function FloodHazardSettings({
   settings: FloodVisualizationSettings;
   onSettingsChange: (settings: FloodVisualizationSettings) => void;
 }) {
-  const update = (patch: Partial<FloodVisualizationSettings>) => {
-    onSettingsChange({ ...settings, ...patch });
-  };
-  const updateWireColor = (level: keyof typeof FLOOD_LEVEL_STYLE, color: string) => {
+  const waterHue = useMemo(
+    () => waterHueFromHex(settings.waterColor),
+    [settings.waterColor],
+  );
+
+  const keepDefaultFloodVisuals = (
+    next: FloodVisualizationSettings,
+  ): void => {
     onSettingsChange({
-      ...settings,
-      wireframeColors: { ...settings.wireframeColors, [level]: color },
+      ...next,
+      edgeFadeDistance: DEFAULT_FLOOD_VISUALIZATION_SETTINGS.edgeFadeDistance,
+      edgeFadeOpacity: DEFAULT_FLOOD_VISUALIZATION_SETTINGS.edgeFadeOpacity,
+      wireframeEnabled: DEFAULT_FLOOD_VISUALIZATION_SETTINGS.wireframeEnabled,
+      wireframeThickness: DEFAULT_FLOOD_VISUALIZATION_SETTINGS.wireframeThickness,
+      wireframePolygonCount:
+        DEFAULT_FLOOD_VISUALIZATION_SETTINGS.wireframePolygonCount,
+      wireframeBrightness:
+        DEFAULT_FLOOD_VISUALIZATION_SETTINGS.wireframeBrightness,
+      wireframeColors: {
+        low: next.waterColor,
+        medium: next.waterColor,
+        high: next.waterColor,
+      },
     });
   };
 
   return (
     <div className="pt-2 border-t border-aeris-border/60">
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-[10px] text-aeris-muted uppercase tracking-wider">
-          Flood Hazard
-        </div>
-        <span className="text-[10px] text-aeris-muted">visuals</span>
-      </div>
       <div className="rounded border border-aeris-border/60 bg-aeris-bg/35 p-2 space-y-2">
-        <div className="text-[10px] leading-snug text-aeris-muted">
-          Customize water tiles, edge softness, and severity rims.
-        </div>
-
-        <label className="flex items-center justify-between gap-2 px-1.5 py-1 rounded text-[11px] text-aeris-text/90 hover:bg-aeris-elev">
-          <span>Water Color</span>
-          <input
-            type="color"
-            value={settings.waterColor}
-            onChange={(event) => update({ waterColor: event.target.value })}
-            className="h-5 w-8 rounded border border-aeris-border bg-transparent"
-            aria-label="Water color"
-          />
-        </label>
-
         <RangeControl
           label="Water Opacity"
           value={settings.waterOpacity}
@@ -645,85 +540,24 @@ function FloodHazardSettings({
           max={1}
           step={0.02}
           format={(value) => `${Math.round(value * 100)}%`}
-          onChange={(waterOpacity) => update({ waterOpacity })}
+          onChange={(waterOpacity) =>
+            keepDefaultFloodVisuals({ ...settings, waterOpacity })
+          }
         />
         <RangeControl
-          label="Edge Fade Distance"
-          value={settings.edgeFadeDistance}
-          min={10}
-          max={150}
-          step={5}
-          format={(value) => `${Math.round(value)}m`}
-          onChange={(edgeFadeDistance) => update({ edgeFadeDistance })}
-        />
-        <RangeControl
-          label="Edge Fade Opacity"
-          value={settings.edgeFadeOpacity}
+          label="Water Color"
+          value={waterHue}
           min={0}
-          max={1}
-          step={0.05}
-          format={(value) => `${Math.round(value * 100)}%`}
-          onChange={(edgeFadeOpacity) => update({ edgeFadeOpacity })}
+          max={360}
+          step={1}
+          format={(hue) => hslToHex(hue, WATER_COLOR_SLIDER_S, WATER_COLOR_SLIDER_L)}
+          onChange={(hue) =>
+            keepDefaultFloodVisuals({
+              ...settings,
+              waterColor: hslToHex(hue, WATER_COLOR_SLIDER_S, WATER_COLOR_SLIDER_L),
+            })
+          }
         />
-
-        <LayerCheckbox
-          label="Wireframe Indicator"
-          checked={settings.wireframeEnabled}
-          onChange={(wireframeEnabled) => update({ wireframeEnabled })}
-        />
-
-        <RangeControl
-          label="Wire Thickness"
-          value={settings.wireframeThickness}
-          min={0.1}
-          max={1.4}
-          step={0.05}
-          format={(value) => `${value.toFixed(2)}x`}
-          onChange={(wireframeThickness) => update({ wireframeThickness })}
-          disabled={!settings.wireframeEnabled}
-        />
-        <RangeControl
-          label="Wire Polygon Count"
-          value={settings.wireframePolygonCount}
-          min={10}
-          max={100}
-          step={5}
-          format={(value) => `${Math.round(value)}%`}
-          onChange={(wireframePolygonCount) => update({ wireframePolygonCount })}
-          disabled={!settings.wireframeEnabled}
-        />
-        <RangeControl
-          label="Wire Brightness"
-          value={settings.wireframeBrightness}
-          min={0.2}
-          max={1.8}
-          step={0.05}
-          format={(value) => `${Math.round(value * 100)}%`}
-          onChange={(wireframeBrightness) => update({ wireframeBrightness })}
-          disabled={!settings.wireframeEnabled}
-        />
-
-        <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-wider text-aeris-muted">
-            Wire Colors
-          </div>
-          {(["high", "medium", "low"] as const).map((level) => (
-            <label
-              key={level}
-              className="flex items-center justify-between gap-2 px-1.5 py-1 rounded text-[11px] text-aeris-text/90 hover:bg-aeris-elev"
-            >
-              <span>{level === "medium" ? "Med" : level[0].toUpperCase() + level.slice(1)}</span>
-              <input
-                type="color"
-                value={settings.wireframeColors[level]}
-                onChange={(event) => updateWireColor(level, event.target.value)}
-                disabled={!settings.wireframeEnabled}
-                className="h-5 w-8 rounded border border-aeris-border bg-transparent disabled:opacity-40"
-                aria-label={`${level} wireframe color`}
-              />
-            </label>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -769,32 +603,3 @@ function RangeControl({
   );
 }
 
-function LayerCheckbox({
-  label,
-  swatch,
-  checked,
-  onChange,
-}: {
-  label: string;
-  swatch?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="w-full flex items-center gap-2 px-1.5 py-1 rounded text-xs cursor-pointer hover:bg-aeris-elev">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="accent-aeris-accent"
-      />
-      {swatch && (
-        <span
-          className="inline-block w-3 h-3 rounded-sm"
-          style={{ background: swatch }}
-        />
-      )}
-      <span className="flex-1 truncate">{label}</span>
-    </label>
-  );
-}

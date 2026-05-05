@@ -5,6 +5,7 @@ import type React from "react";
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
 import type { Map as MLMap } from "maplibre-gl";
+import type { Address3DTarget } from "@/services/map-scene";
 
 const PanelSkeleton = () => (
   <div className="h-24 rounded-md border border-aeris-border bg-aeris-bg/60 px-3 text-[11px] text-aeris-muted inline-flex items-center gap-2">
@@ -36,6 +37,11 @@ const LocationInfoPanel = dynamic(
     })),
   { ssr: false, loading: PanelSkeleton },
 ) as React.ComponentType<{ map?: MLMap | null }>;
+type LocationInfoPanelProps = {
+  map?: MLMap | null;
+  onAddressSelect?: (target: Address3DTarget) => void | Promise<void>;
+};
+const TypedLocationInfoPanel = LocationInfoPanel as React.ComponentType<LocationInfoPanelProps>;
 
 type SubPanel = "webcams" | "news" | "location";
 
@@ -49,7 +55,13 @@ const SUB_PANELS: {
   { id: "location", label: "Location Info", hotkey: "C" },
 ];
 
-export function BottomPanel({ map }: { map?: MLMap | null }) {
+export function BottomPanel({
+  map,
+  onAddressSelect,
+}: {
+  map?: MLMap | null;
+  onAddressSelect?: (target: Address3DTarget) => void | Promise<void>;
+}) {
   const [collapsed, setCollapsed] = useState(false);
   const [openPanels, setOpenPanels] = useState<Record<SubPanel, boolean>>({
     webcams: true,
@@ -75,12 +87,12 @@ export function BottomPanel({ map }: { map?: MLMap | null }) {
   return (
     <div
       className={clsx(
-        "w-full border-t border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[height] duration-300",
+        "w-full border-t border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[height] duration-300 shadow-[0_-2px_14px_rgba(15,23,42,0.08)]",
         collapsed ? "h-8" : "h-[38vh] min-h-[200px] max-h-[500px]",
       )}
     >
       {/* Header bar */}
-      <div className="flex items-center justify-between px-3 h-8 border-b border-aeris-border shrink-0">
+      <div className="flex items-center justify-between px-3 h-8 border-b border-aeris-border shrink-0 bg-aeris-elev/35">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -151,7 +163,12 @@ export function BottomPanel({ map }: { map?: MLMap | null }) {
                 <div className="flex-1 overflow-y-auto p-2 min-h-0 md:h-full">
                   {sp.id === "webcams" && <LiveWebcamsPanel />}
                   {sp.id === "news" && <NewsLivestreamsPanel />}
-                  {sp.id === "location" && <LocationInfoPanel map={map} />}
+                  {sp.id === "location" && (
+                    <TypedLocationInfoPanel
+                      map={map}
+                      onAddressSelect={onAddressSelect}
+                    />
+                  )}
                 </div>
               )}
             </div>

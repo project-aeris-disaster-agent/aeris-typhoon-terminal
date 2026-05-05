@@ -41,13 +41,16 @@ export function NewsPanel() {
   return (
     <div className="space-y-2">
       <CardHeader
-        title="News Feed"
+        title="News Watch"
         trailing={<Pill tone="accent">{items.length}</Pill>}
       />
+      <p className="text-[10px] text-aeris-muted leading-snug">
+        Regional headlines and situational updates related to active weather.
+      </p>
       {error && <div className="text-xs text-aeris-danger">Error: {error}</div>}
       {!error && warnings.length > 0 && (
         <div className="text-xs text-aeris-warn">
-          Partial source failures: {warnings.join(" | ")}
+          Source note: {warnings.join(" | ")}
         </div>
       )}
       <FreshnessTag source="news" />

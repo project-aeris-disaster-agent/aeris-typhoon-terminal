@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { LayerLegend } from "./LayerLegend";
+import { LayerLegend, QuickViewsPanel } from "./LayerLegend";
 
 // Mock the manifest + pack fetches so the dynamic hazard radios render.
 // Two packs (Cebu + Metro Manila) lets us prove setActiveFloodPeriod flips
@@ -67,11 +67,16 @@ describe("LayerLegend", () => {
     const user = userEvent.setup();
     const map = createMapStub();
 
-    render(<LayerLegend map={map as never} mode="3d" />);
+    render(
+      <>
+        <QuickViewsPanel map={map as never} />
+        <LayerLegend map={map as never} mode="3d" />
+      </>,
+    );
 
     // Wait for the manifest to resolve and render the 5-yr radio.
     const floodButton = await screen.findByRole("button", {
-      name: "Flood (5-yr)",
+      name: "Flood Projections",
     });
 
     map.setLayoutProperty.mockClear();
@@ -144,32 +149,44 @@ describe("LayerLegend", () => {
     );
   });
 
-  it("updates viewport summary from the scene summary event payload", async () => {
-    render(<LayerLegend map={createMapStub() as never} mode="3d" />);
+  it("in 2D keeps flood halo/pattern hidden and shows fill+edge only", async () => {
+    const user = userEvent.setup();
+    const map = createMapStub();
 
-    fireEvent(
-      window,
-      new CustomEvent("aeris:scene-summary", {
-        detail: {
-          buildingCount: 4,
-          roadCount: 2,
-          facilityCount: 5,
-          facilitiesByCategory: { hospital: 1, evacuation: 1 },
-          floodImpact: {
-            buildings: { low: 0, medium: 0, high: 0 },
-            roads: { low: 0, medium: 0, high: 0 },
-          },
-          generatedAt: "2026-04-24T00:00:00.000Z",
-          attribution: "OpenStreetMap contributors / static scene pack",
-        },
-      }),
-    );
+    render(<LayerLegend map={map as never} mode="2d" />);
 
-    expect(await screen.findByText("Viewport context")).toBeInTheDocument();
-    expect(screen.getByText("Buildings: 4")).toBeInTheDocument();
-    expect(screen.getByText("Roads: 2")).toBeInTheDocument();
-    expect(screen.getByText("Facilities: 5")).toBeInTheDocument();
-    expect(screen.getByText(/Source: OpenStreetMap contributors/)).toBeInTheDocument();
+    const floodButton = await screen.findByRole("button", {
+      name: "Flood Projections",
+    });
+    map.setLayoutProperty.mockClear();
+    await user.click(floodButton);
+
+    await waitFor(() => {
+      for (const id of [
+        "lyr-flood-halo-cebu-5yr",
+        "lyr-flood-pattern-cebu-5yr",
+        "lyr-flood-halo-metromanila-5yr",
+        "lyr-flood-pattern-metromanila-5yr",
+      ]) {
+        expect(map.setLayoutProperty).toHaveBeenCalledWith(
+          id,
+          "visibility",
+          "none",
+        );
+      }
+      for (const id of [
+        "lyr-flood-fill-cebu-5yr",
+        "lyr-flood-edge-cebu-5yr",
+        "lyr-flood-fill-metromanila-5yr",
+        "lyr-flood-edge-metromanila-5yr",
+      ]) {
+        expect(map.setLayoutProperty).toHaveBeenCalledWith(
+          id,
+          "visibility",
+          "visible",
+        );
+      }
+    });
   });
 
   it("shows a scene warning message when the 3D context pack fails", async () => {

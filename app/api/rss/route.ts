@@ -1,9 +1,10 @@
-import { jsonOk } from "@/lib/api-response";
+import { jsonOkNoStore } from "@/lib/api-response";
 import { withBreaker, CircuitOpenError } from "@/lib/circuit-breaker";
 import { FEEDS, TYPHOON_KEYWORDS } from "@/config/feeds";
 
 export const runtime = "edge";
-export const revalidate = 600;
+/** Always run fresh aggregation; avoid CDN / Data Cache staleness on top of the client poll. */
+export const dynamic = "force-dynamic";
 
 type NewsItem = {
   id: string;
@@ -45,7 +46,7 @@ export async function GET() {
     )
     .slice(0, 80);
 
-  return jsonOk({ items: filtered, errors }, 600);
+  return jsonOkNoStore({ items: filtered, errors });
 }
 
 function isRelevant(title: string): boolean {
@@ -55,15 +56,21 @@ function isRelevant(title: string): boolean {
 
 async function fetchFeed(url: string, source: string): Promise<NewsItem[]> {
   const res = await fetch(url, {
-    next: { revalidate: 600 },
+    cache: "no-store",
     headers: {
       "user-agent":
-        "Mozilla/5.0 (compatible; AERIS-Typhoon-Terminal/1.0; +https://aeris.ph)",
-      accept: "application/rss+xml, application/xml, text/xml",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (compatible; AERIS-Typhoon-Terminal/1.0)",
+      accept: "application/rss+xml, application/xml, text/xml, */*;q=0.8",
     },
   });
   if (!res.ok) throw new Error(`${source} ${res.status}`);
   const xml = await res.text();
+  if (
+    xml.includes("Access Denied") ||
+    (xml.trimStart().startsWith("<!DOCTYPE") && !xml.includes("<rss"))
+  ) {
+    throw new Error(`${source}: blocked or non-RSS response (WAF/HTML)`);
+  }
   return parseRss(xml, source);
 }
 

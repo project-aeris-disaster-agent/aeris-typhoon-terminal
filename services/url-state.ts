@@ -5,19 +5,20 @@ import type { PanelId } from "@/config/panels";
 
 /**
  * Encode the map viewport and open panels to URL hash for shareable links.
- * Format: #v=lng,lat,zoom&p=hazard,alerts
+ * Format: #v=lng,lat,zoom&p=typhoon,alerts
  */
 
 type UrlState = {
   viewport: { lng: number; lat: number; zoom: number } | null;
   panels: PanelId[] | null;
   mode: "2d" | "3d" | null;
+  theme: "light" | "dark" | null;
 };
 
 export function readUrlState(): UrlState {
-  if (typeof window === "undefined") return { viewport: null, panels: null, mode: null };
+  if (typeof window === "undefined") return { viewport: null, panels: null, mode: null, theme: null };
   const hash = window.location.hash.slice(1);
-  if (!hash) return { viewport: null, panels: null, mode: null };
+  if (!hash) return { viewport: null, panels: null, mode: null, theme: null };
   const params = new URLSearchParams(hash);
   let viewport: UrlState["viewport"] = null;
   const v = params.get("v");
@@ -34,7 +35,9 @@ export function readUrlState(): UrlState {
   const panels = p ? (p.split(",").filter(Boolean) as PanelId[]) : null;
   const m = params.get("m");
   const mode = m === "3d" ? "3d" : m === "2d" ? "2d" : null;
-  return { viewport, panels, mode };
+  const t = params.get("t");
+  const theme = t === "dark" ? "dark" : t === "light" ? "light" : null;
+  return { viewport, panels, mode, theme };
 }
 
 export function writeUrlState(state: Partial<UrlState>) {
@@ -54,6 +57,9 @@ export function writeUrlState(state: Partial<UrlState>) {
   }
   if (next.mode) {
     params.set("m", next.mode);
+  }
+  if (next.theme) {
+    params.set("t", next.theme);
   }
   const hash = params.toString();
   const newUrl = `${window.location.pathname}${window.location.search}${hash ? "#" + hash : ""}`;

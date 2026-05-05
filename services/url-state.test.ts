@@ -10,6 +10,7 @@ describe("url-state", () => {
       viewport: null,
       panels: null,
       mode: null,
+      theme: null,
     });
 
     window.history.replaceState(null, "", "http://localhost/#v=nope&p=&m=weird");
@@ -18,6 +19,7 @@ describe("url-state", () => {
       viewport: null,
       panels: null,
       mode: null,
+      theme: null,
     });
   });
 
@@ -25,24 +27,42 @@ describe("url-state", () => {
     window.history.replaceState(
       null,
       "",
-      "http://localhost/#v=123.456,10.987,8.25&p=hazard,alerts&m=3d",
+      "http://localhost/#v=123.456,10.987,8.25&p=typhoon,alerts&m=3d",
     );
 
     expect(readUrlState()).toEqual({
       viewport: { lng: 123.456, lat: 10.987, zoom: 8.25 },
-      panels: ["hazard", "alerts"],
+      panels: ["typhoon", "alerts"],
       mode: "3d",
+      theme: null,
     });
   });
 
+  it("parses theme from hash and preserves it on write", () => {
+    window.history.replaceState(null, "", "http://localhost/#m=2d&t=dark");
+
+    expect(readUrlState()).toEqual({
+      viewport: null,
+      panels: null,
+      mode: "2d",
+      theme: "dark",
+    });
+
+    writeUrlState({
+      viewport: { lng: 120.123, lat: 14.678, zoom: 9.5 },
+    });
+
+    expect(window.location.hash).toContain("t=dark");
+  });
+
   it("merges with the current hash and rounds viewport precision on write", () => {
-    window.history.replaceState(null, "", "http://localhost/#p=hazard,alerts&m=2d");
+    window.history.replaceState(null, "", "http://localhost/#p=typhoon,alerts&m=2d");
 
     writeUrlState({
       viewport: { lng: 123.45678, lat: 10.98765, zoom: 8.234 },
     });
 
-    expect(window.location.hash).toBe("#v=123.457%2C10.988%2C8.23&p=hazard%2Calerts&m=2d");
+    expect(window.location.hash).toBe("#v=123.457%2C10.988%2C8.23&p=typhoon%2Calerts&m=2d");
   });
 
   it("syncs map move events to the URL and applies an initial viewport", () => {

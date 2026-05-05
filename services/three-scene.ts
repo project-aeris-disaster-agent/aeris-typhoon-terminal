@@ -65,6 +65,11 @@ export type FloodPolygonFeature = GeoJSON.Feature<
 export type ThreeSceneHandle = {
   layer: CustomLayerInterface;
   setBuildings(features: BuildingFeature[]): void;
+  /**
+   * Append building features incrementally without rebuilding existing city
+   * geometry. Used by progressive hydration batches to keep interactions smooth.
+   */
+  appendBuildings(features: BuildingFeature[]): void;
   setFacilities(features: FacilityFeature[]): void;
   setBuildingsVisible(visible: boolean): void;
   setFacilitiesVisible(visible: boolean): void;
@@ -102,7 +107,33 @@ export type ThreeSceneHandle = {
    * Defaults to ``true``.
    */
   setAnimationsEnabled(enabled: boolean): void;
+  awaitNextRebuild(): Promise<void>;
   dispose(): void;
+};
+
+type BucketKey = "normal" | FloodLevel;
+type PreprocessedBuilding = {
+  bucket: BucketKey;
+  minHeight: number;
+  depth: number;
+  points: Array<[number, number]>;
+  color: [number, number, number];
+};
+
+type BuildingPreprocessRequest = {
+  taskId: number;
+  origin: { x: number; y: number };
+  meterScale: number;
+  floodHighlightActive: boolean;
+  floodVisibleLevels: Record<FloodLevel, boolean>;
+  buildingPalette: Record<string, number>;
+  floodBuildingPalette: Record<FloodLevel, number>;
+  features: BuildingFeature[];
+};
+
+type BuildingPreprocessResponse = {
+  taskId: number;
+  items: PreprocessedBuilding[];
 };
 
 // NOAH-inspired neutral greys with slight warm/cool bias per type so the
@@ -193,8 +224,11 @@ const FACILITY_DEFAULT_HEIGHT = 14; // fallback building height when no polygon 
 // transparent-sort flicker against the flood decal under camera rotation.
 const BUILDING_WIREFRAME_OPACITY = 1.0;
 const BUILDING_WIREFRAME_COLOR = 0x3b4454;
-/** Critical facility extrusions (3D); reduced 30% vs former 0.75 for more transparency. */
-const FACILITY_BUILDING_OPACITY = 0.75 * 0.7;
+const BUILDING_OPACITY_NORMAL = 0.45;
+const BUILDING_OPACITY_FLOODED = 0.96;
+const FACILITY_BUILDING_OPACITY = 0.92;
+const NORMAL_BUILDING_FADE_DURATION_MS = 260;
+const NORMAL_BUILDING_FADE_START_OPACITY = 0.06;
 
 const DEFAULT_MAP_CENTER: [number, number] = [122, 12.5];
 
@@ -250,35 +284,141 @@ function pointInRing(
   return inside;
 }
 
+function isPointInsidePolygonRings(
+  rings: GeoJSON.Position[][],
+  lng: number,
+  lat: number,
+): boolean {
+  const outer = rings[0];
+  if (!outer) return false;
+  if (!bboxContains(outer, lng, lat) || !pointInRing(outer, lng, lat)) return false;
+  for (const hole of rings.slice(1)) {
+    if (hole.length < 4) continue;
+    if (bboxContains(hole, lng, lat) && pointInRing(hole, lng, lat)) return false;
+  }
+  return true;
+}
+
+type RingBBox = { minX: number; minY: number; maxX: number; maxY: number };
+
+function ringBBox(ring: GeoJSON.Position[]): RingBBox {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const c of ring) {
+    if (c[0] < minX) minX = c[0];
+    if (c[0] > maxX) maxX = c[0];
+    if (c[1] < minY) minY = c[1];
+    if (c[1] > maxY) maxY = c[1];
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function bboxesIntersect(a: RingBBox, b: RingBBox): boolean {
+  return !(
+    a.maxX < b.minX ||
+    a.minX > b.maxX ||
+    a.maxY < b.minY ||
+    a.minY > b.maxY
+  );
+}
+
+type IndexedBuilding = {
+  feature: BuildingFeature;
+  ring: GeoJSON.Position[];
+  bbox: RingBBox;
+  cx: number;
+  cy: number;
+};
+
+type BuildingSpatialIndex = {
+  cells: Map<string, IndexedBuilding[]>;
+  all: IndexedBuilding[];
+  cellSize: number;
+};
+
+const BUILDING_INDEX_CELL_DEGREES = 0.003;
+
+function buildBuildingSpatialIndex(
+  buildings: BuildingFeature[],
+  cellSize = BUILDING_INDEX_CELL_DEGREES,
+): BuildingSpatialIndex {
+  const cells = new Map<string, IndexedBuilding[]>();
+  const all: IndexedBuilding[] = [];
+  for (const feature of buildings) {
+    const ring = feature.geometry.coordinates[0];
+    if (!ring || ring.length < 4) continue;
+    const bbox = ringBBox(ring);
+    let cx = 0;
+    let cy = 0;
+    for (const c of ring) {
+      cx += c[0];
+      cy += c[1];
+    }
+    cx /= ring.length;
+    cy /= ring.length;
+    const item: IndexedBuilding = { feature, ring, bbox, cx, cy };
+    all.push(item);
+    const minCellX = Math.floor(bbox.minX / cellSize);
+    const maxCellX = Math.floor(bbox.maxX / cellSize);
+    const minCellY = Math.floor(bbox.minY / cellSize);
+    const maxCellY = Math.floor(bbox.maxY / cellSize);
+    for (let ix = minCellX; ix <= maxCellX; ix++) {
+      for (let iy = minCellY; iy <= maxCellY; iy++) {
+        const id = `${ix}:${iy}`;
+        const list = cells.get(id);
+        if (list) list.push(item);
+        else cells.set(id, [item]);
+      }
+    }
+  }
+  return { cells, all, cellSize };
+}
+
 /**
  * Return the building polygon that contains the facility point, or the
  * nearest building by centroid distance within ``maxDist`` degrees (~100 m).
- * Returns null if the pack has no matching polygon.
+ * Uses a coarse grid index to avoid scanning all polygons on every lookup.
  */
 function findBuildingPolygon(
   lng: number,
   lat: number,
-  buildings: BuildingFeature[],
+  index: BuildingSpatialIndex,
   maxDist = 0.001,
 ): BuildingFeature | null {
-  // Pass 1 — exact containment
-  for (const b of buildings) {
-    const ring = b.geometry.coordinates[0];
-    if (!ring || ring.length < 4) continue;
-    if (bboxContains(ring, lng, lat) && pointInRing(ring, lng, lat)) return b;
+  const centerX = Math.floor(lng / index.cellSize);
+  const centerY = Math.floor(lat / index.cellSize);
+  const nearby = new Set<IndexedBuilding>();
+  for (let ox = -1; ox <= 1; ox++) {
+    for (let oy = -1; oy <= 1; oy++) {
+      const cell = index.cells.get(`${centerX + ox}:${centerY + oy}`);
+      if (!cell) continue;
+      for (const candidate of cell) nearby.add(candidate);
+    }
   }
-  // Pass 2 — nearest centroid fallback (catches cases where the facility
-  // node sits just outside the building polygon due to OSM imprecision)
+  const candidates = nearby.size > 0 ? Array.from(nearby) : index.all;
+
+  for (const item of candidates) {
+    if (
+      lng < item.bbox.minX ||
+      lng > item.bbox.maxX ||
+      lat < item.bbox.minY ||
+      lat > item.bbox.maxY
+    ) {
+      continue;
+    }
+    if (pointInRing(item.ring, lng, lat)) return item.feature;
+  }
+
   let best: BuildingFeature | null = null;
   let bestDist = maxDist;
-  for (const b of buildings) {
-    const ring = b.geometry.coordinates[0];
-    if (!ring || ring.length < 4) continue;
-    let cx = 0, cy = 0;
-    for (const c of ring) { cx += c[0]; cy += c[1]; }
-    cx /= ring.length; cy /= ring.length;
-    const d = Math.hypot(lng - cx, lat - cy);
-    if (d < bestDist) { bestDist = d; best = b; }
+  for (const item of candidates) {
+    const d = Math.hypot(lng - item.cx, lat - item.cy);
+    if (d < bestDist) {
+      bestDist = d;
+      best = item.feature;
+    }
   }
   return best;
 }
@@ -309,6 +449,54 @@ function perfEnd(label: string, start: number, extra?: Record<string, number>) {
   console.debug(parts.join("  "));
 }
 
+function preprocessBuildingsOnMainThread(
+  features: BuildingFeature[],
+  toModelXY: (lng: number, lat: number) => [number, number],
+  floodHighlight: boolean,
+  visibleLevels: Record<FloodLevel, boolean>,
+): PreprocessedBuilding[] {
+  const out: PreprocessedBuilding[] = [];
+  for (const feat of features) {
+    const props = feat.properties ?? {};
+    const kind = typeof props.kind === "string" ? props.kind : "building";
+    const height = Math.max(4, typeof props.height === "number" ? props.height : 10);
+    const minHeight = Math.max(
+      0,
+      typeof props.minHeight === "number" ? props.minHeight : 0,
+    );
+    const depth = Math.max(2, height - minHeight);
+    const ring = feat.geometry.coordinates[0];
+    if (!ring || ring.length < 4) continue;
+
+    const points: Array<[number, number]> = [];
+    for (let i = 0; i < ring.length; i++) {
+      const [x, y] = toModelXY(ring[i][0], ring[i][1]);
+      points.push([x, y]);
+    }
+    if (points.length < 4) continue;
+
+    const floodLevel = props.floodLevel as FloodLevel | undefined;
+    const isFlooded =
+      floodHighlight &&
+      floodLevel !== undefined &&
+      visibleLevels[floodLevel];
+    const baseColor = isFlooded
+      ? FLOOD_BUILDING_PALETTE[floodLevel!]
+      : (BUILDING_PALETTE[kind] ?? BUILDING_PALETTE.building);
+    const seed = Math.abs(Math.sin(ring[0][0] * 127.1 + ring[0][1] * 311.7));
+    const jitter = isFlooded ? 1 : 0.9 + ((seed * 1000) % 1) * 0.2;
+    const threeColor = new THREE.Color(baseColor).multiplyScalar(jitter);
+    out.push({
+      bucket: isFlooded ? (floodLevel as FloodLevel) : "normal",
+      minHeight,
+      depth,
+      points,
+      color: [threeColor.r, threeColor.g, threeColor.b],
+    });
+  }
+  return out;
+}
+
 export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   let renderer: THREE.WebGLRenderer | null = null;
   let scene: THREE.Scene | null = null;
@@ -337,6 +525,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   const floodLineMeshes: LineSegments2[] = [];
   const floodLevelMeshes: Partial<Record<FloodLevel, THREE.Group>> = {};
   const facilityPointers: Array<{ pointer: THREE.Group; baseZ: number }> = [];
+  const normalBuildingMaterials: THREE.MeshStandardMaterial[] = [];
 
   let origin: maplibregl.MercatorCoordinate | null = null;
   let meterScale = 1;
@@ -362,6 +551,22 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   let pendingBuildings: BuildingFeature[] = [];
   let pendingFacilities: FacilityFeature[] = [];
   let pendingFloodFeatures: FloodPolygonFeature[] = [];
+  let buildingDataEpoch = 0;
+  let pendingRetintRebuild = false;
+  let fadeNormalBuildingsOnNextRebuild = false;
+  let normalBuildingFadeStartAt: number | null = null;
+  const rebuildWaiters: Array<() => void> = [];
+  let buildingPreprocessWorker: Worker | null = null;
+  let buildingWorkerTaskSeq = 0;
+  const buildingWorkerCallbacks = new Map<
+    number,
+    (items: PreprocessedBuilding[]) => void
+  >();
+
+  function resolveRebuildWaiters() {
+    if (rebuildWaiters.length === 0) return;
+    for (const resolve of rebuildWaiters.splice(0)) resolve();
+  }
 
   // --- Animation control -------------------------------------------------
   // Facility pins bob and flood patches pulse every frame while animations
@@ -421,12 +626,65 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     return [dx, dy];
   }
 
+  function ensureBuildingPreprocessWorker() {
+    if (buildingPreprocessWorker || typeof window === "undefined") return;
+    try {
+      buildingPreprocessWorker = new Worker(
+        new URL("../workers/building-preprocess.worker.ts", import.meta.url),
+        { type: "module" },
+      );
+      buildingPreprocessWorker.onmessage = (event: MessageEvent<BuildingPreprocessResponse>) => {
+        const payload = event.data;
+        const resolve = buildingWorkerCallbacks.get(payload.taskId);
+        if (!resolve) return;
+        buildingWorkerCallbacks.delete(payload.taskId);
+        resolve(payload.items ?? []);
+      };
+    } catch {
+      buildingPreprocessWorker = null;
+    }
+  }
+
+  function preprocessBuildingsChunk(
+    features: BuildingFeature[],
+  ): Promise<PreprocessedBuilding[]> {
+    if (!origin || features.length === 0) return Promise.resolve([]);
+    ensureBuildingPreprocessWorker();
+    if (!buildingPreprocessWorker) {
+      return Promise.resolve(
+        preprocessBuildingsOnMainThread(
+          features,
+          toModelXY,
+          floodHighlightActive,
+          floodVisibleLevels,
+        ),
+      );
+    }
+    const taskId = ++buildingWorkerTaskSeq;
+    const req: BuildingPreprocessRequest = {
+      taskId,
+      origin: { x: origin.x, y: origin.y },
+      meterScale,
+      floodHighlightActive,
+      floodVisibleLevels,
+      buildingPalette: BUILDING_PALETTE,
+      floodBuildingPalette: FLOOD_BUILDING_PALETTE,
+      features,
+    };
+    return new Promise<PreprocessedBuilding[]>((resolve) => {
+      buildingWorkerCallbacks.set(taskId, resolve);
+      buildingPreprocessWorker?.postMessage(req);
+    });
+  }
+
   function clearGroups() {
     if (!scene) return;
     scene.remove(buildingGroup);
     scene.remove(facilityGroup);
     scene.remove(floodGroup);
     facilityPointers.length = 0;
+    normalBuildingMaterials.length = 0;
+    normalBuildingFadeStartAt = null;
     for (const d of disposables.splice(0)) {
       try {
         d.dispose();
@@ -461,6 +719,103 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     floodGroup.visible = floodPolygonsVisible;
   }
 
+  function appendPreprocessedBuildings(items: PreprocessedBuilding[]) {
+    if (items.length === 0) return;
+    const t0 = perfStart("appendPreprocessedBuildings");
+    type Bucket = {
+      geoms: THREE.BufferGeometry[];
+      edgeGeoms: THREE.BufferGeometry[];
+      isFlooded: boolean;
+      level?: FloodLevel;
+    };
+    const buckets: Map<BucketKey, Bucket> = new Map();
+
+    for (const item of items) {
+      if (item.points.length < 4) continue;
+      const shape = new THREE.Shape();
+      shape.moveTo(item.points[0][0], item.points[0][1]);
+      for (let i = 1; i < item.points.length - 1; i++) {
+        shape.lineTo(item.points[i][0], item.points[i][1]);
+      }
+      shape.closePath();
+      const geom = new THREE.ExtrudeGeometry(shape, {
+        depth: item.depth,
+        bevelEnabled: false,
+        curveSegments: 1,
+      });
+      if (item.minHeight > 0) geom.translate(0, 0, item.minHeight);
+      const vertexCount = geom.attributes.position.count;
+      const colors = new Float32Array(vertexCount * 3);
+      for (let i = 0; i < vertexCount; i++) {
+        colors[i * 3] = item.color[0];
+        colors[i * 3 + 1] = item.color[1];
+        colors[i * 3 + 2] = item.color[2];
+      }
+      geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      const edges = new THREE.EdgesGeometry(geom, 25);
+      let bucket = buckets.get(item.bucket);
+      if (!bucket) {
+        const isFlooded = item.bucket !== "normal";
+        bucket = {
+          geoms: [],
+          edgeGeoms: [],
+          isFlooded,
+          level: isFlooded ? (item.bucket as FloodLevel) : undefined,
+        };
+        buckets.set(item.bucket, bucket);
+      }
+      bucket.geoms.push(geom);
+      bucket.edgeGeoms.push(edges);
+    }
+
+    for (const bucket of buckets.values()) {
+      if (bucket.geoms.length === 0) continue;
+      const merged = BufferGeometryUtils.mergeGeometries(bucket.geoms, false);
+      for (const g of bucket.geoms) g.dispose();
+      const emissiveColor = bucket.isFlooded
+        ? FLOOD_BUILDING_PALETTE[bucket.level!]
+        : 0x000000;
+      const sharedMat = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        emissive: emissiveColor,
+        emissiveIntensity: bucket.isFlooded ? 0.25 : 0,
+        metalness: 0.05,
+        roughness: bucket.isFlooded ? 0.6 : 0.85,
+        flatShading: false,
+        depthTest: true,
+        depthWrite: true,
+        ...(bucket.isFlooded
+          ? { transparent: true, opacity: BUILDING_OPACITY_FLOODED }
+          : { transparent: true, opacity: BUILDING_OPACITY_NORMAL }),
+      });
+      if (!bucket.isFlooded) normalBuildingMaterials.push(sharedMat);
+      const mesh = new THREE.Mesh(merged, sharedMat);
+      mesh.renderOrder = BUILDING_RENDER_ORDER;
+      buildingGroup.add(mesh);
+
+      const edgeColor = bucket.isFlooded
+        ? FLOOD_BUILDING_PALETTE[bucket.level!]
+        : BUILDING_WIREFRAME_COLOR;
+      const edgeMat = new THREE.LineBasicMaterial({
+        color: edgeColor,
+        transparent: true,
+        opacity: BUILDING_WIREFRAME_OPACITY,
+        depthTest: true,
+        depthWrite: false,
+      });
+      const mergedEdges = BufferGeometryUtils.mergeGeometries(
+        bucket.edgeGeoms,
+        false,
+      );
+      for (const g of bucket.edgeGeoms) g.dispose();
+      const edgeMesh = new THREE.LineSegments(mergedEdges, edgeMat);
+      edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
+      buildingGroup.add(edgeMesh);
+      disposables.push(merged, sharedMat, mergedEdges, edgeMat);
+    }
+    perfEnd("appendPreprocessedBuildings", t0, { items: items.length });
+  }
+
   function buildBuildings() {
     // Draw-call batching: every building used to produce its own
     // `ExtrudeGeometry` + `MeshStandardMaterial` + `EdgesGeometry` +
@@ -471,7 +826,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     // `BufferGeometry` with vertex colors baked in for per-building
     // tone jitter. Result: O(flood_buckets) draw calls for the whole city,
     // regardless of how many buildings the pack contains.
-    type BucketKey = "normal" | FloodLevel;
     type Bucket = {
       geoms: THREE.BufferGeometry[];
       edgeGeoms: THREE.BufferGeometry[];
@@ -580,11 +934,19 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         metalness: 0.05,
         roughness: bucket.isFlooded ? 0.6 : 0.85,
         flatShading: false,
+        depthTest: true,
+        depthWrite: true,
         ...(bucket.isFlooded
-          ? { transparent: true, opacity: 0.65 } // affected buildings
-          : { transparent: true, opacity: 0.4 } // unaffected buildings
+          ? { transparent: true, opacity: BUILDING_OPACITY_FLOODED }
+          : {
+              transparent: true,
+              opacity: fadeNormalBuildingsOnNextRebuild
+                ? NORMAL_BUILDING_FADE_START_OPACITY
+                : BUILDING_OPACITY_NORMAL,
+            }
         ),
       });
+      if (!bucket.isFlooded) normalBuildingMaterials.push(sharedMat);
       const mesh = new THREE.Mesh(merged, sharedMat);
       mesh.renderOrder = BUILDING_RENDER_ORDER;
       buildingGroup.add(mesh);
@@ -597,6 +959,8 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         color: edgeColor,
         transparent: true,
         opacity: BUILDING_WIREFRAME_OPACITY,
+        depthTest: true,
+        depthWrite: false,
       });
 
       const mergedEdges = BufferGeometryUtils.mergeGeometries(
@@ -610,9 +974,15 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
 
       disposables.push(merged, sharedMat, mergedEdges, edgeMat);
     }
+    normalBuildingFadeStartAt =
+      fadeNormalBuildingsOnNextRebuild && normalBuildingMaterials.length > 0
+        ? performance.now()
+        : null;
+    fadeNormalBuildingsOnNextRebuild = false;
   }
 
   function buildFacilities() {
+    const buildingIndex = buildBuildingSpatialIndex(pendingBuildings);
     for (const feat of pendingFacilities) {
       const props = feat.properties ?? {};
       const priority = typeof props.priority === "number" ? props.priority : 0;
@@ -629,7 +999,9 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       // Try to find the actual property polygon from the buildings pack so
       // the facility renders with its true footprint outline, not a generic box.
       const matchedBuilding = findBuildingPolygon(
-        facilityLng, facilityLat, pendingBuildings,
+        facilityLng,
+        facilityLat,
+        buildingIndex,
       );
 
       let buildingHeight: number;
@@ -682,6 +1054,8 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
           emissiveIntensity: 0.25,
           roughness: 0.65,
           metalness: 0.1,
+          depthTest: true,
+          depthWrite: true,
           transparent: true,
           opacity: FACILITY_BUILDING_OPACITY,
           // polygonOffset keeps facility footprint (coplanar with matching OSM
@@ -699,6 +1073,8 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
           color,
           transparent: true,
           opacity: BUILDING_WIREFRAME_OPACITY,
+          depthTest: true,
+          depthWrite: false,
         });
         const edgeMesh = new THREE.LineSegments(edgesGeom, edgeMat);
         edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
@@ -716,6 +1092,8 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
           emissiveIntensity: 0.25,
           roughness: 0.65,
           metalness: 0.1,
+          depthTest: true,
+          depthWrite: true,
           transparent: true,
           opacity: FACILITY_BUILDING_OPACITY,
         });
@@ -730,6 +1108,8 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
           color,
           transparent: true,
           opacity: BUILDING_WIREFRAME_OPACITY,
+          depthTest: true,
+          depthWrite: false,
         });
         const boxEdgeMesh = new THREE.LineSegments(boxEdgesGeom, boxEdgeMat);
         boxEdgeMesh.position.copy(boxMesh.position);
@@ -855,10 +1235,18 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     z: number,
   ): THREE.BufferGeometry | null {
     const geometries: THREE.BufferGeometry[] = [];
+    const buildingRings = pendingBuildings
+      .map((f) => {
+        const ring = f.geometry.coordinates[0];
+        if (!ring || ring.length < 4) return null;
+        return { ring, bbox: ringBBox(ring) };
+      })
+      .filter((item): item is { ring: GeoJSON.Position[]; bbox: RingBBox } => item !== null);
 
     const addPolygon = (rings: GeoJSON.Position[][]) => {
       const outerRing = rings[0];
       if (!outerRing || outerRing.length < 4) return;
+      const outerBbox = ringBBox(outerRing);
 
       const shape = new THREE.Shape();
       const [x0, y0] = toXY(outerRing[0][0], outerRing[0][1]);
@@ -876,6 +1264,24 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         hole.moveTo(hx0, hy0);
         for (let i = 1; i < holeRing.length - 1; i++) {
           const [x, y] = toXY(holeRing[i][0], holeRing[i][1]);
+          hole.lineTo(x, y);
+        }
+        hole.closePath();
+        shape.holes.push(hole);
+      }
+
+      // Clip flood patches around building footprints by carving building
+      // outers as additional holes when fully inside the flood polygon.
+      for (const building of buildingRings) {
+        if (!bboxesIntersect(outerBbox, building.bbox)) continue;
+        const sample = building.ring[0];
+        if (!sample) continue;
+        if (!isPointInsidePolygonRings(rings, sample[0], sample[1])) continue;
+        const hole = new THREE.Path();
+        const [hx0, hy0] = toXY(building.ring[0][0], building.ring[0][1]);
+        hole.moveTo(hx0, hy0);
+        for (let i = 1; i < building.ring.length - 1; i++) {
+          const [x, y] = toXY(building.ring[i][0], building.ring[i][1]);
           hole.lineTo(x, y);
         }
         hole.closePath();
@@ -1110,6 +1516,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
 
   function rebuild() {
     if (!scene) return;
+    buildingDataEpoch += 1;
     const t0 = perfStart("rebuild");
     clearGroups();
     if (pendingBuildings.length === 0 && pendingFacilities.length === 0) {
@@ -1117,6 +1524,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       scene.add(buildingGroup);
       scene.add(facilityGroup);
       rebuildFlood();
+      resolveRebuildWaiters();
       perfEnd("rebuild", t0, { buildings: 0, facilities: 0 });
       return;
     }
@@ -1124,8 +1532,16 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     origin = computeOrigin();
     meterScale = origin.meterInMercatorCoordinateUnits();
 
+    const buildBuildingsT0 = perfStart("rebuild.buildings");
     buildBuildings();
+    perfEnd("rebuild.buildings", buildBuildingsT0, {
+      buildings: pendingBuildings.length,
+    });
+    const buildFacilitiesT0 = perfStart("rebuild.facilities");
     buildFacilities();
+    perfEnd("rebuild.facilities", buildFacilitiesT0, {
+      facilities: pendingFacilities.length,
+    });
 
     scene.add(buildingGroup);
     scene.add(facilityGroup);
@@ -1133,6 +1549,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     // geo-coordinates project into the same model space.
     rebuildFlood();
     mapRef.current?.triggerRepaint();
+    resolveRebuildWaiters();
     perfEnd("rebuild", t0, {
       buildings: pendingBuildings.length,
       facilities: pendingFacilities.length,
@@ -1178,8 +1595,10 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   function scheduleRebuild() {
     if (!scene) return;
     if (rebuildHandle !== null) return;
+    const t0 = perfStart("scheduleRebuild.wait");
     rebuildHandle = idle.schedule(() => {
       rebuildHandle = null;
+      perfEnd("scheduleRebuild.wait", t0);
       // A flood-only rebuild may have been queued behind us — if it fires
       // first it'll no-op against the same scene, but cancelling it here
       // avoids a redundant pass immediately after a full rebuild.
@@ -1196,8 +1615,10 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     if (floodRebuildHandle !== null) return;
     // If a full rebuild is already pending it will cover the flood pass.
     if (rebuildHandle !== null) return;
+    const t0 = perfStart("scheduleRebuildFlood.wait");
     floodRebuildHandle = idle.schedule(() => {
       floodRebuildHandle = null;
+      perfEnd("scheduleRebuildFlood.wait", t0);
       rebuildFlood();
     });
   }
@@ -1249,6 +1670,26 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
 
       const animateFlood = shouldAnimateFlood();
       if (animateFlood) applyFloodOpacity(time, true);
+      let animateNormalFade = false;
+      if (normalBuildingFadeStartAt !== null && normalBuildingMaterials.length > 0) {
+        const elapsed = performance.now() - normalBuildingFadeStartAt;
+        const t = Math.min(1, elapsed / NORMAL_BUILDING_FADE_DURATION_MS);
+        const eased = t * (2 - t);
+        const opacity =
+          NORMAL_BUILDING_FADE_START_OPACITY +
+          (BUILDING_OPACITY_NORMAL - NORMAL_BUILDING_FADE_START_OPACITY) * eased;
+        for (const material of normalBuildingMaterials) {
+          material.opacity = opacity;
+        }
+        if (t >= 1) {
+          normalBuildingFadeStartAt = null;
+          for (const material of normalBuildingMaterials) {
+            material.opacity = BUILDING_OPACITY_NORMAL;
+          }
+        } else {
+          animateNormalFade = true;
+        }
+      }
 
       projectionMatrix.fromArray(matrix);
       meterScaleVec.set(meterScale, -meterScale, meterScale);
@@ -1264,7 +1705,11 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
 
       // Only force the next frame when something actually animated — avoids
       // a continuous 60 fps repaint loop for purely static flood/building scenes.
-      if (animateFlood || (animationsEnabled && facilityPointers.length > 0)) {
+      if (
+        animateFlood ||
+        animateNormalFade ||
+        (animationsEnabled && facilityPointers.length > 0)
+      ) {
         mapRef.current?.triggerRepaint();
       }
 
@@ -1297,6 +1742,9 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       floodFillMaterials.length = 0;
       floodLineMaterials.length = 0;
       floodLineMeshes.length = 0;
+      buildingWorkerCallbacks.clear();
+      buildingPreprocessWorker?.terminate();
+      buildingPreprocessWorker = null;
       renderer?.dispose();
       renderer = null;
       scene = null;
@@ -1307,8 +1755,33 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   return {
     layer,
     setBuildings(features) {
-      pendingBuildings = features ?? [];
+      const nextBuildings = features ?? [];
+      fadeNormalBuildingsOnNextRebuild = nextBuildings.length > pendingBuildings.length;
+      pendingBuildings = nextBuildings;
+      buildingDataEpoch += 1;
+      pendingRetintRebuild = false;
       if (scene) scheduleRebuild();
+    },
+    appendBuildings(features) {
+      const next = features ?? [];
+      if (next.length === 0) return;
+      const targetEpoch = buildingDataEpoch;
+      pendingBuildings = pendingBuildings.concat(next);
+      if (!scene || !origin) {
+        scheduleRebuild();
+        return;
+      }
+      const t0 = perfStart("appendBuildings.preprocess");
+      void preprocessBuildingsChunk(next).then((items) => {
+        perfEnd("appendBuildings.preprocess", t0, {
+          features: next.length,
+          items: items.length,
+        });
+        if (targetEpoch !== buildingDataEpoch) return;
+        if (!scene || !origin) return;
+        appendPreprocessedBuildings(items);
+        mapRef.current?.triggerRepaint();
+      });
     },
     setFacilities(features) {
       pendingFacilities = features ?? [];
@@ -1317,6 +1790,10 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     setBuildingsVisible(v) {
       buildingsVisible = v;
       buildingGroup.visible = v;
+      if (v && pendingRetintRebuild && scene) {
+        pendingRetintRebuild = false;
+        scheduleRebuild();
+      }
       mapRef.current?.triggerRepaint();
     },
     setFacilitiesVisible(v) {
@@ -1332,7 +1809,10 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     setFloodHighlight(active) {
       if (floodHighlightActive === active) return;
       floodHighlightActive = active;
-      if (scene) scheduleRebuild();
+      if (scene) {
+        if (buildingsVisible) scheduleRebuild();
+        else pendingRetintRebuild = true;
+      }
     },
     setFloodPolygons(features) {
       pendingFloodFeatures = features ?? [];
@@ -1352,7 +1832,10 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       }
       // Re-colour 3D buildings so flood-tinted structures in the toggled
       // level revert to their normal grey (or re-appear when turned back on).
-      if (floodHighlightActive && scene) scheduleRebuild();
+      if (floodHighlightActive && scene) {
+        if (buildingsVisible) scheduleRebuild();
+        else pendingRetintRebuild = true;
+      }
     },
     setFloodPolygonOpacity(opacity) {
       floodPolygonOpacity = opacity;
@@ -1387,6 +1870,11 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       }
       mapRef.current?.triggerRepaint();
     },
+    awaitNextRebuild() {
+      return new Promise<void>((resolve) => {
+        rebuildWaiters.push(resolve);
+      });
+    },
     dispose() {
       for (const d of disposables.splice(0)) {
         try {
@@ -1406,6 +1894,9 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       floodFillMaterials.length = 0;
       floodLineMaterials.length = 0;
       floodLineMeshes.length = 0;
+      buildingWorkerCallbacks.clear();
+      buildingPreprocessWorker?.terminate();
+      buildingPreprocessWorker = null;
       renderer?.dispose();
       renderer = null;
       scene = null;

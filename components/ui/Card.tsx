@@ -15,7 +15,7 @@ export function Card({
   return (
     <div
       className={clsx(
-        "panel-glass rounded-lg",
+        "panel-glass rounded-xl",
         dense ? "p-2" : "p-3",
         className,
       )}
@@ -59,7 +59,7 @@ export function Pill({
   className?: string;
 }) {
   const tones: Record<string, string> = {
-    default: "bg-aeris-elev text-aeris-muted border-aeris-border",
+    default: "bg-aeris-elev/80 text-aeris-muted border-aeris-border",
     ok: "bg-aeris-ok/10 text-aeris-ok border-aeris-ok/30",
     warn: "bg-aeris-warn/10 text-aeris-warn border-aeris-warn/30",
     danger: "bg-aeris-danger/10 text-aeris-danger border-aeris-danger/30",

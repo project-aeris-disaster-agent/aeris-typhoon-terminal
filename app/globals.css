@@ -3,7 +3,31 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
+  --aeris-bg: 244 248 252;
+  --aeris-surface: 255 255 255;
+  --aeris-elev: 233 240 248;
+  --aeris-border: 210 223 238;
+  --aeris-text: 16 34 52;
+  --aeris-muted: 95 115 136;
+  --aeris-accent: 22 149 255;
+  --aeris-warn: 199 123 0;
+  --aeris-danger: 216 64 91;
+  --aeris-ok: 15 159 110;
+}
+
+.dark {
   color-scheme: dark;
+  --aeris-bg: 10 14 19;
+  --aeris-surface: 17 22 29;
+  --aeris-elev: 24 31 40;
+  --aeris-border: 38 47 59;
+  --aeris-text: 232 238 245;
+  --aeris-muted: 139 152 169;
+  --aeris-accent: 0 217 255;
+  --aeris-warn: 255 184 77;
+  --aeris-danger: 255 77 109;
+  --aeris-ok: 61 220 151;
 }
 
 html,
@@ -16,6 +40,7 @@ body {
   font-family: "Inter", system-ui, sans-serif;
   font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
+  transition: background-color 180ms ease, color 180ms ease;
 }
 
 #__next,
@@ -28,7 +53,8 @@ body > div {
 }
 
 .maplibregl-ctrl-attrib {
-  @apply !bg-aeris-surface/80 !text-aeris-muted;
+  @apply !text-aeris-muted border !border-aeris-border;
+  background-color: rgb(var(--aeris-surface) / 0.9) !important;
   backdrop-filter: blur(6px);
 }
 
@@ -54,7 +80,8 @@ body > div {
 }
 
 .panel-glass {
-  @apply bg-aeris-surface/90 backdrop-blur-md border border-aeris-border;
+  @apply backdrop-blur-md border border-aeris-border shadow-sm;
+  background-color: rgb(var(--aeris-surface) / 0.92);
 }
 
 .hud-text {

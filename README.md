@@ -16,6 +16,7 @@ incident reporting in one live terminal.
 - **Live reports** — open crowdsourced incident submission with rate limiting, spam filtering, 72h TTL
 - **News** — virtualized RSS aggregation from major Philippine outlets
 - **Live cams** — embedded PAGASA, NDRRMC, MMDA, and news livestreams
+- **AGENT AERIS companion** — native in-panel AI chat proxy with compact dashboard context and optional VRM avatar
 - **PWA offline** — service worker caches hazard tiles, last-known alerts, and queues reports when offline
 
 ## Tech Stack
@@ -81,6 +82,16 @@ npm start
 Environment variables are documented in `.env.example`. All are **optional** —
 the app functions without any credentials; incident report storage falls back
 to an in-memory map in development.
+
+For AGENT AERIS chat, set `AERIS_CHAT_API_BASE_URL` to the free/self-hosted
+AERIS CHAT LLM backend base URL. If that backend requires a bearer token, set
+`AERIS_CHAT_API_KEY`; otherwise the dashboard will also use `LLM_API_KEY` when
+present.
+
+The VRM avatar loader looks for `public/models/aeris-companion.vrm`. If the
+model is absent or fails to load, the companion keeps chat available and shows a
+standby visual. Use only a free-license VRM model and document its source before
+shipping a bundled asset.
 
 ## Project Structure
 
@@ -171,4 +182,5 @@ reference, not a direct code lift.
 - **GDACS** — alerts and typhoon tracks
 - **PAGASA / DOST** — official advisories
 - **OpenStreetMap** contributors — base map
+- **three-vrm** — VRM loading/rendering for AGENT AERIS avatar
 - Philippine news outlets — RSS feeds under fair use

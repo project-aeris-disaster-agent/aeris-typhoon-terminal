@@ -7,9 +7,12 @@ import {
   useEffect,
   type KeyboardEvent,
 } from "react";
-import { CardHeader, Pill } from "../ui/Card";
+import Image from "next/image";
+import { Pill } from "../ui/Card";
 import { clsx } from "clsx";
 import type { Map as MLMap } from "maplibre-gl";
+import type { Address3DTarget } from "@/services/map-scene";
+import { AgentAerisPanel } from "./AgentAerisPanel";
 import {
   fetchRegions,
   fetchProvincesByRegion,
@@ -158,7 +161,15 @@ function SelectDropdown<T extends { code: string; name: string }>({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function LocationInfoPanel({ map }: { map?: MLMap | null }) {
+export function LocationInfoPanel({
+  map,
+  onAddressSelect,
+}: {
+  map?: MLMap | null;
+  onAddressSelect?: (target: Address3DTarget) => void | Promise<void>;
+}) {
+  const [activeTab, setActiveTab] = useState<"location" | "agent">("agent");
+
   // ── Search state ────────────────────────────────────────────────
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
@@ -273,9 +284,10 @@ export function LocationInfoPanel({ map }: { map?: MLMap | null }) {
       setDropdownOpen(false);
       setSelectedPsgc(null);
       flyTo(loc.lat, loc.lon);
+      void onAddressSelect?.({ lat: loc.lat, lon: loc.lon });
       inputRef.current?.blur();
     },
-    [flyTo],
+    [flyTo, onAddressSelect],
   );
 
   // ── Keyboard navigation ──────────────────────────────────────────
@@ -384,7 +396,10 @@ export function LocationInfoPanel({ map }: { map?: MLMap | null }) {
         if (res.ok) {
           const data = (await res.json()) as NominatimResult[];
           if (data[0]) {
-            flyTo(parseFloat(data[0].lat), parseFloat(data[0].lon));
+            const lat = parseFloat(data[0].lat);
+            const lon = parseFloat(data[0].lon);
+            flyTo(lat, lon);
+            void onAddressSelect?.({ lat, lon });
           }
         }
       } catch {
@@ -398,6 +413,7 @@ export function LocationInfoPanel({ map }: { map?: MLMap | null }) {
       municipalityCode,
       provinceCode,
       flyTo,
+      onAddressSelect,
     ],
   );
 
@@ -412,10 +428,41 @@ export function LocationInfoPanel({ map }: { map?: MLMap | null }) {
     .join(" · ");
 
   return (
-    <div className="flex flex-col h-full min-h-0 gap-2.5">
+    <div className="relative flex flex-col h-full min-h-0">
+      <div className="relative z-20 mb-2 flex rounded-lg border border-aeris-border/60 bg-aeris-bg/40 p-1">
+        <button
+          type="button"
+          onClick={() => setActiveTab("location")}
+          className={clsx(
+            "hud-text flex-1 rounded-md px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors",
+            activeTab === "location"
+              ? "bg-aeris-accent/10 text-aeris-accent border border-aeris-accent/30"
+              : "text-aeris-muted hover:text-aeris-text",
+          )}
+          aria-pressed={activeTab === "location"}
+        >
+          Location Info
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("agent")}
+          className={clsx(
+            "hud-text flex-1 rounded-md px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors",
+            activeTab === "agent"
+              ? "bg-aeris-accent/10 text-aeris-accent border border-aeris-accent/30"
+              : "text-aeris-muted hover:text-aeris-text",
+          )}
+          aria-pressed={activeTab === "agent"}
+        >
+          AGENT AERIS
+        </button>
+      </div>
+
+      {activeTab === "location" && (
+        <div className="relative z-10 flex flex-col gap-2.5 flex-1 min-h-0 pb-[28rem] sm:pb-[30rem] md:pb-[36rem]">
       {/* Header with gradient accent */}
       <div className="px-1">
-        <div className="flex items-start justify-between gap-2 mb-1">
+        <div className="flex items-start justify-between gap-3 mb-1">
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
               <svg
@@ -441,9 +488,9 @@ export function LocationInfoPanel({ map }: { map?: MLMap | null }) {
               PSA PSGC · Barangay Census Data
             </div>
           </div>
-          <Pill tone="accent" className="shrink-0">
-            PSA
-          </Pill>
+          <div className="shrink-0">
+            <Pill tone="accent">PSA</Pill>
+          </div>
         </div>
       </div>
 
@@ -806,6 +853,48 @@ export function LocationInfoPanel({ map }: { map?: MLMap | null }) {
               Search any barangay, city, or municipality to view census data and jump to the map
             </p>
           </div>
+        </div>
+      )}
+      </div>
+      )}
+
+      {activeTab === "agent" && (
+        <AgentAerisPanel
+          selectedLocation={
+            selected
+              ? {
+                  name: selected.name,
+                  breadcrumb: selected.breadcrumb,
+                  lat: selected.lat,
+                  lon: selected.lon,
+                  type: selected.type,
+                }
+              : selectedPsgc
+                ? {
+                    name: selectedPsgc.name,
+                    breadcrumb: psgcBreadcrumb,
+                    type: "Barangay",
+                    psgcCode:
+                      selectedPsgc.psgc10DigitCode ?? selectedPsgc.code,
+                    population: selectedPsgc.population,
+                  }
+                : null
+          }
+          isActive={activeTab === "agent"}
+        />
+      )}
+
+      {activeTab === "location" && (
+        <div className="pointer-events-none absolute bottom-0 right-0 z-0 select-none">
+          <Image
+            src="/assets/AERIS_char.svg"
+            alt=""
+            width={850}
+            height={1150}
+            className="h-auto w-[320px] sm:w-[380px] md:w-[420px] object-contain opacity-90 drop-shadow-[0_8px_28px_rgba(15,23,42,0.2)]"
+            loading="lazy"
+            aria-hidden
+          />
         </div>
       )}
     </div>

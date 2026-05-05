@@ -14,7 +14,7 @@ import {
  */
 export function FreshnessTag({
   source,
-  label = "Last successful refresh",
+  label = "Updated",
   hideWhenEmpty = true,
 }: {
   source: string;
@@ -33,9 +33,14 @@ export function FreshnessTag({
         : "text-aeris-ok";
 
   return (
-    <div className="text-[10px] text-aeris-muted/80">
-      <span className={`inline-block mr-1 ${toneClass}`}>{tone}</span>
-      {label} {formatAge(freshness?.lastOk)}
+    <div className="flex items-center gap-1.5 text-[10px] text-aeris-muted/80">
+      <span
+        className={`inline-block h-1.5 w-1.5 rounded-full ${toneClass}`}
+        aria-hidden
+      />
+      <span>
+        {label} {formatAge(freshness?.lastOk)}
+      </span>
     </div>
   );
 }

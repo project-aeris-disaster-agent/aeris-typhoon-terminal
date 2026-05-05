@@ -24,13 +24,6 @@ const TyphoonTrackerPanel = dynamic(
     })),
   { ssr: false, loading: PanelSkeleton },
 );
-const HazardMapPanel = dynamic(
-  () =>
-    import("./panels/HazardMapPanel").then((m) => ({
-      default: m.HazardMapPanel,
-    })),
-  { ssr: false, loading: PanelSkeleton },
-);
 const SatelliteRadarPanel = dynamic(
   () =>
     import("./panels/SatelliteRadarPanel").then((m) => ({
@@ -49,13 +42,6 @@ const AlertsFeedPanel = dynamic(
   () =>
     import("./panels/AlertsFeedPanel").then((m) => ({
       default: m.AlertsFeedPanel,
-    })),
-  { ssr: false, loading: PanelSkeleton },
-);
-const LiveReportsPanel = dynamic(
-  () =>
-    import("./panels/LiveReportsPanel").then((m) => ({
-      default: m.LiveReportsPanel,
     })),
   { ssr: false, loading: PanelSkeleton },
 );
@@ -106,7 +92,7 @@ export function Sidebar({ map, onCollapsedChange }: SidebarProps) {
   return (
     <aside
       className={clsx(
-        "flex flex-col md:border-l border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[width]",
+        "flex flex-col md:border-l border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[width] shadow-sm",
         // Mutually exclusive widths: both md:w-[360px] and md:w-10 would compile
         // with equal specificity — the wider rule can win and block minimize.
         "w-full",
@@ -114,7 +100,7 @@ export function Sidebar({ map, onCollapsedChange }: SidebarProps) {
         collapsed ? "h-auto md:h-full" : "h-full",
       )}
     >
-      <div className="flex items-center justify-between px-2 py-1.5 border-b border-aeris-border">
+      <div className="flex items-center justify-between px-2 py-1.5 border-b border-aeris-border bg-aeris-elev/35">
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
@@ -205,11 +191,11 @@ function PanelWrapper({
   children: React.ReactNode;
 }) {
   return (
-    <section className="border border-aeris-border rounded-md bg-aeris-bg/40">
+    <section className="border border-aeris-border rounded-lg bg-aeris-bg/35 shadow-sm">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-2 py-1.5 hud-text text-aeris-muted hover:text-aeris-text"
+        className="w-full flex items-center justify-between px-2 py-1.5 hud-text text-aeris-muted hover:bg-aeris-elev/40 hover:text-aeris-text transition-colors"
         aria-expanded={open}
         aria-controls={`panel-${id}`}
       >
@@ -234,16 +220,12 @@ function PanelBody({ id, map }: { id: PanelId; map: MLMap | null }) {
   switch (id) {
     case "typhoon":
       return <TyphoonTrackerPanel map={map} />;
-    case "hazard":
-      return <HazardMapPanel map={map} />;
     case "satellite":
       return <SatelliteRadarPanel map={map} />;
     case "forecast":
       return <ForecastPanel />;
     case "alerts":
       return <AlertsFeedPanel />;
-    case "reports":
-      return <LiveReportsPanel map={map} />;
     case "news":
       return <NewsPanel />;
     default:

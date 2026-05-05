@@ -15,7 +15,6 @@ export function AlertsFeedPanel() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,8 +23,11 @@ export function AlertsFeedPanel() {
         const result: AlertsFetchResult = await fetchAlerts();
         if (!cancelled) {
           setAlerts(result.alerts);
-          setWarnings(result.warnings);
-          setError(result.alerts.length === 0 && result.warnings.length > 0 ? result.warnings.join(" | ") : null);
+          setError(
+            result.alerts.length === 0 && result.warnings.length > 0
+              ? "Official advisory sources are temporarily unavailable."
+              : null,
+          );
         }
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
@@ -54,13 +56,19 @@ export function AlertsFeedPanel() {
         }
       />
 
+      <p className="text-[10px] text-aeris-muted leading-snug">
+        Official advisories from GDACS and PAGASA.
+      </p>
+
       {error && (
         <div className="text-xs text-aeris-danger">Error: {error}</div>
       )}
-      {!error && warnings.length > 0 && (
-        <div className="text-xs text-aeris-warn">
-          Degraded sources: {warnings.join(" | ")}
-        </div>
+      {!loading && !error && alerts.length === 0 && (
+        <p className="text-[10px] text-aeris-muted leading-snug">
+          No official advisories matched. This can happen when there are no
+          Philippines-tagged GDACS events and PAGASA has no current tropical
+          bulletin updates.
+        </p>
       )}
       <FreshnessTag source="alerts" />
 
@@ -82,11 +90,20 @@ function renderAlertRow(a: Alert) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
             <Pill tone={alertSeverityTone(a.severity)}>{a.severity}</Pill>
-            <span className="text-aeris-muted text-[10px] font-mono">
-              {a.source}
-            </span>
+            <span className="text-aeris-muted text-[10px] font-mono">{a.source}</span>
           </div>
-          <div className="font-medium text-aeris-text truncate">{a.title}</div>
+          {a.url ? (
+            <a
+              href={a.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-aeris-text truncate hover:underline underline-offset-2"
+            >
+              {a.title}
+            </a>
+          ) : (
+            <div className="font-medium text-aeris-text truncate">{a.title}</div>
+          )}
           <div className="text-aeris-muted line-clamp-2 mt-0.5">
             {a.summary}
           </div>
@@ -95,7 +112,7 @@ function renderAlertRow(a: Alert) {
       <div className="text-[10px] text-aeris-muted/80 font-mono mt-1">
         {a.issuedAt
           ? new Date(a.issuedAt).toLocaleString()
-          : "Issued time unavailable"}
+          : "Source timestamp unavailable"}
       </div>
     </div>
   );

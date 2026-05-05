@@ -11,16 +11,16 @@ const config: Config = {
     extend: {
       colors: {
         aeris: {
-          bg: "#0a0e13",
-          surface: "#11161d",
-          elev: "#181f28",
-          border: "#262f3b",
-          text: "#e8eef5",
-          muted: "#8b98a9",
-          accent: "#00d9ff",
-          warn: "#ffb84d",
-          danger: "#ff4d6d",
-          ok: "#3ddc97",
+          bg: "rgb(var(--aeris-bg) / <alpha-value>)",
+          surface: "rgb(var(--aeris-surface) / <alpha-value>)",
+          elev: "rgb(var(--aeris-elev) / <alpha-value>)",
+          border: "rgb(var(--aeris-border) / <alpha-value>)",
+          text: "rgb(var(--aeris-text) / <alpha-value>)",
+          muted: "rgb(var(--aeris-muted) / <alpha-value>)",
+          accent: "rgb(var(--aeris-accent) / <alpha-value>)",
+          warn: "rgb(var(--aeris-warn) / <alpha-value>)",
+          danger: "rgb(var(--aeris-danger) / <alpha-value>)",
+          ok: "rgb(var(--aeris-ok) / <alpha-value>)",
         },
       },
       fontFamily: {

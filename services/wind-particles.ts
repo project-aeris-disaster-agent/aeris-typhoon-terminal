@@ -36,6 +36,7 @@ function windDrawParams(zoomRaw: number) {
 }
 
 type Bounds = { west: number; south: number; east: number; north: number };
+export type WindPerformanceProfile = "quality" | "balanced" | "performance";
 
 function viewBounds(map: MLMap): Bounds {
   const b = map.getBounds();
@@ -93,6 +94,10 @@ export class WindParticleCanvas {
   private readonly n: number;
   private readonly maxAge: number;
   private readonly container: HTMLElement;
+  private ctx: CanvasRenderingContext2D | null = null;
+  private frameIntervalMs = 1000 / 60;
+  private lastFrameAt = 0;
+  private performanceProfile: WindPerformanceProfile = "balanced";
 
   constructor(map: MLMap, options?: { particleCount?: number }) {
     this.map = map;
@@ -115,6 +120,7 @@ export class WindParticleCanvas {
     });
     this.container.appendChild(this.canvas);
     this.resize();
+    this.setPerformanceProfile("balanced");
     this.seedAll();
     map.on("resize", this.resize);
   }
@@ -141,6 +147,17 @@ export class WindParticleCanvas {
     else this.start();
   }
 
+  setPerformanceProfile(profile: WindPerformanceProfile) {
+    this.performanceProfile = profile;
+    if (profile === "quality") {
+      this.frameIntervalMs = 1000 / 60;
+    } else if (profile === "performance") {
+      this.frameIntervalMs = 1000 / 24;
+    } else {
+      this.frameIntervalMs = 1000 / 36;
+    }
+  }
+
   private resize = () => {
     const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
     const w = this.container.clientWidth;
@@ -149,8 +166,8 @@ export class WindParticleCanvas {
     this.canvas.height = Math.max(1, Math.floor(h * dpr));
     this.canvas.style.width = `${w}px`;
     this.canvas.style.height = `${h}px`;
-    const ctx = this.canvas.getContext("2d");
-    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (!this.ctx) this.ctx = this.canvas.getContext("2d");
+    if (this.ctx) this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
 
   private seedAll() {
@@ -178,6 +195,12 @@ export class WindParticleCanvas {
     this.running = true;
     const tick = () => {
       if (!this.running) return;
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      if (this.lastFrameAt > 0 && now - this.lastFrameAt < this.frameIntervalMs) {
+        this.raf = requestAnimationFrame(tick);
+        return;
+      }
+      this.lastFrameAt = now;
       this.step();
       this.draw();
       this.raf = requestAnimationFrame(tick);
@@ -187,6 +210,7 @@ export class WindParticleCanvas {
 
   stop() {
     this.running = false;
+    this.lastFrameAt = 0;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
   }
@@ -246,7 +270,7 @@ export class WindParticleCanvas {
   }
 
   private draw() {
-    const ctx = this.canvas.getContext("2d");
+    const ctx = this.ctx;
     if (!ctx) return;
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
@@ -265,8 +289,15 @@ export class WindParticleCanvas {
     const focus = this.typhoonFocus;
     const dashPeriod = zp.dashSeg + zp.dashGap;
 
+    const perfStride =
+      this.performanceProfile === "quality"
+        ? 1
+        : this.performanceProfile === "performance"
+          ? 3
+          : 2;
+    const drawStep = Math.max(1, zp.drawStride * perfStride);
     for (let i = 0; i < this.n; i++) {
-      if (i % zp.drawStride !== 0) continue;
+      if (i % drawStep !== 0) continue;
 
       const lng = this.particles[i * 2];
       const lat = this.particles[i * 2 + 1];

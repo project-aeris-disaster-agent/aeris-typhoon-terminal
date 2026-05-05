@@ -6,12 +6,13 @@ export type AlertSeverity = "info" | "watch" | "warning" | "emergency";
 
 export type Alert = {
   id: string;
-  source: "GDACS" | "PAGASA" | "NDRRMC";
+  source: "GDACS" | "PAGASA" | "NDRRMC" | "NEWS";
   severity: AlertSeverity;
   title: string;
   summary: string;
   issuedAt: string | null;
   url?: string;
+  /** For NEWS rows, the outlet name (Rappler, Inquirer, …). */
   region?: string;
 };
 
@@ -19,6 +20,10 @@ export type AlertsFetchResult = {
   alerts: Alert[];
   warnings: string[];
 };
+
+const ALERTS_STALE_CACHE_MS = 30 * 60 * 1000;
+let lastHealthyAlerts: Alert[] = [];
+let lastHealthyAt = 0;
 
 export function alertSeverityTone(s: AlertSeverity) {
   switch (s) {
@@ -40,12 +45,23 @@ export async function fetchAlerts(): Promise<AlertsFetchResult> {
     readAlertSource("/api/pagasa", "PAGASA"),
   ]);
 
-  const alerts = [...gdacs.alerts, ...pagasa.alerts].sort(
+  const mergedOfficial = dedupeAlerts([...gdacs.alerts, ...pagasa.alerts]);
+  const warnings = [...gdacs.warnings, ...pagasa.warnings];
+  const hasFreshOfficial = mergedOfficial.length > 0;
+  const canUseStaleCache =
+    !hasFreshOfficial &&
+    warnings.length > 0 &&
+    lastHealthyAlerts.length > 0 &&
+    Date.now() - lastHealthyAt < ALERTS_STALE_CACHE_MS;
+  const alerts = (canUseStaleCache ? lastHealthyAlerts : mergedOfficial).sort(
     (a, b) => issuedAtValue(b.issuedAt) - issuedAtValue(a.issuedAt),
   );
-  const warnings = [...gdacs.warnings, ...pagasa.warnings];
 
-  if (alerts.length > 0) {
+  if (hasFreshOfficial) {
+    lastHealthyAlerts = mergedOfficial;
+    lastHealthyAt = Date.now();
+    recordSuccess("alerts");
+  } else if (alerts.length > 0 && canUseStaleCache) {
     recordSuccess("alerts");
   } else if (warnings.length > 0) {
     recordFailure("alerts", warnings.join(" | "));
@@ -93,4 +109,25 @@ function issuedAtValue(value: string | null) {
   if (!value) return 0;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
+}
+
+function dedupeAlerts(alerts: Alert[]): Alert[] {
+  const seen = new Set<string>();
+  const deduped: Alert[] = [];
+  for (const alert of alerts) {
+    const key = [
+      alert.source,
+      normalizeDedupeText(alert.title),
+      normalizeDedupeText(alert.summary),
+      alert.url ?? "",
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(alert);
+  }
+  return deduped;
+}
+
+function normalizeDedupeText(text: string) {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
 }

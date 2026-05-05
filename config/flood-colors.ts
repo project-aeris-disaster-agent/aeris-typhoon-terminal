@@ -8,9 +8,9 @@
  */
 
 export const FLOOD_LEVEL_STYLE = {
-  low: { color: "#fde047", hex: 0xfde047, label: "Low (<0.5 m)" },
-  medium: { color: "#fb923c", hex: 0xfb923c, label: "Medium (0.5\u20131.5 m)" },
-  high: { color: "#dc2626", hex: 0xdc2626, label: "High (>1.5 m)" },
+  low: { color: "#fde047", hex: 0xfde047, label: "Light" },
+  medium: { color: "#fb923c", hex: 0xfb923c, label: "Moderate" },
+  high: { color: "#dc2626", hex: 0xdc2626, label: "Heavy" },
 } as const;
 
 export type FloodLevel = keyof typeof FLOOD_LEVEL_STYLE;

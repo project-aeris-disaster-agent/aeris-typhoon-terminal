@@ -19,6 +19,7 @@
     "@deck.gl/geo-layers": "^9.0.33",
     "@deck.gl/layers": "^9.0.33",
     "@deck.gl/mapbox": "^9.0.33",
+    "@pixiv/three-vrm": "^3.5.2",
     "@turf/bbox": "^7.1.0",
     "@turf/buffer": "^7.3.5",
     "@turf/helpers": "^7.1.0",

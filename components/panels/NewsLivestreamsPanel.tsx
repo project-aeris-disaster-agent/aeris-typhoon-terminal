@@ -15,6 +15,10 @@ const NEWS_CHANNELS = [
 ];
 
 const REFRESH_INTERVAL_MS = 90 * 1000;
+const isPlayableVideo = (video: YtVideo) => video.embeddable !== false;
+/** `liveBroadcastContent: "live"` is set by the API (Data API or channel /live page scrape) */
+const isConfirmedLive = (video: YtVideo) =>
+  video.liveBroadcastContent === "live";
 
 export function NewsLivestreamsPanel() {
   const [videos, setVideos] = useState<YtVideo[]>([]);
@@ -48,9 +52,9 @@ export function NewsLivestreamsPanel() {
 
       // Always follow live if any channel has one; otherwise newest upload globally (API sort).
       setActiveVideo(null);
-      const list = result.videos;
+      const list = result.videos.filter(isPlayableVideo);
       const channelWithLive = NEWS_CHANNELS.find((c) =>
-        list.some((v) => v.channelHandle === c.handle && v.isLikeLive),
+        list.some((v) => v.channelHandle === c.handle && isConfirmedLive(v)),
       );
       if (channelWithLive) {
         setActiveChannel(channelWithLive.handle);
@@ -60,7 +64,7 @@ export function NewsLivestreamsPanel() {
 
       const currentLiveChannels = new Set(
         NEWS_CHANNELS.filter((c) =>
-          result.videos.some((v) => v.channelHandle === c.handle && v.isLikeLive)
+          list.some((v) => v.channelHandle === c.handle && isConfirmedLive(v))
         ).map((c) => c.handle)
       );
       lastLiveChannelHandlesRef.current = currentLiveChannels;
@@ -97,9 +101,13 @@ export function NewsLivestreamsPanel() {
   }, [activeChannel]);
 
   const channelVideos = useMemo(() => {
-    const rows = videos.filter((v) => v.channelHandle === activeChannel);
+    const rows = videos.filter(
+      (v) => v.channelHandle === activeChannel && isPlayableVideo(v),
+    );
     return [...rows].sort((a, b) => {
-      if (a.isLikeLive !== b.isLikeLive) return a.isLikeLive ? -1 : 1;
+      const aLive = isConfirmedLive(a);
+      const bLive = isConfirmedLive(b);
+      if (aLive !== bLive) return aLive ? -1 : 1;
       return (
         new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
       );
@@ -107,7 +115,7 @@ export function NewsLivestreamsPanel() {
   }, [videos, activeChannel]);
   
   const bestDefault =
-    channelVideos.find((v) => v.isLikeLive) ?? channelVideos[0] ?? null;
+    channelVideos.find((v) => isConfirmedLive(v)) ?? channelVideos[0] ?? null;
   const displayed = activeVideo ?? bestDefault;
 
   const channelInfo =
@@ -116,7 +124,12 @@ export function NewsLivestreamsPanel() {
   const liveChannels = useMemo(
     () =>
       NEWS_CHANNELS.filter((c) =>
-        videos.some((v) => v.channelHandle === c.handle && v.isLikeLive)
+        videos.some(
+          (v) =>
+            v.channelHandle === c.handle &&
+            isPlayableVideo(v) &&
+            isConfirmedLive(v),
+        )
       ),
     [videos]
   );
@@ -168,7 +181,10 @@ export function NewsLivestreamsPanel() {
       <div className="flex gap-1 shrink-0">
         {NEWS_CHANNELS.map((ch) => {
           const hasLive = videos.some(
-            (v) => v.channelHandle === ch.handle && v.isLikeLive,
+            (v) =>
+              v.channelHandle === ch.handle &&
+              isPlayableVideo(v) &&
+              isConfirmedLive(v),
           );
           const isActive = activeChannel === ch.handle;
           const isNewlyLive = newlyLiveChannels.has(ch.handle);
@@ -214,7 +230,12 @@ export function NewsLivestreamsPanel() {
             <div className="aspect-video bg-black rounded overflow-hidden border border-aeris-border shrink-0">
               <iframe
                 key={displayed.id}
-                src={getEmbedUrl(displayed.id, true, true)}
+                src={getEmbedUrl(
+                  displayed.id,
+                  true,
+                  true,
+                  lastUpdated?.getTime(),
+                )}
                 title={displayed.title}
                 allow="autoplay; encrypted-media; picture-in-picture"
                 allowFullScreen
@@ -238,7 +259,7 @@ export function NewsLivestreamsPanel() {
                   <span className="text-[9px] font-mono text-aeris-muted">
                     {channelInfo.label}
                   </span>
-                  {displayed.isLikeLive && (
+                  {isConfirmedLive(displayed) && (
                     <span className="text-[9px] font-mono text-aeris-danger">
                       ● LIVE
                     </span>
@@ -323,7 +344,7 @@ export function NewsLivestreamsPanel() {
                       <span className="text-[9px] font-mono text-aeris-muted">
                         {new Date(v.publishedAt).toLocaleDateString()}
                       </span>
-                      {v.isLikeLive && (
+                      {isConfirmedLive(v) && (
                         <span className="text-[9px] font-mono text-aeris-danger">
                           ● LIVE
                         </span>

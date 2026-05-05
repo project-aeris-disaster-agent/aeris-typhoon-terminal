@@ -108,7 +108,7 @@ describe("client data services", () => {
     });
   });
 
-  it("fetchAlerts keeps partial data but reports source degradation", async () => {
+  it("fetchAlerts keeps partial official data and reports source degradation", async () => {
     const { fetchAlerts } = await import("./alerts");
     global.fetch = jest
       .fn()

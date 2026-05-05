@@ -4,40 +4,22 @@ import { useEffect, useRef, useState } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { CardHeader, Pill } from "../ui/Card";
 import {
-  REPORT_CATEGORIES,
-  type ReportCategory,
-  submitReport,
   reviewReport,
   type ReportReviewAction,
   fetchReports,
-  renderReportsOnMap,
-  clearReportsFromMap,
   type IncidentReport,
 } from "@/services/reports-client";
-import { PH_BBOX } from "@/config/region";
 import { FreshnessTag } from "../ui/FreshnessTag";
 
-type ComposerState = {
-  category: ReportCategory;
-  description: string;
-  lng: string;
-  lat: string;
-  photoUrl: string;
-};
-
-const EMPTY_COMPOSER: ComposerState = {
-  category: "flood",
-  description: "",
-  lng: "",
-  lat: "",
-  photoUrl: "",
-};
-
-export function LiveReportsPanel({ map }: { map: MLMap | null }) {
+export function LiveReportsPanel({
+  map,
+  embedded,
+}: {
+  map: MLMap | null;
+  /** Omit duplicate chrome when shown inside the header popover. */
+  embedded?: boolean;
+}) {
   const [reports, setReports] = useState<IncidentReport[]>([]);
-  const [composer, setComposer] = useState<ComposerState>(EMPTY_COMPOSER);
-  const [picking, setPicking] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [status, setStatus] = useState<{
     tone: "ok" | "warn" | "danger";
@@ -80,70 +62,6 @@ export function LiveReportsPanel({ map }: { map: MLMap | null }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!map) return;
-    renderReportsOnMap(map, reports);
-    return () => clearReportsFromMap(map);
-  }, [map, reports]);
-
-  useEffect(() => {
-    if (!map || !picking) return;
-    const prevCursor = map.getCanvas().style.cursor;
-    map.getCanvas().style.cursor = "crosshair";
-    const onClick = (e: maplibregl.MapMouseEvent) => {
-      setComposer((c) => ({
-        ...c,
-        lng: e.lngLat.lng.toFixed(5),
-        lat: e.lngLat.lat.toFixed(5),
-      }));
-      setPicking(false);
-    };
-    map.once("click", onClick);
-    return () => {
-      map.off("click", onClick);
-      map.getCanvas().style.cursor = prevCursor;
-    };
-  }, [map, picking]);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const lng = Number(composer.lng);
-    const lat = Number(composer.lat);
-    if (
-      !composer.description.trim() ||
-      Number.isNaN(lng) ||
-      Number.isNaN(lat)
-    ) {
-      setStatus({ tone: "warn", msg: "Location and description required." });
-      return;
-    }
-    if (
-      lng < PH_BBOX[0] ||
-      lng > PH_BBOX[2] ||
-      lat < PH_BBOX[1] ||
-      lat > PH_BBOX[3]
-    ) {
-      setStatus({ tone: "warn", msg: "Location must be within the Philippines." });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await submitReport({
-        category: composer.category,
-        description: composer.description,
-        position: [lng, lat],
-        photoUrl: composer.photoUrl || undefined,
-      });
-      setStatus({ tone: "ok", msg: "Report submitted. Thank you." });
-      setComposer(EMPTY_COMPOSER);
-      refresh.current();
-    } catch (err) {
-      setStatus({ tone: "danger", msg: (err as Error).message });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const focusReport = (report: IncidentReport) => {
     if (!map) return;
     map.flyTo({
@@ -174,6 +92,7 @@ export function LiveReportsPanel({ map }: { map: MLMap | null }) {
       });
       setStatus({ tone: "ok", msg: `Report marked ${action}.` });
       refresh.current();
+      window.dispatchEvent(new CustomEvent("aeris:reports-refresh"));
     } catch (error) {
       setStatus({ tone: "danger", msg: (error as Error).message });
     } finally {
@@ -183,10 +102,17 @@ export function LiveReportsPanel({ map }: { map: MLMap | null }) {
 
   return (
     <div className="space-y-2">
-      <CardHeader
-        title="Live Reports"
-        trailing={<Pill tone="warn">{reports.length} unverified feed</Pill>}
-      />
+      {!embedded && (
+        <CardHeader
+          title="Live Reports"
+          trailing={<Pill tone="warn">{reports.length} unverified feed</Pill>}
+        />
+      )}
+      {embedded && (
+        <div className="flex justify-end">
+          <Pill tone="warn">{reports.length} unverified feed</Pill>
+        </div>
+      )}
       <FreshnessTag source="reports" />
       <div className="grid grid-cols-3 gap-1 text-[10px]">
         <div className="rounded border border-aeris-border/60 px-1.5 py-1">
@@ -207,98 +133,19 @@ export function LiveReportsPanel({ map }: { map: MLMap | null }) {
         until corroborated by operators or official sources.
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-1.5 text-xs">
-        <div className="grid grid-cols-2 gap-1">
-          <select
-            value={composer.category}
-            onChange={(e) =>
-              setComposer({
-                ...composer,
-                category: e.target.value as ReportCategory,
-              })
-            }
-            className="bg-aeris-bg border border-aeris-border rounded px-1.5 py-1"
-          >
-            {REPORT_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => setPicking((p) => !p)}
-            disabled={!map}
-            className={`rounded border px-2 py-1 ${
-              picking
-                ? "bg-aeris-accent/10 text-aeris-accent border-aeris-accent/30"
-                : "border-aeris-border text-aeris-muted hover:text-aeris-text"
-            }`}
-          >
-            {picking ? "Click map…" : composer.lng ? "Pick again" : "Pick location"}
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-1">
-          <input
-            type="text"
-            inputMode="decimal"
-            placeholder="Longitude"
-            value={composer.lng}
-            onChange={(e) =>
-              setComposer({ ...composer, lng: e.target.value })
-            }
-            className="bg-aeris-bg border border-aeris-border rounded px-1.5 py-1"
-          />
-          <input
-            type="text"
-            inputMode="decimal"
-            placeholder="Latitude"
-            value={composer.lat}
-            onChange={(e) =>
-              setComposer({ ...composer, lat: e.target.value })
-            }
-            className="bg-aeris-bg border border-aeris-border rounded px-1.5 py-1"
-          />
-        </div>
-        <textarea
-          placeholder="Describe the situation (max 280 chars)…"
-          maxLength={280}
-          value={composer.description}
-          onChange={(e) =>
-            setComposer({ ...composer, description: e.target.value })
-          }
-          className="w-full bg-aeris-bg border border-aeris-border rounded px-1.5 py-1 resize-none h-16"
-        />
-        <input
-          type="url"
-          placeholder="Photo URL (optional)"
-          value={composer.photoUrl}
-          onChange={(e) =>
-            setComposer({ ...composer, photoUrl: e.target.value })
-          }
-          className="w-full bg-aeris-bg border border-aeris-border rounded px-1.5 py-1"
-        />
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full px-2 py-1.5 rounded bg-aeris-accent/10 border border-aeris-accent/40 text-aeris-accent hover:bg-aeris-accent/20 disabled:opacity-40"
+      {status && (
+        <div
+          className={`text-[11px] ${
+            status.tone === "ok"
+              ? "text-aeris-ok"
+              : status.tone === "warn"
+                ? "text-aeris-warn"
+                : "text-aeris-danger"
+          }`}
         >
-          {submitting ? "Submitting…" : "Submit report"}
-        </button>
-        {status && (
-          <div
-            className={`text-[11px] ${
-              status.tone === "ok"
-                ? "text-aeris-ok"
-                : status.tone === "warn"
-                  ? "text-aeris-warn"
-                  : "text-aeris-danger"
-            }`}
-          >
-            {status.msg}
-          </div>
-        )}
-      </form>
+          {status.msg}
+        </div>
+      )}
 
       <div className="border-t border-aeris-border pt-2 space-y-1.5 max-h-[200px] overflow-y-auto">
         {reports.length === 0 ? (

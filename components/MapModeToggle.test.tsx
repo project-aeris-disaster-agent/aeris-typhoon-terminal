@@ -9,8 +9,8 @@ describe("MapModeToggle", () => {
 
     render(<MapModeToggle mode="2d" onChange={onChange} />);
 
-    const button2d = screen.getByRole("button", { name: "2d" });
-    const button3d = screen.getByRole("button", { name: "3d" });
+    const button2d = screen.getByRole("button", { name: "2D Analytical" });
+    const button3d = screen.getByRole("button", { name: "3D Immersive" });
 
     expect(button2d).toHaveAttribute("aria-pressed", "true");
     expect(button3d).toHaveAttribute("aria-pressed", "false");
