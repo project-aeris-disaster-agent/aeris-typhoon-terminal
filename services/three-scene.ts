@@ -224,11 +224,11 @@ const FACILITY_DEFAULT_HEIGHT = 14; // fallback building height when no polygon 
 // transparent-sort flicker against the flood decal under camera rotation.
 const BUILDING_WIREFRAME_OPACITY = 1.0;
 const BUILDING_WIREFRAME_COLOR = 0x3b4454;
-const BUILDING_OPACITY_NORMAL = 0.45;
+const BUILDING_OPACITY_NORMAL = 1.0;
 const BUILDING_OPACITY_FLOODED = 0.96;
 const FACILITY_BUILDING_OPACITY = 0.92;
-const NORMAL_BUILDING_FADE_DURATION_MS = 260;
-const NORMAL_BUILDING_FADE_START_OPACITY = 0.06;
+const BUILDING_EDGE_MIN_ZOOM = 14;
+const BUILDING_EDGE_ANGLE_THRESHOLD = 35;
 
 const DEFAULT_MAP_CENTER: [number, number] = [122, 12.5];
 
@@ -553,8 +553,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   let pendingFloodFeatures: FloodPolygonFeature[] = [];
   let buildingDataEpoch = 0;
   let pendingRetintRebuild = false;
-  let fadeNormalBuildingsOnNextRebuild = false;
-  let normalBuildingFadeStartAt: number | null = null;
+  let floodRebuildWaitTimer: ReturnType<typeof setTimeout> | null = null;
   const rebuildWaiters: Array<() => void> = [];
   let buildingPreprocessWorker: Worker | null = null;
   let buildingWorkerTaskSeq = 0;
@@ -684,7 +683,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     scene.remove(floodGroup);
     facilityPointers.length = 0;
     normalBuildingMaterials.length = 0;
-    normalBuildingFadeStartAt = null;
     for (const d of disposables.splice(0)) {
       try {
         d.dispose();
@@ -719,9 +717,36 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     floodGroup.visible = floodPolygonsVisible;
   }
 
+  function shouldRenderBuildingEdges(): boolean {
+    const map = mapRef.current;
+    if (!map || typeof map.getZoom !== "function") return true;
+    return map.getZoom() >= BUILDING_EDGE_MIN_ZOOM;
+  }
+
+  function scheduleFloodRebuildWhenIdle() {
+    if (floodRebuildWaitTimer) {
+      clearTimeout(floodRebuildWaitTimer);
+      floodRebuildWaitTimer = null;
+    }
+    const map = mapRef.current;
+    if (!map || typeof map.isMoving !== "function") {
+      scheduleRebuildFlood();
+      return;
+    }
+    if (!map.isMoving()) {
+      scheduleRebuildFlood();
+      return;
+    }
+    floodRebuildWaitTimer = setTimeout(() => {
+      floodRebuildWaitTimer = null;
+      scheduleFloodRebuildWhenIdle();
+    }, 140);
+  }
+
   function appendPreprocessedBuildings(items: PreprocessedBuilding[]) {
     if (items.length === 0) return;
     const t0 = perfStart("appendPreprocessedBuildings");
+    const renderEdges = shouldRenderBuildingEdges();
     type Bucket = {
       geoms: THREE.BufferGeometry[];
       edgeGeoms: THREE.BufferGeometry[];
@@ -752,7 +777,9 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         colors[i * 3 + 2] = item.color[2];
       }
       geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-      const edges = new THREE.EdgesGeometry(geom, 25);
+      const edges = renderEdges
+        ? new THREE.EdgesGeometry(geom, BUILDING_EDGE_ANGLE_THRESHOLD)
+        : null;
       let bucket = buckets.get(item.bucket);
       if (!bucket) {
         const isFlooded = item.bucket !== "normal";
@@ -765,7 +792,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         buckets.set(item.bucket, bucket);
       }
       bucket.geoms.push(geom);
-      bucket.edgeGeoms.push(edges);
+      if (edges) bucket.edgeGeoms.push(edges);
     }
 
     for (const bucket of buckets.values()) {
@@ -786,32 +813,37 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         depthWrite: true,
         ...(bucket.isFlooded
           ? { transparent: true, opacity: BUILDING_OPACITY_FLOODED }
-          : { transparent: true, opacity: BUILDING_OPACITY_NORMAL }),
+          : { transparent: false, opacity: BUILDING_OPACITY_NORMAL }),
       });
       if (!bucket.isFlooded) normalBuildingMaterials.push(sharedMat);
       const mesh = new THREE.Mesh(merged, sharedMat);
       mesh.renderOrder = BUILDING_RENDER_ORDER;
       buildingGroup.add(mesh);
 
-      const edgeColor = bucket.isFlooded
-        ? FLOOD_BUILDING_PALETTE[bucket.level!]
-        : BUILDING_WIREFRAME_COLOR;
-      const edgeMat = new THREE.LineBasicMaterial({
-        color: edgeColor,
-        transparent: true,
-        opacity: BUILDING_WIREFRAME_OPACITY,
-        depthTest: true,
-        depthWrite: false,
-      });
-      const mergedEdges = BufferGeometryUtils.mergeGeometries(
-        bucket.edgeGeoms,
-        false,
-      );
+      if (renderEdges && bucket.edgeGeoms.length > 0) {
+        const edgeColor = bucket.isFlooded
+          ? FLOOD_BUILDING_PALETTE[bucket.level!]
+          : BUILDING_WIREFRAME_COLOR;
+        const edgeMat = new THREE.LineBasicMaterial({
+          color: edgeColor,
+          transparent: true,
+          opacity: BUILDING_WIREFRAME_OPACITY,
+          depthTest: true,
+          depthWrite: false,
+        });
+        const mergedEdges = BufferGeometryUtils.mergeGeometries(
+          bucket.edgeGeoms,
+          false,
+        );
+        for (const g of bucket.edgeGeoms) g.dispose();
+        const edgeMesh = new THREE.LineSegments(mergedEdges, edgeMat);
+        edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
+        buildingGroup.add(edgeMesh);
+        disposables.push(merged, sharedMat, mergedEdges, edgeMat);
+        continue;
+      }
       for (const g of bucket.edgeGeoms) g.dispose();
-      const edgeMesh = new THREE.LineSegments(mergedEdges, edgeMat);
-      edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
-      buildingGroup.add(edgeMesh);
-      disposables.push(merged, sharedMat, mergedEdges, edgeMat);
+      disposables.push(merged, sharedMat);
     }
     perfEnd("appendPreprocessedBuildings", t0, { items: items.length });
   }
@@ -832,6 +864,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       isFlooded: boolean;
       level?: FloodLevel;
     };
+    const renderEdges = shouldRenderBuildingEdges();
     const buckets: Map<BucketKey, Bucket> = new Map();
 
     for (const feat of pendingBuildings) {
@@ -892,7 +925,9 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       }
       geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
-      const edges = new THREE.EdgesGeometry(geom, 25);
+      const edges = renderEdges
+        ? new THREE.EdgesGeometry(geom, BUILDING_EDGE_ANGLE_THRESHOLD)
+        : null;
 
       const key: BucketKey = isFlooded ? (floodLevel as FloodLevel) : "normal";
       let bucket = buckets.get(key);
@@ -906,7 +941,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         buckets.set(key, bucket);
       }
       bucket.geoms.push(geom);
-      bucket.edgeGeoms.push(edges);
+      if (edges) bucket.edgeGeoms.push(edges);
     }
 
     // Materials are shared within each bucket (normal vs. flood level), collapsing
@@ -939,10 +974,8 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         ...(bucket.isFlooded
           ? { transparent: true, opacity: BUILDING_OPACITY_FLOODED }
           : {
-              transparent: true,
-              opacity: fadeNormalBuildingsOnNextRebuild
-                ? NORMAL_BUILDING_FADE_START_OPACITY
-                : BUILDING_OPACITY_NORMAL,
+              transparent: false,
+              opacity: BUILDING_OPACITY_NORMAL,
             }
         ),
       });
@@ -952,33 +985,32 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       buildingGroup.add(mesh);
 
       // Edge material: flood level color for affected, dark grey for unaffected.
-      const edgeColor = bucket.isFlooded
-        ? FLOOD_BUILDING_PALETTE[bucket.level!]
-        : BUILDING_WIREFRAME_COLOR;
-      const edgeMat = new THREE.LineBasicMaterial({
-        color: edgeColor,
-        transparent: true,
-        opacity: BUILDING_WIREFRAME_OPACITY,
-        depthTest: true,
-        depthWrite: false,
-      });
+      if (renderEdges && bucket.edgeGeoms.length > 0) {
+        const edgeColor = bucket.isFlooded
+          ? FLOOD_BUILDING_PALETTE[bucket.level!]
+          : BUILDING_WIREFRAME_COLOR;
+        const edgeMat = new THREE.LineBasicMaterial({
+          color: edgeColor,
+          transparent: true,
+          opacity: BUILDING_WIREFRAME_OPACITY,
+          depthTest: true,
+          depthWrite: false,
+        });
 
-      const mergedEdges = BufferGeometryUtils.mergeGeometries(
-        bucket.edgeGeoms,
-        false,
-      );
+        const mergedEdges = BufferGeometryUtils.mergeGeometries(
+          bucket.edgeGeoms,
+          false,
+        );
+        for (const g of bucket.edgeGeoms) g.dispose();
+        const edgeMesh = new THREE.LineSegments(mergedEdges, edgeMat);
+        edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
+        buildingGroup.add(edgeMesh);
+        disposables.push(merged, sharedMat, mergedEdges, edgeMat);
+        continue;
+      }
       for (const g of bucket.edgeGeoms) g.dispose();
-      const edgeMesh = new THREE.LineSegments(mergedEdges, edgeMat);
-      edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
-      buildingGroup.add(edgeMesh);
-
-      disposables.push(merged, sharedMat, mergedEdges, edgeMat);
+      disposables.push(merged, sharedMat);
     }
-    normalBuildingFadeStartAt =
-      fadeNormalBuildingsOnNextRebuild && normalBuildingMaterials.length > 0
-        ? performance.now()
-        : null;
-    fadeNormalBuildingsOnNextRebuild = false;
   }
 
   function buildFacilities() {
@@ -1649,6 +1681,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         context: gl as WebGL2RenderingContext,
         antialias: true,
       });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       renderer.autoClear = false;
 
       rebuild();
@@ -1670,27 +1703,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
 
       const animateFlood = shouldAnimateFlood();
       if (animateFlood) applyFloodOpacity(time, true);
-      let animateNormalFade = false;
-      if (normalBuildingFadeStartAt !== null && normalBuildingMaterials.length > 0) {
-        const elapsed = performance.now() - normalBuildingFadeStartAt;
-        const t = Math.min(1, elapsed / NORMAL_BUILDING_FADE_DURATION_MS);
-        const eased = t * (2 - t);
-        const opacity =
-          NORMAL_BUILDING_FADE_START_OPACITY +
-          (BUILDING_OPACITY_NORMAL - NORMAL_BUILDING_FADE_START_OPACITY) * eased;
-        for (const material of normalBuildingMaterials) {
-          material.opacity = opacity;
-        }
-        if (t >= 1) {
-          normalBuildingFadeStartAt = null;
-          for (const material of normalBuildingMaterials) {
-            material.opacity = BUILDING_OPACITY_NORMAL;
-          }
-        } else {
-          animateNormalFade = true;
-        }
-      }
-
       projectionMatrix.fromArray(matrix);
       meterScaleVec.set(meterScale, -meterScale, meterScale);
       localMatrix
@@ -1707,7 +1719,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       // a continuous 60 fps repaint loop for purely static flood/building scenes.
       if (
         animateFlood ||
-        animateNormalFade ||
         (animationsEnabled && facilityPointers.length > 0)
       ) {
         mapRef.current?.triggerRepaint();
@@ -1723,6 +1734,10 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       if (floodRebuildHandle !== null) {
         idle.cancel(floodRebuildHandle);
         floodRebuildHandle = null;
+      }
+      if (floodRebuildWaitTimer !== null) {
+        clearTimeout(floodRebuildWaitTimer);
+        floodRebuildWaitTimer = null;
       }
       for (const d of disposables.splice(0)) {
         try {
@@ -1756,7 +1771,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     layer,
     setBuildings(features) {
       const nextBuildings = features ?? [];
-      fadeNormalBuildingsOnNextRebuild = nextBuildings.length > pendingBuildings.length;
       pendingBuildings = nextBuildings;
       buildingDataEpoch += 1;
       pendingRetintRebuild = false;
@@ -1765,6 +1779,12 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     appendBuildings(features) {
       const next = features ?? [];
       if (next.length === 0) return;
+      const map = mapRef.current;
+      if (map && typeof map.isMoving === "function" && map.isMoving()) {
+        pendingBuildings = pendingBuildings.concat(next);
+        scheduleRebuild();
+        return;
+      }
       const targetEpoch = buildingDataEpoch;
       pendingBuildings = pendingBuildings.concat(next);
       if (!scene || !origin) {
@@ -1816,7 +1836,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     },
     setFloodPolygons(features) {
       pendingFloodFeatures = features ?? [];
-      if (scene) scheduleRebuildFlood();
+      if (scene) scheduleFloodRebuildWhenIdle();
     },
     setFloodPolygonsVisible(visible) {
       floodPolygonsVisible = visible;
@@ -1849,7 +1869,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       );
       floodVisualizationSettings = settings;
       if (rebuildGeometry && scene) {
-        scheduleRebuildFlood();
+        scheduleFloodRebuildWhenIdle();
       } else {
         for (const mesh of floodLineMeshes) {
           mesh.visible = settings.wireframeEnabled;

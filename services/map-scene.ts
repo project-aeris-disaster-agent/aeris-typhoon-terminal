@@ -72,6 +72,7 @@ export type SceneLoadingState = {
   threeLoading: boolean;
   contextLoading: boolean;
   majorLoading: boolean;
+  majorLoadingMessage: string | null;
 };
 type SceneLoadingListener = (state: SceneLoadingState) => void;
 
@@ -138,6 +139,13 @@ type SceneState = {
   lastLiveFacilities: FacilityFeature[];
   pinnedBuilding: BuildingFeature | null;
   majorLoadingCount: number;
+  majorLoadingMessage: string | null;
+  activeScenePreset: ScenePresetId | null;
+  quickViewLoadStartMs: number | null;
+  quickViewSetBuildingsCount: number;
+  quickViewAppendBuildingsCount: number;
+  quickViewAmbientBatchCount: number;
+  quickViewFirstRenderLogged: boolean;
   progressiveHydrationTimer: ReturnType<typeof setTimeout> | null;
   progressiveLoading: boolean;
   contextRoads: GeoJSON.FeatureCollection;
@@ -214,6 +222,13 @@ function getSceneState(map: MLMap): SceneState {
       lastLiveFacilities: [],
       pinnedBuilding: null,
       majorLoadingCount: 0,
+      majorLoadingMessage: null,
+      activeScenePreset: null,
+      quickViewLoadStartMs: null,
+      quickViewSetBuildingsCount: 0,
+      quickViewAppendBuildingsCount: 0,
+      quickViewAmbientBatchCount: 0,
+      quickViewFirstRenderLogged: false,
       progressiveHydrationTimer: null,
       progressiveLoading: false,
       contextRoads: emptyFeatureCollection(),
@@ -233,18 +248,21 @@ function getSceneLoadingState(map: MLMap): SceneLoadingState {
     threeLoading: state.threeLoading,
     contextLoading: state.contextLoading,
     majorLoading: state.majorLoadingCount > 0,
+    majorLoadingMessage: state.majorLoadingMessage,
   };
 }
 
-function beginMajorLoading(map: MLMap) {
+function beginMajorLoading(map: MLMap, message?: string) {
   const state = getSceneState(map);
   state.majorLoadingCount += 1;
+  if (message) state.majorLoadingMessage = message;
   emitSceneLoading(map);
 }
 
 function endMajorLoading(map: MLMap) {
   const state = getSceneState(map);
   state.majorLoadingCount = Math.max(0, state.majorLoadingCount - 1);
+  if (state.majorLoadingCount === 0) state.majorLoadingMessage = null;
   emitSceneLoading(map);
 }
 
@@ -740,8 +758,8 @@ async function refreshOsmContext(map: MLMap) {
     return;
   }
 
-  const presetId = nearestScenePreset(map);
-  const nextLiveBbox = getViewportFetchBbox(map);
+  const presetId = state.activeScenePreset ?? nearestScenePreset(map);
+  const nextLiveBbox = state.activeScenePreset ? null : getViewportFetchBbox(map);
   const nextLiveKey = nextLiveBbox?.map((value) => value.toFixed(4)).join(",") ?? null;
   if (presetId === state.lastContextKey && nextLiveKey === state.lastLiveContextKey) {
     state.contextLoading = false;
@@ -755,10 +773,12 @@ async function refreshOsmContext(map: MLMap) {
   emitSceneLoading(map);
   try {
     const fetchT0 = perfStart("refreshOsmContext.fetch");
-    const [staticPayload, livePayload] = await Promise.all([
-      fetchStaticContextPack(presetId),
-      nextLiveBbox ? fetchLiveContext(nextLiveBbox, map.getZoom()) : Promise.resolve(null),
-    ]);
+    const [staticPayload, livePayload] = state.activeScenePreset
+      ? await Promise.all([fetchStaticContextPack(state.activeScenePreset), Promise.resolve(null)])
+      : await Promise.all([
+          fetchStaticContextPack(presetId),
+          nextLiveBbox ? fetchLiveContext(nextLiveBbox, map.getZoom()) : Promise.resolve(null),
+        ]);
     perfEnd("refreshOsmContext.fetch", fetchT0, {
       hasStatic: staticPayload ? 1 : 0,
       hasLive: livePayload ? 1 : 0,
@@ -827,7 +847,7 @@ async function refreshOsmContext(map: MLMap) {
     state.lastLiveBuildings = selection.immediateBuildings;
     state.lastLiveFacilities = selection.facilities;
     applyComposedSceneData(map, staticPayload, livePayload);
-    if (selection.deferredBuildings.length > 0) {
+    if (shouldScheduleAmbientHydration(state.buildingRenderScope, selection.deferredBuildings.length)) {
       scheduleProgressiveLiveBuildings(
         map,
         "refresh",
@@ -872,7 +892,22 @@ export function initMapScene(map: MLMap) {
   // before actually refreshing, so rapid pan sequences collapse into one
   // final fetch.
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let motionPausedAnimations = false;
+  const onMoveStart = () => {
+    const state = getSceneState(map);
+    if (!state.animationsEnabled) return;
+    if (!state.three) return;
+    state.three.setAnimationsEnabled(false);
+    motionPausedAnimations = true;
+  };
   const onMoveEnd = () => {
+    if (motionPausedAnimations) {
+      const state = getSceneState(map);
+      if (state.animationsEnabled) {
+        state.three?.setAnimationsEnabled(true);
+      }
+      motionPausedAnimations = false;
+    }
     // Keep label rendering scoped to the current viewport so we do not
     // place every facility name in one pass after each context refresh.
     syncVisibleFacilityLabelSource(map);
@@ -882,6 +917,7 @@ export function initMapScene(map: MLMap) {
       void refreshOsmContext(map);
     }, 500);
   };
+  map.on("movestart", onMoveStart);
   map.on("moveend", onMoveEnd);
 
   if (typeof map.once === "function") {
@@ -890,6 +926,8 @@ export function initMapScene(map: MLMap) {
         clearTimeout(refreshTimer);
         refreshTimer = null;
       }
+      motionPausedAnimations = false;
+      map.off("movestart", onMoveStart);
       map.off("moveend", onMoveEnd);
     });
   }
@@ -938,7 +976,7 @@ export function applyMapViewMode(map: MLMap, mode: "2d" | "3d") {
 
   if (is3D) {
     const t3dLayer = perfStart("applyMapViewMode.3d.ensureThreeSceneLayer");
-    beginMajorLoading(map);
+    beginMajorLoading(map, "Loading 3D terrain and critical facilities...");
     map.dragRotate.enable();
     map.touchZoomRotate.enableRotation();
     setTerrainEnabled(map, true);
@@ -1069,6 +1107,27 @@ export const SCENE_PRESETS = [
 ] as const;
 
 export type ScenePresetId = (typeof SCENE_PRESETS)[number]["id"];
+
+export function setActiveScenePreset(map: MLMap, presetId: ScenePresetId | null) {
+  const state = getSceneState(map);
+  if (state.activeScenePreset === presetId) return;
+  state.activeScenePreset = presetId;
+  if (presetId) {
+    state.buildingRenderScope = "facility-only";
+    state.quickViewLoadStartMs = performance.now();
+    state.quickViewSetBuildingsCount = 0;
+    state.quickViewAppendBuildingsCount = 0;
+    state.quickViewAmbientBatchCount = 0;
+    state.quickViewFirstRenderLogged = false;
+    beginMajorLoading(map, `Loading critical 3D buildings for ${presetId}...`);
+  } else {
+    state.buildingRenderScope = "context";
+    state.quickViewLoadStartMs = null;
+  }
+  void refreshOsmContext(map).finally(() => {
+    if (presetId) endMajorLoading(map);
+  });
+}
 
 export function flyToScenePreset(map: MLMap, presetId: ScenePresetId) {
   const preset = SCENE_PRESETS.find((item) => item.id === presetId);
@@ -1516,8 +1575,31 @@ function applyComposedSceneData(
   }
   syncVisibleFacilityLabelSource(map, facilities);
   if (options?.pushThreeMode !== "skip") {
+    state.quickViewSetBuildingsCount += 1;
     state.three?.setBuildings(buildings);
     state.three?.setFacilities(facilities);
+    if (
+      DEV &&
+      state.activeScenePreset &&
+      !state.quickViewFirstRenderLogged &&
+      buildings.length > 0
+    ) {
+      state.quickViewFirstRenderLogged = true;
+      const elapsed =
+        state.quickViewLoadStartMs === null
+          ? -1
+          : Math.round(performance.now() - state.quickViewLoadStartMs);
+      // eslint-disable-next-line no-console
+      console.debug("[map-scene] quick-view-first-render", {
+        preset: state.activeScenePreset,
+        elapsedMs: elapsed,
+        buildings: buildings.length,
+        facilities: facilities.length,
+        setBuildingsCalls: state.quickViewSetBuildingsCount,
+        appendBuildingsCalls: state.quickViewAppendBuildingsCount,
+        ambientBatchCount: state.quickViewAmbientBatchCount,
+      });
+    }
   }
 
   if (options?.emitSummary === false) {
@@ -1600,6 +1682,20 @@ const PROGRESSIVE_BUILDING_BATCH_SIZE = 260;
 const PROGRESSIVE_BUILDING_BATCH_DELAY_MS = 120;
 const PROGRESSIVE_SUMMARY_EVERY_BATCHES = 4;
 
+function shouldScheduleAmbientHydration(
+  scope: BuildingRenderScope,
+  deferredCount: number,
+): boolean {
+  return scope === "context" && deferredCount > 0;
+}
+
+export function shouldScheduleAmbientHydrationForTest(
+  scope: BuildingRenderScope,
+  deferredCount: number,
+): boolean {
+  return shouldScheduleAmbientHydration(scope, deferredCount);
+}
+
 function scheduleProgressiveLiveBuildings(
   map: MLMap,
   owner: "refresh" | "focus",
@@ -1655,7 +1751,11 @@ function scheduleProgressiveLiveBuildings(
     const isFinalBatch = index + PROGRESSIVE_BUILDING_BATCH_SIZE >= remainingBuildings.length;
     // Append newly hydrated ambient buildings directly to Three.js to avoid
     // re-sending the whole composed building list every batch.
-    if (!isFinalBatch) liveState.three?.appendBuildings(next);
+    if (!isFinalBatch && shouldScheduleAmbientHydration(liveState.buildingRenderScope, next.length)) {
+      liveState.quickViewAppendBuildingsCount += 1;
+      liveState.quickViewAmbientBatchCount += 1;
+      liveState.three?.appendBuildings(next);
+    }
     applyComposedSceneData(map, null, null, {
       emitSummary: isFinalBatch || batchNumber % PROGRESSIVE_SUMMARY_EVERY_BATCHES === 0,
       updateMapSources: isFinalBatch,
@@ -1698,7 +1798,7 @@ export async function focusAddress3DContext(
   const bbox = makeClampedBbox(target.lon, target.lat, 0.012, 0.01);
   if (!bbox) return;
 
-  beginMajorLoading(map);
+  beginMajorLoading(map, "Loading focused 3D context...");
   const requestSeq = ++state.focusRequestSeq;
   state.contextLoading = true;
   emitSceneLoading(map);
@@ -1728,7 +1828,7 @@ export async function focusAddress3DContext(
     state.contextAttribution = livePayload?.attribution ?? "OpenStreetMap contributors";
     applyComposedSceneData(map, null, livePayload);
     await waitForPriorityRender(map);
-    if (selection.deferredBuildings.length > 0) {
+    if (shouldScheduleAmbientHydration(state.buildingRenderScope, selection.deferredBuildings.length)) {
       scheduleProgressiveLiveBuildings(
         map,
         "focus",

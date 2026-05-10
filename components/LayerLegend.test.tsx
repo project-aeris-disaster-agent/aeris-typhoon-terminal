@@ -59,6 +59,7 @@ function createMapStub() {
     setPaintProperty: jest.fn(),
     setFilter: jest.fn(),
     flyTo: jest.fn(),
+    getZoom: jest.fn(() => 9),
   };
 }
 

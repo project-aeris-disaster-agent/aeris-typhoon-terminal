@@ -27,6 +27,7 @@ export function MapContainer({ onMapReady, mapOverlay }: MapContainerProps) {
   const [mode, setMode] = useState<MapMode>("2d");
   const [map, setMap] = useState<MLMap | null>(null);
   const [showLoadingPopup, setShowLoadingPopup] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("Loading data, please wait...");
   const loadingRevealDelayMs = 900;
 
   const handleReady = useCallback(
@@ -57,7 +58,8 @@ export function MapContainer({ onMapReady, mapOverlay }: MapContainerProps) {
     let revealTimer: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = subscribeSceneLoading(
       map,
-      ({ majorLoading }) => {
+      ({ majorLoading, majorLoadingMessage }) => {
+        setLoadingMessage(majorLoadingMessage ?? "Loading data, please wait...");
         if (majorLoading) {
           if (revealTimer) return;
           revealTimer = setTimeout(() => {
@@ -120,7 +122,7 @@ export function MapContainer({ onMapReady, mapOverlay }: MapContainerProps) {
       <DataLoadingPopup
         active={showLoadingPopup}
         blocking
-        message="Loading data, please wait..."
+        message={loadingMessage}
       />
 
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">

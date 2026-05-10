@@ -1,5 +1,6 @@
 import {
   selectSceneBuildingsForTest,
+  shouldScheduleAmbientHydrationForTest,
   type BuildingRenderScope,
 } from "./map-scene";
 import type { BuildingFeature, FacilityFeature } from "./three-scene";
@@ -100,5 +101,11 @@ describe("map-scene building selection", () => {
 
     expect(result.immediateBuildings).toEqual([known]);
     expect(result.facilities).toHaveLength(1);
+  });
+
+  it("disables ambient hydration scheduling in facility-only scope", () => {
+    expect(shouldScheduleAmbientHydrationForTest("facility-only", 120)).toBe(false);
+    expect(shouldScheduleAmbientHydrationForTest("context", 0)).toBe(false);
+    expect(shouldScheduleAmbientHydrationForTest("context", 12)).toBe(true);
   });
 });

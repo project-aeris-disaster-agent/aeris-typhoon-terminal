@@ -21,6 +21,7 @@ import {
 import {
   SCENE_PRESETS,
   flyToScenePreset,
+  setActiveScenePreset,
   setFloodImpactHighlight,
   setFloodVisualizationSettings,
   setSceneAnimationsEnabled,
@@ -141,10 +142,11 @@ export function LayerLegend({
   useEffect(() => {
     if (!map) return;
     const sceneVisible = mode === "3d";
+    if (!sceneVisible) setActiveScenePreset(map, null);
     setSceneLayerVisibility(map, "hillshade", sceneVisible);
     setSceneLayerVisibility(map, "roads", sceneVisible);
     setSceneLayerVisibility(map, "critical-facilities", sceneVisible);
-    setSceneLayerVisibility(map, "buildings", false);
+    setSceneLayerVisibility(map, "buildings", sceneVisible);
   }, [map, mode]);
 
   useEffect(() => {
@@ -320,6 +322,7 @@ export function QuickViewsPanel({
               onClick={() => {
                 if (!map) return;
                 setSelectedPreset(preset.id);
+                setActiveScenePreset(map, preset.id);
                 flyToScenePreset(map, preset.id);
               }}
               className={clsx(
