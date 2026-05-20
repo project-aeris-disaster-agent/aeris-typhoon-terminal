@@ -1,6 +1,10 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import { isSpam, sanitizeText } from "@/lib/sanitize";
+import {
+  insertAssistantAgentMessage,
+  insertUserAgentMessage,
+} from "@/lib/supabase-agent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -131,11 +135,14 @@ export async function POST(request: Request) {
       );
     }
 
-    return jsonOkNoStore({
-      message:
-        extractAssistantText(data) ||
-        "AGENT AERIS received an empty response from the backend.",
-    });
+    const assistantText =
+      extractAssistantText(data) ||
+      "AGENT AERIS received an empty response from the backend.";
+
+    void insertUserAgentMessage(latestUserMessage.content);
+    void insertAssistantAgentMessage(assistantText);
+
+    return jsonOkNoStore({ message: assistantText });
   } catch (error) {
     clearTimeout(timeout);
     if (error instanceof Error && error.name === "AbortError") {
