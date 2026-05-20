@@ -29,7 +29,7 @@ export function ForecastPanel() {
       );
       if (cancelled) return;
       setByRegion(results);
-      if (results.every((x) => x === null)) {
+      if (results.every((x: ForecastSummary | null) => x === null)) {
         setError("Could not load any regional forecasts.");
       }
     })();
