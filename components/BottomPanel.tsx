@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type React from "react";
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
 import type { Map as MLMap } from "maplibre-gl";
-import type { Address3DTarget } from "@/services/map-scene";
+import type { SelectedLocation } from "@/components/MapSearchBar";
 
 const PanelSkeleton = () => (
   <div className="h-24 rounded-md border border-aeris-border bg-aeris-bg/60 px-3 text-[11px] text-aeris-muted inline-flex items-center gap-2">
@@ -30,18 +29,13 @@ const NewsLivestreamsPanel = dynamic(
   { ssr: false, loading: PanelSkeleton },
 );
 
-const LocationInfoPanel = dynamic(
+const CommunityChatPanel = dynamic(
   () =>
-    import("./panels/LocationInfoPanel").then((m) => ({
-      default: m.LocationInfoPanel,
+    import("./panels/CommunityChatPanel").then((m) => ({
+      default: m.CommunityChatPanel,
     })),
   { ssr: false, loading: PanelSkeleton },
-) as React.ComponentType<{ map?: MLMap | null }>;
-type LocationInfoPanelProps = {
-  map?: MLMap | null;
-  onAddressSelect?: (target: Address3DTarget) => void | Promise<void>;
-};
-const TypedLocationInfoPanel = LocationInfoPanel as React.ComponentType<LocationInfoPanelProps>;
+);
 
 type SubPanel = "webcams" | "news" | "location";
 
@@ -52,15 +46,15 @@ const SUB_PANELS: {
 }[] = [
   { id: "webcams", label: "Live Webcams", hotkey: "A" },
   { id: "news", label: "News Livestreams", hotkey: "B" },
-  { id: "location", label: "Location Info", hotkey: "C" },
+  { id: "location", label: "Community Chat", hotkey: "C" },
 ];
 
 export function BottomPanel({
   map,
-  onAddressSelect,
+  selectedLocation,
 }: {
   map?: MLMap | null;
-  onAddressSelect?: (target: Address3DTarget) => void | Promise<void>;
+  selectedLocation: SelectedLocation | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [openPanels, setOpenPanels] = useState<Record<SubPanel, boolean>>({
@@ -161,13 +155,10 @@ export function BottomPanel({
             >
               {openPanels[sp.id] && (
                 <div className="flex-1 overflow-y-auto p-2 min-h-0 md:h-full">
-                  {sp.id === "webcams" && <LiveWebcamsPanel />}
+                  {sp.id === "webcams" && <LiveWebcamsPanel map={map ?? null} />}
                   {sp.id === "news" && <NewsLivestreamsPanel />}
                   {sp.id === "location" && (
-                    <TypedLocationInfoPanel
-                      map={map}
-                      onAddressSelect={onAddressSelect}
-                    />
+                    <CommunityChatPanel selectedLocation={selectedLocation} />
                   )}
                 </div>
               )}

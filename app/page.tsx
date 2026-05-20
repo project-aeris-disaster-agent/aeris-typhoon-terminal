@@ -6,9 +6,12 @@ import type { Map as MLMap } from "maplibre-gl";
 import { Header } from "@/components/Header";
 import { MapContainer } from "@/components/MapContainer";
 import { LiveReportsMapOverlay } from "@/components/LiveReportsMapOverlay";
+import { MapSearchBar, type SelectedLocation } from "@/components/MapSearchBar";
+import { LocationInfoPanel } from "@/components/panels/LocationInfoPanel";
 import { Sidebar } from "@/components/Sidebar";
 import { BottomPanel } from "@/components/BottomPanel";
 import { ReportPingsSync } from "@/components/ReportPingsSync";
+import { WebcamPingsSync } from "@/components/WebcamPingsSync";
 import { initMapLayers } from "@/services/hazard-layers";
 import { focusAddress3DContext, initMapScene } from "@/services/map-scene";
 import { registerHazardPopup } from "@/services/hazard-popup";
@@ -19,6 +22,8 @@ export default function HomePage() {
   const [map, setMap] = useState<MLMap | null>(null);
   const [opsSidebarCollapsed, setOpsSidebarCollapsed] = useState(false);
   const [liveReportsOpen, setLiveReportsOpen] = useState(false);
+  const [selectedLocation, setSelectedLocation] =
+    useState<SelectedLocation | null>(null);
   const liveReportsTriggerRef = useRef<HTMLDivElement>(null!);
   const liveReportsPopoverRef = useRef<HTMLDivElement>(null!);
 
@@ -53,12 +58,15 @@ export default function HomePage() {
   }, []);
 
   const handleAddressSelect = useCallback(
-    (target: { lat: number; lon: number }) => {
+    (target: SelectedLocation) => {
+      setSelectedLocation(target);
       if (!map) return;
-      void focusAddress3DContext(map, target);
+      void focusAddress3DContext(map, { lat: target.lat, lon: target.lon });
     },
     [map],
   );
+
+  const closeLocationInfo = useCallback(() => setSelectedLocation(null), []);
 
   return (
     <div className="h-screen w-screen flex flex-col">
@@ -73,15 +81,45 @@ export default function HomePage() {
           <MapContainer
             onMapReady={handleMapReady}
             mapOverlay={
-              <LiveReportsMapOverlay
-                open={liveReportsOpen}
-                onClose={closeLiveReports}
-                map={map}
-                popoverRef={liveReportsPopoverRef}
-              />
+              <>
+                <LiveReportsMapOverlay
+                  open={liveReportsOpen}
+                  onClose={closeLiveReports}
+                  map={map}
+                  popoverRef={liveReportsPopoverRef}
+                />
+                {/* Banner ad — sits above the search bar */}
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 w-[min(480px,80%)]">
+                  <a
+                    href="https://www.google.com/adsense"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full rounded-lg overflow-hidden shadow-lg opacity-90 hover:opacity-100 transition-opacity duration-200"
+                    aria-label="Advertisement"
+                  >
+                    <img
+                      src="/ads/ads_v1_2026.gif"
+                      alt="Advertisement"
+                      className="w-full h-auto object-cover block"
+                      draggable={false}
+                    />
+                  </a>
+                  <MapSearchBar map={map} onAddressSelect={handleAddressSelect} />
+                </div>
+                {selectedLocation && (
+                  <div className="absolute bottom-10 right-3 z-20 w-[min(360px,calc(100vw-1.5rem))] max-h-[calc(100vh-7rem)] overflow-y-auto">
+                    <LocationInfoPanel
+                      map={map}
+                      location={selectedLocation}
+                      onClose={closeLocationInfo}
+                    />
+                  </div>
+                )}
+              </>
             }
           />
           <ReportPingsSync map={map} />
+          <WebcamPingsSync map={map} />
         </main>
         <div
           className={clsx(
@@ -93,7 +131,7 @@ export default function HomePage() {
           <Sidebar map={map} onCollapsedChange={setOpsSidebarCollapsed} />
         </div>
       </div>
-      <BottomPanel map={map} onAddressSelect={handleAddressSelect} />
+      <BottomPanel map={map} selectedLocation={selectedLocation} />
     </div>
   );
 }

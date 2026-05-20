@@ -1,15 +1,25 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { clsx } from "clsx";
 import { AerisVrmAvatar } from "@/components/agent/AerisVrmAvatar";
 
 type AgentRole = "user" | "assistant";
 
+type AgentMessageSource = "user" | "assistant" | "system" | "weather_report";
+
 type AgentMessage = {
   id: string;
   role: AgentRole;
   content: string;
+  source?: AgentMessageSource;
 };
 
 type AgentLocationContext = {
@@ -31,7 +41,7 @@ const INITIAL_MESSAGE: AgentMessage = {
   id: "assistant-initial",
   role: "assistant",
   content:
-    "AERIS online. Ask for a concise readout, local risk context, or response checklist for the selected area.",
+    "AERIS online. Ask for a concise readout, local risk context, or response checklist for the selected area. National weather briefs appear here when conditions warrant.",
 };
 
 function buildDashboardContext(location: AgentLocationContext | null) {
@@ -68,20 +78,79 @@ function extractAssistantText(data: unknown): string {
   return typeof candidate === "string" ? candidate : "";
 }
 
+function mapHistoryRow(row: {
+  id: string;
+  role: string;
+  source: string;
+  content: string;
+}): AgentMessage | null {
+  if (row.role !== "user" && row.role !== "assistant") return null;
+  return {
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    source: row.source as AgentMessageSource,
+  };
+}
+
 export function AgentAerisPanel({
   selectedLocation,
   isActive,
 }: AgentAerisPanelProps) {
   const [messages, setMessages] = useState<AgentMessage[]>([INITIAL_MESSAGE]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastPromptRef = useRef<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const context = useMemo(
     () => buildDashboardContext(selectedLocation),
     [selectedLocation],
   );
+
+  const loadHistory = useCallback(async () => {
+    const res = await fetch("/api/agent-aeris/messages?limit=50", {
+      cache: "no-store",
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      messages?: Array<{
+        id: string;
+        role: string;
+        source: string;
+        content: string;
+      }>;
+    };
+
+    const rows = Array.isArray(body.messages) ? body.messages : [];
+    const mapped = rows
+      .map(mapHistoryRow)
+      .filter((m): m is AgentMessage => Boolean(m));
+
+    if (mapped.length > 0) {
+      setMessages(mapped);
+    }
+    setHistoryLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isActive || historyLoaded) return;
+    void loadHistory();
+  }, [isActive, historyLoaded, loadHistory]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    const interval = window.setInterval(() => {
+      void loadHistory();
+    }, 5 * 60_000);
+    return () => window.clearInterval(interval);
+  }, [isActive, loadHistory]);
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [messages, isSending]);
 
   const sendPrompt = useCallback(
     async (prompt: string) => {
@@ -92,6 +161,7 @@ export function AgentAerisPanel({
         id: `user-${Date.now()}`,
         role: "user",
         content: cleanPrompt,
+        source: "user",
       };
       const pendingAssistantId = `assistant-${Date.now()}`;
       const nextMessages = [...messages, userMessage];
@@ -109,41 +179,23 @@ export function AgentAerisPanel({
       setIsSending(true);
       lastPromptRef.current = cleanPrompt;
 
-      try {
-        const response = await fetch("/api/agent-aeris/chat", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            messages: nextMessages.map((message) => ({
-              role: message.role,
-              content: message.content,
-            })),
-            context,
-          }),
-        });
+      const response = await fetch("/api/agent-aeris/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messages: nextMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          context,
+        }),
+      });
 
-        const data = (await response.json().catch(() => ({}))) as unknown;
-        if (!response.ok) {
-          const fallback = "AGENT AERIS backend is unavailable.";
-          throw new Error(extractAssistantText(data) || fallback);
-        }
+      const data = (await response.json().catch(() => ({}))) as unknown;
 
-        const assistantText =
-          extractAssistantText(data) ||
-          "I could not generate a response from the current backend payload.";
-
-        setMessages((current) =>
-          current.map((message) =>
-            message.id === pendingAssistantId
-              ? { ...message, content: assistantText }
-              : message,
-          ),
-        );
-      } catch (err) {
+      if (!response.ok) {
         const message =
-          err instanceof Error
-            ? err.message
-            : "Unable to reach AGENT AERIS right now.";
+          extractAssistantText(data) || "AGENT AERIS backend is unavailable.";
         setError(message);
         setMessages((current) =>
           current.map((item) =>
@@ -156,11 +208,25 @@ export function AgentAerisPanel({
               : item,
           ),
         );
-      } finally {
         setIsSending(false);
+        return;
       }
+
+      const assistantText =
+        extractAssistantText(data) ||
+        "I could not generate a response from the current backend payload.";
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === pendingAssistantId
+            ? { ...message, content: assistantText, source: "assistant" }
+            : message,
+        ),
+      );
+      setIsSending(false);
+      void loadHistory();
     },
-    [context, isSending, messages],
+    [context, isSending, messages, loadHistory],
   );
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -174,24 +240,40 @@ export function AgentAerisPanel({
 
   return (
     <div className="relative z-10 flex flex-1 min-h-0 overflow-hidden rounded-lg border border-aeris-border/60 bg-aeris-bg/40">
-      <div className="hidden w-[34%] min-w-[132px] max-w-[220px] border-r border-aeris-border/50 bg-aeris-bg/30 md:block">
+      <AgentAvatarColumn>
         <AerisVrmAvatar isActive={isActive} isSpeaking={isSending} />
-      </div>
+      </AgentAvatarColumn>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3"
+        >
           {messages.map((message) => (
             <div
               key={message.id}
               className={clsx(
-                "max-w-[92%] rounded-lg border px-3 py-2 text-[11px] leading-relaxed",
+                "max-w-[92%] rounded-lg border px-3 py-2 text-[11px] leading-relaxed whitespace-pre-wrap",
                 message.role === "user"
                   ? "ml-auto border-aeris-accent/30 bg-aeris-accent/10 text-aeris-text"
-                  : "border-aeris-border/50 bg-aeris-surface/60 text-aeris-text/90",
+                  : message.source === "weather_report"
+                    ? "border-aeris-warn/40 bg-aeris-warn/5 text-aeris-text/90"
+                    : "border-aeris-border/50 bg-aeris-surface/60 text-aeris-text/90",
               )}
             >
-              <div className="mb-1 text-[8px] font-mono uppercase tracking-widest text-aeris-muted/70">
-                {message.role === "user" ? "Operator" : "Agent Aeris"}
+              <div className="mb-1 flex items-center gap-2 text-[8px] font-mono uppercase tracking-widest text-aeris-muted/70">
+                <span>
+                  {message.role === "user"
+                    ? "Operator"
+                    : message.source === "weather_report"
+                      ? "Weather Brief"
+                      : "Agent Aeris"}
+                </span>
+                {message.source === "weather_report" && (
+                  <span className="rounded border border-aeris-warn/30 px-1 py-0.5 text-aeris-warn">
+                    Auto
+                  </span>
+                )}
               </div>
               {message.content}
             </div>
@@ -231,6 +313,14 @@ export function AgentAerisPanel({
           </button>
         </form>
       </div>
+    </div>
+  );
+}
+
+function AgentAvatarColumn({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="hidden w-[34%] min-w-[132px] max-w-[220px] border-r border-aeris-border/50 bg-aeris-bg/30 md:block">
+      {children}
     </div>
   );
 }
