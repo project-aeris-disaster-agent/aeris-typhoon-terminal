@@ -10,6 +10,8 @@ import {
   gibsRasterMaxZoom,
   getGibsRequestDiagnostics,
   getLiveWeatherSourceContract,
+  normalizeLiveImagerySource,
+  GIBS_WMTS,
 } from "./satellite-frames";
 
 describe("buildRadarTileUrl", () => {
@@ -38,11 +40,12 @@ describe("GIBS time and URLs", () => {
     );
   });
 
-  it("embeds distinct ten-minute times for adjacent animation frames", () => {
+  it("embeds distinct ten-minute times for adjacent animation frames and tags them observed", () => {
     const frames = gibsAnimationFrames(2);
     expect(frames).toHaveLength(3);
-    const a = buildGibsTileUrl("himawari-true", frames[0].time);
-    const b = buildGibsTileUrl("himawari-true", frames[1].time);
+    expect(frames.every((f) => f.kind === "observed")).toBe(true);
+    const a = buildGibsTileUrl("himawari-airmass", frames[0].time);
+    const b = buildGibsTileUrl("himawari-airmass", frames[1].time);
     expect(a).not.toBe(b);
     expect(a).toContain("/default/");
     expect(a).toContain("GoogleMapsCompatible_Level6");
@@ -59,35 +62,46 @@ describe("GIBS time and URLs", () => {
 
   it("switches GIBS layer and tile matrix when source key changes", () => {
     const t = "2026-04-27T06:00:00.000Z";
-    const vis = buildGibsTileUrl("himawari-true", t);
+    const airMass = buildGibsTileUrl("himawari-airmass", t);
     const ir = buildGibsTileUrl("himawari-ir", t);
-    expect(vis).toContain("Himawari_AHI_Air_Mass");
-    expect(vis).toContain("GoogleMapsCompatible_Level6");
+    expect(airMass).toContain("Himawari_AHI_Air_Mass");
+    expect(airMass).toContain("GoogleMapsCompatible_Level6");
     expect(ir).toContain("Himawari_AHI_Band13_Clean_Infrared");
     expect(ir).toContain("GoogleMapsCompatible_Level6");
+  });
+
+  it("accepts the legacy `himawari-true` source key as an alias for air mass", () => {
+    expect(normalizeLiveImagerySource("himawari-true")).toBe("himawari-airmass");
+    const t = "2026-04-27T06:00:00.000Z";
+    expect(buildGibsTileUrl("himawari-true", t)).toBe(
+      buildGibsTileUrl("himawari-airmass", t),
+    );
   });
 });
 
 describe("provider zoom caps (MapLibre source maxzoom)", () => {
   it("exports radar cap and per-preset GIBS caps", () => {
     expect(RADAR_TILE_MAX_ZOOM).toBe(7);
-    expect(gibsRasterMaxZoom("himawari-true")).toBe(6);
+    expect(gibsRasterMaxZoom("himawari-airmass")).toBe(6);
     expect(gibsRasterMaxZoom("himawari-ir")).toBe(6);
   });
 });
 
 describe("live weather source contracts", () => {
-  it("exposes explicit provider latency/step metadata per source", () => {
+  it("wires Air Mass directly to GIBS and IR to the RainViewer satellite catalog", () => {
     const radar = getLiveWeatherSourceContract("radar");
-    const airMass = getLiveWeatherSourceContract("himawari-true");
+    const airMass = getLiveWeatherSourceContract("himawari-airmass");
+    const ir = getLiveWeatherSourceContract("himawari-ir");
     expect(radar.provider).toBe("rainviewer");
     expect(radar.supportsTransparency).toBe(true);
     expect(radar.timeStepMinutes).toBe(10);
     expect(radar.maxzoom).toBe(RADAR_TILE_MAX_ZOOM);
-    expect(airMass.provider).toBe("rainviewer-satellite");
-    expect(airMass.supportsTransparency).toBe(true);
+    expect(airMass.provider).toBe("nasa-gibs");
+    expect(airMass.supportsTransparency).toBe(false);
     expect(airMass.dayNightBehavior).toBe("day-night-stable");
     expect(airMass.expectedLatencyMinutes).toBeGreaterThan(10);
+    expect(ir.provider).toBe("rainviewer-satellite");
+    expect(ir.dayNightBehavior).toBe("infrared");
   });
 });
 
@@ -99,5 +113,16 @@ describe("GIBS request diagnostics", () => {
     expect(d.clamped).toBe(true);
     expect(d.effectiveIsoTime).toBe("2026-06-15T13:25:00.000Z");
     jest.useRealTimers();
+  });
+});
+
+describe("GIBS_WMTS metadata exposure", () => {
+  it("exposes layer label and matrix for both presets", () => {
+    expect(GIBS_WMTS["himawari-airmass"].label).toMatch(/Air Mass/i);
+    expect(GIBS_WMTS["himawari-ir"].label).toMatch(/Clean IR|Band 13/i);
+    expect(GIBS_WMTS["himawari-airmass"].layerId).toBe("Himawari_AHI_Air_Mass");
+    expect(GIBS_WMTS["himawari-ir"].layerId).toBe(
+      "Himawari_AHI_Band13_Clean_Infrared",
+    );
   });
 });

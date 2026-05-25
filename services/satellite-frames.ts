@@ -2,12 +2,49 @@
 
 import type { Map as MLMap, RasterTileSource } from "maplibre-gl";
 import { recordFailure, recordSuccess } from "@/services/data-freshness";
+import {
+  AERIS_OVERLAY_TOP_LAYER_ID,
+  BASEMAP_MARKERS_LAYER_ID,
+  layerBeforeBasemapLabels,
+} from "@/config/map-layers";
+import { WEATHER_IMAGERY_CROSSFADE_MS } from "@/config/weather-animation";
 
-export type LiveImagerySource = "radar" | "himawari-true" | "himawari-ir";
+export type ImageryBufferSlot = 0 | 1;
+
+/**
+ * Imagery sources exposed to the UI.
+ *
+ * - `radar`            — RainViewer composite radar (precipitation).
+ * - `himawari-airmass` — GIBS Himawari `Air_Mass` RGB composite (false-color
+ *                        atmospheric analysis). Renamed from the old
+ *                        `himawari-true` key so the name no longer implies
+ *                        true-color imagery.
+ * - `himawari-ir`      — Clean infrared (Band 13). Day/night stable, used for
+ *                        cloud-top temperature and storm structure.
+ */
+export type LiveImagerySource = "radar" | "himawari-airmass" | "himawari-ir";
+
+/** Legacy URL/persistence key still accepted on input and remapped to the new name. */
+const LEGACY_SOURCE_ALIASES: Record<string, LiveImagerySource> = {
+  "himawari-true": "himawari-airmass",
+};
+
+export function normalizeLiveImagerySource(value: string): LiveImagerySource {
+  if (value === "radar" || value === "himawari-airmass" || value === "himawari-ir") {
+    return value;
+  }
+  if (value in LEGACY_SOURCE_ALIASES) return LEGACY_SOURCE_ALIASES[value];
+  return "radar";
+}
+
+/** Whether a frame represents an observed scan or a model nowcast/forecast. */
+export type FrameKind = "observed" | "nowcast";
 
 export type RadarFrame = {
   time: string;
   path: string;
+  /** Defaults to `"observed"` when omitted (e.g. GIBS browse frames). */
+  kind?: FrameKind;
 };
 
 export type RainViewerApiResponse = {
@@ -46,31 +83,34 @@ export type SatelliteFramesResult = {
   attribution: string;
 };
 
-type GibsLayerSpec = {
+export type GibsLayerSpec = {
   layerId: string;
   matrix: string;
   maxzoom: number;
+  label: string;
 };
 
 /**
  * Himawari browse layers on GIBS `best` — each uses its own TileMatrixSet
- * (not `GoogleMapsCompatible_Level9`). Old ids (`AHI_Geocolor`, …) no longer exist.
+ * (not `GoogleMapsCompatible_Level9`). Old ids (`AHI_Geocolor`, …) no longer
+ * exist.
+ *
+ * This object is the **single source of truth** for GIBS layer metadata. The
+ * `/api/gibs` route serializes this same object so the documented layer names
+ * cannot drift from what the client requests at runtime.
  */
-const GIBS_WMTS: Record<Exclude<LiveImagerySource, "radar">, GibsLayerSpec> = {
-  "himawari-true": {
-    /**
-     * Use Air_Mass for the "visual" preset so the feed remains informative
-     * across day/night cycles. Single visible-band products go near-black at
-     * night and look broken in ops dashboards.
-     */
+export const GIBS_WMTS: Record<Exclude<LiveImagerySource, "radar">, GibsLayerSpec> = {
+  "himawari-airmass": {
     layerId: "Himawari_AHI_Air_Mass",
     matrix: "GoogleMapsCompatible_Level6",
     maxzoom: 6,
+    label: "Himawari Air Mass (false color)",
   },
   "himawari-ir": {
     layerId: "Himawari_AHI_Band13_Clean_Infrared",
     matrix: "GoogleMapsCompatible_Level6",
     maxzoom: 6,
+    label: "Himawari Clean IR (Band 13)",
   },
 };
 
@@ -90,21 +130,26 @@ export const LIVE_WEATHER_SOURCE_CONTRACTS: Record<
     supportsTransparency: true,
     attribution: "RainViewer",
   },
-  "himawari-true": {
-    source: "himawari-true",
-    label: "RainViewer Satellite (Enhanced IR)",
-    provider: "rainviewer-satellite",
+  "himawari-airmass": {
+    source: "himawari-airmass",
+    label: "Himawari Air Mass (false color)",
+    /**
+     * RainViewer's public satellite endpoint only ships Clean IR. To keep
+     * "Air Mass" semantically honest, this preset is wired directly to GIBS
+     * Himawari `Air_Mass` rather than reusing the IR feed.
+     */
+    provider: "nasa-gibs",
     dayNightBehavior: "day-night-stable",
     timeStepMinutes: 10,
-    expectedLatencyMinutes: 20,
+    expectedLatencyMinutes: 35,
     staleAfterMinutes: 90,
-    maxzoom: 7,
-    supportsTransparency: true,
-    attribution: "RainViewer Satellite (fallback: NASA GIBS Himawari-9)",
+    maxzoom: 6,
+    supportsTransparency: false,
+    attribution: "NASA GIBS / Himawari-9 Air Mass",
   },
   "himawari-ir": {
     source: "himawari-ir",
-    label: "RainViewer Satellite (IR)",
+    label: "Himawari Clean IR (Band 13)",
     provider: "rainviewer-satellite",
     dayNightBehavior: "infrared",
     timeStepMinutes: 10,
@@ -112,7 +157,7 @@ export const LIVE_WEATHER_SOURCE_CONTRACTS: Record<
     staleAfterMinutes: 90,
     maxzoom: 7,
     supportsTransparency: true,
-    attribution: "RainViewer Satellite (fallback: NASA GIBS Himawari-9)",
+    attribution: "RainViewer Infrared (fallback: NASA GIBS Himawari-9 Band 13)",
   },
 };
 
@@ -124,12 +169,47 @@ export function getLiveWeatherSourceContract(
 
 const GIBS_SOURCE_ID = "src-gibs";
 const GIBS_LAYER_ID = "lyr-gibs";
+const GIBS_SOURCE_B_ID = "src-gibs-b";
+const GIBS_LAYER_B_ID = "lyr-gibs-b";
 const RADAR_SOURCE_ID = "src-radar";
 const RADAR_LAYER_ID = "lyr-radar";
+const RADAR_SOURCE_B_ID = "src-radar-b";
+const RADAR_LAYER_B_ID = "lyr-radar-b";
 const satelliteProviderByMap = new WeakMap<MLMap, SatelliteFrameProvider>();
+const imageryBaseOpacityByMap = new WeakMap<MLMap, number>();
+
+const RADAR_LAYER_IDS = [RADAR_LAYER_ID, RADAR_LAYER_B_ID] as const;
+const GIBS_LAYER_IDS = [GIBS_LAYER_ID, GIBS_LAYER_B_ID] as const;
+
+export function radarBufferIds(slot: ImageryBufferSlot): {
+  source: string;
+  layer: string;
+} {
+  return slot === 0
+    ? { source: RADAR_SOURCE_ID, layer: RADAR_LAYER_ID }
+    : { source: RADAR_SOURCE_B_ID, layer: RADAR_LAYER_B_ID };
+}
+
+export function gibsBufferIds(slot: ImageryBufferSlot): {
+  source: string;
+  layer: string;
+} {
+  return slot === 0
+    ? { source: GIBS_SOURCE_ID, layer: GIBS_LAYER_ID }
+    : { source: GIBS_SOURCE_B_ID, layer: GIBS_LAYER_B_ID };
+}
+
+export function imageryBufferSourceId(
+  source: LiveImagerySource,
+  slot: ImageryBufferSlot,
+): string {
+  return source === "radar"
+    ? radarBufferIds(slot).source
+    : gibsBufferIds(slot).source;
+}
 const TOP_CONTEXT_LAYER_IDS = [
-  "osm-top-labels",
-  "ph-major-city-dots",
+  BASEMAP_MARKERS_LAYER_ID,
+  AERIS_OVERLAY_TOP_LAYER_ID,
 ] as const;
 
 /**
@@ -152,8 +232,9 @@ const GIBS_TIME_STEP_MS = 10 * 60 * 1000;
 const GIBS_PUBLISH_LAG_MS = 35 * 60 * 1000;
 
 function resolveGibsSpec(sourceKey: string): GibsLayerSpec {
-  if (sourceKey === "himawari-ir") return GIBS_WMTS["himawari-ir"];
-  return GIBS_WMTS["himawari-true"];
+  const normalized = normalizeLiveImagerySource(sourceKey);
+  if (normalized === "himawari-ir") return GIBS_WMTS["himawari-ir"];
+  return GIBS_WMTS["himawari-airmass"];
 }
 
 export type GibsRequestDiagnostics = {
@@ -226,6 +307,7 @@ export function gibsAnimationFrames(stepsBack = 11): RadarFrame[] {
     out.push({
       time: new Date(anchor.getTime() - i * GIBS_TIME_STEP_MS).toISOString(),
       path: "",
+      kind: "observed",
     });
   }
   return out;
@@ -258,13 +340,12 @@ function satelliteTileUrl(
 /** Keep GIBS / RainViewer rasters above lazily inserted hazard vectors. */
 export function pinSatelliteRastersToTop(map: MLMap) {
   if (typeof map.moveLayer !== "function") return;
-  if (map.getLayer(GIBS_LAYER_ID)) {
-    map.moveLayer(GIBS_LAYER_ID);
+  const labelAnchor = layerBeforeBasemapLabels(map);
+  for (const layerId of [...GIBS_LAYER_IDS, ...RADAR_LAYER_IDS]) {
+    if (!map.getLayer(layerId)) continue;
+    if (labelAnchor) map.moveLayer(layerId, labelAnchor);
+    else map.moveLayer(layerId);
   }
-  if (map.getLayer(RADAR_LAYER_ID)) {
-    map.moveLayer(RADAR_LAYER_ID);
-  }
-  // Keep contextual orientation aids above weather overlays.
   for (const layerId of TOP_CONTEXT_LAYER_IDS) {
     if (map.getLayer(layerId)) map.moveLayer(layerId);
   }
@@ -277,11 +358,10 @@ export function pinSatelliteRastersToTop(map: MLMap) {
 function syncSatelliteOverlayMapMode(map: MLMap, mode: "2d" | "3d") {
   const kind = activeOverlayByMap.get(map) ?? "none";
   if (mode === "3d") {
-    if (map.getLayer(RADAR_LAYER_ID)) {
-      map.setLayoutProperty(RADAR_LAYER_ID, "visibility", "none");
-    }
-    if (map.getLayer(GIBS_LAYER_ID)) {
-      map.setLayoutProperty(GIBS_LAYER_ID, "visibility", "none");
+    for (const layerId of [...RADAR_LAYER_IDS, ...GIBS_LAYER_IDS]) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, "visibility", "none");
+      }
     }
     return;
   }
@@ -289,11 +369,19 @@ function syncSatelliteOverlayMapMode(map: MLMap, mode: "2d" | "3d") {
   const vis = "visible" as const;
   const hidden = "none" as const;
   if (kind === "radar") {
-    if (map.getLayer(RADAR_LAYER_ID)) map.setLayoutProperty(RADAR_LAYER_ID, "visibility", vis);
-    if (map.getLayer(GIBS_LAYER_ID)) map.setLayoutProperty(GIBS_LAYER_ID, "visibility", hidden);
+    for (const layerId of RADAR_LAYER_IDS) {
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", vis);
+    }
+    for (const layerId of GIBS_LAYER_IDS) {
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", hidden);
+    }
   } else if (kind === "gibs") {
-    if (map.getLayer(GIBS_LAYER_ID)) map.setLayoutProperty(GIBS_LAYER_ID, "visibility", vis);
-    if (map.getLayer(RADAR_LAYER_ID)) map.setLayoutProperty(RADAR_LAYER_ID, "visibility", hidden);
+    for (const layerId of GIBS_LAYER_IDS) {
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", vis);
+    }
+    for (const layerId of RADAR_LAYER_IDS) {
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", hidden);
+    }
   }
   pinSatelliteRastersToTop(map);
 }
@@ -325,13 +413,18 @@ export async function fetchRadarFrames(): Promise<RadarFramesResult> {
       recordFailure("radar", "RainViewer returned an invalid payload.");
       throw new Error("RainViewer returned an invalid payload.");
     }
-    const all = [...data.radar.past, ...data.radar.nowcast];
-    const frames = all.map((f) => ({
+    const observed: RadarFrame[] = data.radar.past.map((f) => ({
       time: new Date(f.time * 1000).toISOString(),
       path: `${data.host}${f.path}`,
+      kind: "observed",
+    }));
+    const nowcast: RadarFrame[] = data.radar.nowcast.map((f) => ({
+      time: new Date(f.time * 1000).toISOString(),
+      path: `${data.host}${f.path}`,
+      kind: "nowcast",
     }));
     recordSuccess("radar");
-    return { frames };
+    return { frames: [...observed, ...nowcast] };
   } catch (error) {
     recordFailure("radar", (error as Error).message);
     throw error;
@@ -341,34 +434,55 @@ export async function fetchRadarFrames(): Promise<RadarFramesResult> {
 export async function fetchSatelliteFrames(
   sourceKey: Exclude<LiveImagerySource, "radar">,
 ): Promise<SatelliteFramesResult> {
+  const freshnessKey = `satellite:${sourceKey}`;
+  /**
+   * Air Mass is a GIBS-only product (RainViewer doesn't expose it). Route the
+   * preset directly to GIBS so the imagery actually matches the label, and
+   * skip the RainViewer round-trip entirely.
+   */
+  if (sourceKey === "himawari-airmass") {
+    recordSuccess(freshnessKey);
+    return {
+      provider: "gibs-fallback",
+      frames: gibsAnimationFrames(),
+      supportsTransparency: false,
+      attribution: "NASA GIBS / Himawari-9 Air Mass",
+    };
+  }
+
   try {
     const res = await fetch("/api/rainviewer", { cache: "no-store" });
     const data = (await res.json().catch(() => ({}))) as
       | RainViewerApiResponse
       | { error?: string };
     if (!res.ok || !isRainViewerApiResponse(data)) {
-      throw new Error(
-        !res.ok
-          ? "error" in data && typeof data.error === "string"
-            ? data.error
-            : `RainViewer ${res.status}`
-          : "RainViewer returned an invalid payload.",
-      );
+      const message = !res.ok
+        ? "error" in data && typeof data.error === "string"
+          ? data.error
+          : `RainViewer ${res.status}`
+        : "RainViewer returned an invalid payload.";
+      throw new Error(message);
     }
     const sat = data.satellite?.infrared ?? [];
     if (sat.length > 0) {
+      recordSuccess(freshnessKey);
       return {
         provider: "rainviewer-satellite",
         frames: sat.map((f) => ({
           time: new Date(f.time * 1000).toISOString(),
           path: `${data.host}${f.path}`,
+          kind: "observed",
         })),
         supportsTransparency: true,
-        attribution: "RainViewer Satellite",
+        attribution: "RainViewer Infrared",
       };
     }
-  } catch {
-    // Fall through to GIBS fallback.
+    recordFailure(
+      freshnessKey,
+      "RainViewer satellite catalog is empty; using GIBS fallback.",
+    );
+  } catch (error) {
+    recordFailure(freshnessKey, (error as Error).message);
   }
   return {
     provider: "gibs-fallback",
@@ -378,9 +492,69 @@ export async function fetchSatelliteFrames(
   };
 }
 
-function removeGibsLayerIfAny(map: MLMap) {
-  if (map.getLayer(GIBS_LAYER_ID)) map.removeLayer(GIBS_LAYER_ID);
-  if (map.getSource(GIBS_SOURCE_ID)) map.removeSource(GIBS_SOURCE_ID);
+function removeGibsLayersIfAny(map: MLMap) {
+  for (const layerId of GIBS_LAYER_IDS) {
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+  }
+  for (const sourceId of [GIBS_SOURCE_ID, GIBS_SOURCE_B_ID]) {
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+  }
+}
+
+function removeRadarLayersIfAny(map: MLMap) {
+  for (const layerId of RADAR_LAYER_IDS) {
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+  }
+  for (const sourceId of [RADAR_SOURCE_ID, RADAR_SOURCE_B_ID]) {
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+  }
+}
+
+function baseOpacityFromPaint(paint: RasterPaintSpec): number {
+  const raw = paint["raster-opacity"];
+  return typeof raw === "number" ? raw : 1;
+}
+
+export function setImageryBufferOpacity(
+  map: MLMap,
+  source: LiveImagerySource,
+  slot: ImageryBufferSlot,
+  multiplier: number,
+) {
+  const layerId =
+    source === "radar"
+      ? radarBufferIds(slot).layer
+      : gibsBufferIds(slot).layer;
+  if (!map.getLayer(layerId)) return;
+  const base = imageryBaseOpacityByMap.get(map) ?? 1;
+  map.setPaintProperty(layerId, "raster-opacity", base * Math.max(0, Math.min(1, multiplier)));
+}
+
+export function resetImageryBufferOpacities(
+  map: MLMap,
+  source: LiveImagerySource,
+  activeSlot: ImageryBufferSlot,
+) {
+  setImageryBufferOpacity(map, source, activeSlot, 1);
+  const inactiveSlot: ImageryBufferSlot = activeSlot === 0 ? 1 : 0;
+  setImageryBufferOpacity(map, source, inactiveSlot, 0);
+}
+
+/** Incoming frame layer should sit above the outgoing buffer during crossfade. */
+export function raiseImageryBufferSlot(
+  map: MLMap,
+  source: LiveImagerySource,
+  slot: ImageryBufferSlot,
+) {
+  const layerId =
+    source === "radar"
+      ? radarBufferIds(slot).layer
+      : gibsBufferIds(slot).layer;
+  if (!map.getLayer(layerId) || typeof map.moveLayer !== "function") return;
+  const labelAnchor = layerBeforeBasemapLabels(map);
+  if (labelAnchor) map.moveLayer(layerId, labelAnchor);
+  else map.moveLayer(layerId);
+  pinSatelliteRastersToTop(map);
 }
 
 type SatelliteBlendPreset = "disturbance-only" | "screen-like";
@@ -399,7 +573,7 @@ function gibsRasterPaint(sourceKey: string): RasterPaintSpec {
   if (preset === "disturbance-only") {
     return {
       "raster-opacity": 0.5,
-      "raster-fade-duration": 0,
+      "raster-fade-duration": WEATHER_IMAGERY_CROSSFADE_MS,
       "raster-resampling": "linear",
       "raster-contrast": 0.4,
       "raster-saturation": -0.4,
@@ -409,10 +583,10 @@ function gibsRasterPaint(sourceKey: string): RasterPaintSpec {
     };
   }
 
-  if (sourceKey === "himawari-true") {
+  if (sourceKey === "himawari-airmass" || sourceKey === "himawari-true") {
     return {
       "raster-opacity": 0.54,
-      "raster-fade-duration": 0,
+      "raster-fade-duration": WEATHER_IMAGERY_CROSSFADE_MS,
       "raster-resampling": "linear",
       "raster-contrast": 0.36,
       "raster-saturation": 0.22,
@@ -439,7 +613,7 @@ function transparentSatelliteOverlayPaint(
   if (sourceKey === "himawari-ir") {
     return {
       "raster-opacity": 1,
-      "raster-fade-duration": 0,
+      "raster-fade-duration": WEATHER_IMAGERY_CROSSFADE_MS,
       "raster-resampling": "linear",
       "raster-contrast": 0.2,
       "raster-saturation": -0.1,
@@ -469,30 +643,53 @@ function applyRasterPaint(
   }
 }
 
-export function ensureSatelliteLayer(
+function addGibsBufferLayer(
   map: MLMap,
+  slot: ImageryBufferSlot,
+  tileUrl: string,
+  maxzoom: number,
+  attribution: string,
+  paint: RasterPaintSpec,
+) {
+  const { source: sourceId, layer: layerId } = gibsBufferIds(slot);
+  if (!map.getSource(sourceId)) {
+    map.addSource(sourceId, {
+      type: "raster",
+      tiles: [tileUrl],
+      tileSize: 256,
+      maxzoom,
+      attribution,
+    });
+  } else {
+    const src = map.getSource(sourceId) as RasterTileSource | undefined;
+    if (src && "setTiles" in src && tileUrl) {
+      src.setTiles([tileUrl]);
+    }
+  }
+  if (!map.getLayer(layerId)) {
+    map.addLayer(
+      {
+        id: layerId,
+        type: "raster",
+        source: sourceId,
+        paint,
+      },
+      layerBeforeBasemapLabels(map),
+    );
+  } else {
+    applyRasterPaint(map, layerId, paint);
+  }
+}
+
+export function setSatelliteFrameOnSlot(
+  map: MLMap,
+  slot: ImageryBufferSlot,
   sourceKey: Exclude<LiveImagerySource, "radar">,
   frame: RadarFrame,
   provider: SatelliteFrameProvider,
 ) {
-  setActiveSatelliteOverlay(map, "gibs");
-  if (map.getLayer(RADAR_LAYER_ID)) {
-    map.setLayoutProperty(RADAR_LAYER_ID, "visibility", "none");
-  }
-
   const spec = resolveGibsSpec(sourceKey);
-  const prevKey = gibsSourceKeyByMap.get(map);
-  const prevProvider = satelliteProviderByMap.get(map);
-  const prevSpec =
-    prevKey && prevKey in GIBS_WMTS
-      ? GIBS_WMTS[prevKey as Exclude<LiveImagerySource, "radar">]
-      : null;
   const tileUrl = satelliteTileUrl(sourceKey, provider, frame);
-  const sourceShapeChanged =
-    provider !== prevProvider ||
-    (provider === "gibs-fallback" &&
-      !!prevSpec &&
-      (prevSpec.matrix !== spec.matrix || prevSpec.maxzoom !== spec.maxzoom));
   const paint =
     provider === "rainviewer-satellite"
       ? transparentSatelliteOverlayPaint(sourceKey)
@@ -500,37 +697,59 @@ export function ensureSatelliteLayer(
   const maxzoom = provider === "rainviewer-satellite" ? RADAR_TILE_MAX_ZOOM : spec.maxzoom;
   const attribution =
     provider === "rainviewer-satellite" ? "RainViewer Satellite" : "NASA GIBS / Himawari-9";
+  imageryBaseOpacityByMap.set(map, baseOpacityFromPaint(paint));
+  addGibsBufferLayer(map, slot, tileUrl, maxzoom, attribution, paint);
+}
 
-  if (!map.getSource(GIBS_SOURCE_ID) || sourceShapeChanged) {
-    removeGibsLayerIfAny(map);
-    map.addSource(GIBS_SOURCE_ID, {
-      type: "raster",
-      tiles: [tileUrl],
-      tileSize: 256,
-      maxzoom,
-      attribution,
-    });
-    map.addLayer({
-      id: GIBS_LAYER_ID,
-      type: "raster",
-      source: GIBS_SOURCE_ID,
-      paint,
-    });
-  } else {
-    const src = map.getSource(GIBS_SOURCE_ID) as RasterTileSource | undefined;
-    if (src && "setTiles" in src) {
-      src.setTiles([tileUrl]);
+export function ensureSatelliteLayer(
+  map: MLMap,
+  sourceKey: Exclude<LiveImagerySource, "radar">,
+  frame: RadarFrame,
+  provider: SatelliteFrameProvider,
+) {
+  setActiveSatelliteOverlay(map, "gibs");
+  for (const layerId of RADAR_LAYER_IDS) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", "none");
     }
-    if (!map.getLayer(GIBS_LAYER_ID)) {
-      map.addLayer({
-        id: GIBS_LAYER_ID,
-        type: "raster",
-        source: GIBS_SOURCE_ID,
-        paint,
-      });
-    } else {
-      map.setLayoutProperty(GIBS_LAYER_ID, "visibility", "visible");
-      applyRasterPaint(map, GIBS_LAYER_ID, paint);
+  }
+
+  const spec = resolveGibsSpec(sourceKey);
+  const prevKey = gibsSourceKeyByMap.get(map);
+  const prevNormalized = prevKey
+    ? (normalizeLiveImagerySource(prevKey) as LiveImagerySource)
+    : null;
+  const prevProvider = satelliteProviderByMap.get(map);
+  const prevSpec =
+    prevNormalized && prevNormalized !== "radar"
+      ? GIBS_WMTS[prevNormalized as Exclude<LiveImagerySource, "radar">]
+      : null;
+  const sourceShapeChanged =
+    provider !== prevProvider ||
+    (provider === "gibs-fallback" &&
+      !!prevSpec &&
+      (prevSpec.matrix !== spec.matrix || prevSpec.maxzoom !== spec.maxzoom));
+
+  if (sourceShapeChanged) {
+    removeGibsLayersIfAny(map);
+  }
+
+  setSatelliteFrameOnSlot(map, 0, sourceKey, frame, provider);
+  for (const slot of [1] as const) {
+    setSatelliteFrameOnSlot(
+      map,
+      slot,
+      sourceKey,
+      frame,
+      provider,
+    );
+    setImageryBufferOpacity(map, sourceKey, slot, 0);
+  }
+  setImageryBufferOpacity(map, sourceKey, 0, 1);
+
+  for (const layerId of GIBS_LAYER_IDS) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", "visible");
     }
   }
   gibsSourceKeyByMap.set(map, sourceKey);
@@ -548,83 +767,114 @@ export function ensureGibsLayer(map: MLMap, sourceKey: string) {
   );
 }
 
-export function ensureRadarLayer(map: MLMap, frame?: RadarFrame) {
-  if (map.getLayer(GIBS_LAYER_ID)) {
-    map.setLayoutProperty(GIBS_LAYER_ID, "visibility", "none");
-  }
-  const url = frame ? radarTileUrl(frame) : null;
-  if (!map.getSource(RADAR_SOURCE_ID)) {
-    if (!url) return;
-    setActiveSatelliteOverlay(map, "radar");
-    map.addSource(RADAR_SOURCE_ID, {
+function radarLayerPaint(): RasterPaintSpec {
+  return {
+    "raster-opacity": 1,
+    "raster-fade-duration": WEATHER_IMAGERY_CROSSFADE_MS,
+    "raster-contrast": 0.3,
+    "raster-saturation": 0.15,
+    "raster-brightness-min": 0.2,
+    "raster-brightness-max": 1,
+  };
+}
+
+function addRadarBufferLayer(
+  map: MLMap,
+  slot: ImageryBufferSlot,
+  url: string | null,
+) {
+  if (!url) return;
+  const { source: sourceId, layer: layerId } = radarBufferIds(slot);
+  const paint = radarLayerPaint();
+  if (!map.getSource(sourceId)) {
+    map.addSource(sourceId, {
       type: "raster",
       tiles: [url],
       tileSize: 256,
       maxzoom: RADAR_TILE_MAX_ZOOM,
       attribution: "RainViewer",
     });
-    map.addLayer({
-      id: RADAR_LAYER_ID,
-      type: "raster",
-      source: RADAR_SOURCE_ID,
-      paint: {
-        // Restore fully opaque disturbance pixels while keeping low-return clutter subdued.
-        "raster-opacity": 1,
-        "raster-fade-duration": 220,
-        "raster-contrast": 0.3,
-        "raster-saturation": 0.15,
-        "raster-brightness-min": 0.2,
-        "raster-brightness-max": 1,
-      },
-    });
   } else {
-    setActiveSatelliteOverlay(map, "radar");
-    map.setLayoutProperty(RADAR_LAYER_ID, "visibility", "visible");
-    const src = map.getSource(RADAR_SOURCE_ID) as RasterTileSource | undefined;
-    if (src && "setTiles" in src && url) {
+    const src = map.getSource(sourceId) as RasterTileSource | undefined;
+    if (src && "setTiles" in src) {
       src.setTiles([url]);
+    }
+  }
+  if (!map.getLayer(layerId)) {
+    map.addLayer(
+      {
+        id: layerId,
+        type: "raster",
+        source: sourceId,
+        paint,
+      },
+      layerBeforeBasemapLabels(map),
+    );
+  } else {
+    applyRasterPaint(map, layerId, paint);
+  }
+}
+
+export function setRadarFrameOnSlot(
+  map: MLMap,
+  slot: ImageryBufferSlot,
+  frame: RadarFrame,
+) {
+  const url = radarTileUrl(frame);
+  if (!url) return;
+  imageryBaseOpacityByMap.set(map, 1);
+  addRadarBufferLayer(map, slot, url);
+}
+
+export function ensureRadarLayer(map: MLMap, frame?: RadarFrame) {
+  for (const layerId of GIBS_LAYER_IDS) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", "none");
+    }
+  }
+  if (!frame) return;
+  const url = radarTileUrl(frame);
+  if (!url) return;
+  setActiveSatelliteOverlay(map, "radar");
+  setRadarFrameOnSlot(map, 0, frame);
+  setRadarFrameOnSlot(map, 1, frame);
+  resetImageryBufferOpacities(map, "radar", 0);
+  for (const layerId of RADAR_LAYER_IDS) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", "visible");
     }
   }
   pinSatelliteRastersToTop(map);
   reapplySatelliteImageryForStoredMapMode(map);
 }
 
+/** Set the active buffer slot to a frame (used for style reattach and first paint). */
 export function setFrameTimestamp(
   map: MLMap,
   source: LiveImagerySource,
   frame: RadarFrame,
   provider: SatelliteFrameProvider = "gibs-fallback",
+  activeSlot: ImageryBufferSlot = 0,
 ) {
   if (source === "radar") {
-    const url = radarTileUrl(frame);
-    const src = map.getSource(RADAR_SOURCE_ID) as RasterTileSource | undefined;
-    if (src && "setTiles" in src) {
-      src.setTiles([url]);
+    if (map.getSource(RADAR_SOURCE_ID)) {
+      setRadarFrameOnSlot(map, activeSlot, frame);
       pinSatelliteRastersToTop(map);
       reapplySatelliteImageryForStoredMapMode(map);
-    } else if (url) {
+    } else {
       ensureRadarLayer(map, frame);
     }
   } else {
     const sourceKey = source as Exclude<LiveImagerySource, "radar">;
-    const tileUrl = satelliteTileUrl(sourceKey, provider, frame);
-    const src = map.getSource(GIBS_SOURCE_ID) as RasterTileSource | undefined;
-    if (src && "setTiles" in src) {
-      src.setTiles([tileUrl]);
-      applyRasterPaint(
-        map,
-        GIBS_LAYER_ID,
-        provider === "rainviewer-satellite"
-          ? transparentSatelliteOverlayPaint(sourceKey)
-          : gibsRasterPaint(sourceKey),
-      );
+    if (map.getSource(GIBS_SOURCE_ID)) {
+      setSatelliteFrameOnSlot(map, activeSlot, sourceKey, frame, provider);
       satelliteProviderByMap.set(map, provider);
       gibsSourceKeyByMap.set(map, sourceKey);
-    } else if (tileUrl) {
+      pinSatelliteRastersToTop(map);
+      reapplySatelliteImageryForStoredMapMode(map);
+    } else {
       ensureSatelliteLayer(map, sourceKey, frame, provider);
     }
-    pinSatelliteRastersToTop(map);
-    reapplySatelliteImageryForStoredMapMode(map);
   }
 }
 

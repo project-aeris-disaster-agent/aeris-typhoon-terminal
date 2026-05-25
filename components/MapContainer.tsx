@@ -5,6 +5,7 @@ import type { Map as MLMap } from "maplibre-gl";
 import { Map2D } from "./Map2D";
 import { MapModeToggle } from "./MapModeToggle";
 import { LayerLegend, QuickViewsPanel } from "./LayerLegend";
+import { LiveWeatherFrameHud } from "./LiveWeatherFrameHud";
 import { readUrlState, writeUrlState } from "@/services/url-state";
 import { setMapSceneTheme, subscribeSceneLoading } from "@/services/map-scene";
 import { DataLoadingPopup } from "@/components/ui/DataLoadingPopup";
@@ -127,9 +128,10 @@ export function MapContainer({ onMapReady, mapOverlay }: MapContainerProps) {
 
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
         <MapModeToggle mode={mode} onChange={setMode} />
-        {mode === "3d" && <QuickViewsPanel map={map} />}
+        <QuickViewsPanel map={map} mode={mode} />
         <LayerLegend map={map} mode={mode} />
       </div>
+      {mode === "2d" && <LiveWeatherFrameHud />}
     </div>
   );
 }

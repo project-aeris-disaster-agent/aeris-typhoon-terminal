@@ -10,6 +10,7 @@ import {
 import {
   setLiveWeatherImagerySource,
   LIVE_WEATHER_STATUS_EVENT,
+  type LiveWeatherFrameDetail,
   type LiveWeatherStatusDetail,
 } from "@/services/live-weather-overlay";
 import { FreshnessTag } from "../ui/FreshnessTag";
@@ -19,26 +20,32 @@ const SOURCES: Record<
   { label: string; short: string; hint: string }
 > = {
   radar: {
-    label: "RainViewer Radar",
+    label: "Precipitation radar",
     short: "Radar",
-    hint: "Precipitation — last ~2h + nowcast",
+    hint: "RainViewer composite — observed past 2h + 30 min nowcast (forecast frames are flagged)",
   },
-  "himawari-true": {
-    label: "Satellite enhanced IR",
-    short: "SAT+",
-    hint: "Primary: RainViewer satellite; fallback: GIBS Himawari",
+  "himawari-airmass": {
+    label: "Air Mass (false color)",
+    short: "AIR MASS",
+    hint: "GIBS Himawari-9 Air_Mass RGB composite — day/night stable atmospheric analysis",
   },
   "himawari-ir": {
-    label: "Satellite infrared",
-    short: "SAT IR",
-    hint: "Primary: RainViewer satellite IR; fallback: GIBS Himawari IR",
+    label: "Infrared (Band 13)",
+    short: "IR",
+    hint: "RainViewer Clean IR (fallback: GIBS Himawari Band 13) — cloud-top temperature",
   },
 };
+
+/** Freshness key written by `fetchSatelliteFrames` / `fetchRadarFrames`. */
+function freshnessKeyFor(source: LiveImagerySource): string {
+  return source === "radar" ? "radar" : `satellite:${source}`;
+}
 
 export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
   const [source, setSource] = useState<LiveImagerySource>("radar");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<LiveWeatherStatusDetail | null>(null);
+  const [frame, setFrame] = useState<LiveWeatherFrameDetail | null>(null);
 
   useEffect(() => {
     const onStatus = (ev: Event) => {
@@ -46,14 +53,26 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
       if (!e.detail || e.detail.source !== source) return;
       setStatus(e.detail);
     };
+    const onFrame = (ev: Event) => {
+      const e = ev as CustomEvent<LiveWeatherFrameDetail>;
+      if (!e.detail || e.detail.source !== source) return;
+      setFrame(e.detail);
+    };
     window.addEventListener(LIVE_WEATHER_STATUS_EVENT, onStatus as EventListener);
-    return () =>
+    window.addEventListener("aeris:live-weather-frame", onFrame as EventListener);
+    return () => {
       window.removeEventListener(LIVE_WEATHER_STATUS_EVENT, onStatus as EventListener);
+      window.removeEventListener(
+        "aeris:live-weather-frame",
+        onFrame as EventListener,
+      );
+    };
   }, [source]);
 
   useEffect(() => {
     if (!map) return;
     setStatus(null);
+    setFrame(null);
     setLiveWeatherImagerySource(map, source);
     setError(null);
   }, [map, source]);
@@ -71,6 +90,8 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
       : status?.health === "delayed"
         ? "Delayed"
         : "Live";
+
+  const isForecastFrame = frame?.kind === "nowcast";
 
   return (
     <div className="space-y-3">
@@ -98,9 +119,17 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
             {status.frameAgeMinutes > contract.staleAfterMinutes ? " (stale)" : ""}
           </span>
         )}
+        {isForecastFrame && (
+          <span
+            className="rounded border border-orange-500/40 bg-orange-500/10 px-1.5 py-0.5 font-semibold uppercase tracking-wider text-orange-300"
+            title="Model nowcast — forecast precipitation, not an observed scan"
+          >
+            Forecast
+          </span>
+        )}
       </div>
       <div className="text-[10px] text-aeris-muted/80">
-        Source: {contract.attribution}
+        Source: {frame?.attribution ?? contract.attribution}
       </div>
 
       {error && (
@@ -114,7 +143,7 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
         </div>
       )}
 
-      {source === "radar" && !error && <FreshnessTag source="radar" />}
+      {!error && <FreshnessTag source={freshnessKeyFor(source)} />}
 
       <div className="rounded-lg border border-aeris-border/80 bg-aeris-bg/30 p-0.5 flex gap-0.5">
         {(Object.keys(SOURCES) as LiveImagerySource[]).map((k) => (

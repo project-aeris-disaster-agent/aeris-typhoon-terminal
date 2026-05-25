@@ -4,14 +4,19 @@
  * Strategies:
  *  - App shell: cache-first with network revalidation
  *  - Hazard layers & DEM: cache-first, long TTL
- *  - Map tiles (OSM / NOAH WMS / GIBS / RainViewer): stale-while-revalidate
+ *  - Basemap tiles (OSM / CARTO): stale-while-revalidate
+ *  - **Live weather tiles (GIBS / RainViewer): always network**
+ *      The browser HTTP cache plus per-frame URLs already give us the right
+ *      caching behavior; layering SWR on top here was masking stale frames
+ *      when revalidation silently failed (the operator-visible "wrong
+ *      satellite imagery" symptom).
  *  - API responses (alerts, forecast, jtwc): network-first with offline fallback
  *  - Scene packs: network-first with cached asset fallback
  *  - Reports POST: queued in IndexedDB when offline, flushed on reconnect via
  *    background sync
  */
 
-const SW_VERSION = "aeris-v2";
+const SW_VERSION = "aeris-v3";
 const CACHE_SHELL = `${SW_VERSION}-shell`;
 const CACHE_HAZARDS = `${SW_VERSION}-hazards`;
 const CACHE_SCENE = `${SW_VERSION}-scene`;
@@ -19,7 +24,14 @@ const CACHE_TILES = `${SW_VERSION}-tiles`;
 const CACHE_API = `${SW_VERSION}-api`;
 const QUEUE_DB = "aeris-queue";
 const QUEUE_STORE = "reports";
-const TILE_HOST_RE = /tile\.openstreetmap|gibs\.earthdata|rainviewer|noah\.up\.edu\.ph/;
+/** Hosts that may be cached via stale-while-revalidate (basemap-only). */
+const TILE_HOST_RE = /tile\.openstreetmap|basemaps\.cartocdn\.com/;
+/**
+ * Hosts whose responses must **always** hit the network. Keeping live-weather
+ * imagery here prevents the SW from serving an out-of-date PNG while a
+ * background revalidation silently fails or stalls.
+ */
+const LIVE_WEATHER_HOST_RE = /gibs\.earthdata\.nasa\.gov|rainviewer\.com/;
 
 const SHELL_ASSETS = ["/", "/manifest.json"];
 
@@ -60,6 +72,14 @@ self.addEventListener("fetch", (event) => {
   }
   if (url.pathname.startsWith("/osm-context/")) {
     event.respondWith(networkFirstAsset(CACHE_SCENE, request));
+    return;
+  }
+  if (LIVE_WEATHER_HOST_RE.test(request.url)) {
+    /**
+     * Bypass the SW entirely for live-weather tile hosts. The browser will
+     * still apply its own HTTP cache via response headers, which is the
+     * correct behavior for time-keyed tile URLs.
+     */
     return;
   }
   if (
