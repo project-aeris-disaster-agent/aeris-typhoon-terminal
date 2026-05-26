@@ -1,7 +1,5 @@
 "use client";
 
-import { DotPattern } from "@/components/DotPattern";
-
 export type HazardPopupReport = {
   category: string;
   description: string;
@@ -22,87 +20,115 @@ export type HazardPopupContentProps = {
   report?: HazardPopupReport | null;
 };
 
+function formatLabel(value: string) {
+  return value
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function shortId(id: string) {
+  if (id.length <= 16) return id;
+  return `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
+
 export function HazardPopupContent({
   lat,
   lng,
   barangayName,
   report,
 }: HazardPopupContentProps) {
-  const coord = `${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E`;
+  const location = barangayName ?? `${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E`;
   const messageBody = report?.description?.trim() ?? "";
 
+  if (!report) {
+    return (
+      <div className="w-[220px] rounded-md border border-aeris-border bg-aeris-surface/95 p-2.5 text-aeris-text shadow-md backdrop-blur-sm">
+        <p className="text-xs font-medium">{location}</p>
+        <p className="mt-1 font-mono text-[10px] text-aeris-muted">
+          {lat.toFixed(4)}°N, {lng.toFixed(4)}°E
+        </p>
+      </div>
+    );
+  }
+
+  const showMint =
+    report.onchainStatus &&
+    report.onchainStatus !== "not_started" &&
+    report.onchainStatus !== "skipped";
+
+  const meta: string[] = [];
+  if (report.confidenceLabel && report.confidenceLabel !== "unknown") {
+    meta.push(`${report.confidenceLabel} confidence`);
+  }
+  if (report.reportedAt) meta.push(report.reportedAt);
+  if (showMint) meta.push(formatLabel(report.onchainStatus));
+
   return (
-    <div className="relative overflow-hidden rounded-lg border border-aeris-border bg-aeris-surface text-aeris-text shadow-lg">
-      <div className="pointer-events-none absolute inset-0 text-aeris-accent/[0.08] md:text-aeris-accent/[0.12]">
-        <DotPattern width={20} height={20} cr={0.45} />
+    <div className="w-[240px] rounded-md border border-aeris-border bg-aeris-surface/95 p-2.5 text-aeris-text shadow-md backdrop-blur-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-semibold leading-tight">
+            {formatLabel(report.category)}
+          </p>
+          <p className="mt-0.5 truncate text-[10px] text-aeris-muted">{location}</p>
+        </div>
+        <span
+          className={`shrink-0 rounded px-1 py-0.5 font-mono text-[9px] uppercase leading-none ${
+            report.verificationStatus === "verified"
+              ? "bg-aeris-accent/15 text-aeris-accent"
+              : "bg-aeris-danger/10 text-aeris-danger"
+          }`}
+        >
+          {formatLabel(report.verificationStatus)}
+        </span>
       </div>
-      <div className="relative z-10 space-y-2.5 p-3 font-sans">
-        <div className="font-mono text-[10px] text-aeris-muted">{coord}</div>
-        {barangayName ? (
-          <div className="text-sm font-medium text-aeris-text">{barangayName}</div>
-        ) : null}
-        {report ? (
-          <div className="space-y-2.5 border-t border-aeris-border pt-2.5">
-            <div className="font-mono text-[10px] font-medium uppercase tracking-wide text-aeris-danger">
-              {report.category}
-            </div>
-            <div className="flex flex-wrap gap-1 font-mono text-[9px] uppercase">
-              <span className="rounded-full border border-aeris-danger/35 bg-aeris-danger/10 px-1.5 py-0.5 text-aeris-danger">
-                {report.verificationStatus}
-              </span>
-              <span className="rounded-full border border-aeris-border px-1.5 py-0.5 text-aeris-muted">
-                {report.confidenceLabel} confidence
-              </span>
-              <span className="rounded-full border border-aeris-border px-1.5 py-0.5 text-aeris-muted">
-                mint {report.onchainStatus}
-              </span>
-            </div>
-            <div className="rounded border border-aeris-border bg-aeris-elev/40 p-2.5">
-              <div className="font-mono text-[9px] font-semibold uppercase tracking-wider text-aeris-danger">
-                Message
-              </div>
-              <p className="mt-1.5 text-sm leading-relaxed text-aeris-text">
-                {messageBody ? messageBody : (
-                  <span className="text-aeris-muted italic">No message text</span>
-                )}
-              </p>
-            </div>
-            {report.messageId ? (
-              <div className="font-mono text-[10px] text-aeris-muted">
-                id: {report.messageId}
-              </div>
-            ) : null}
-            <div className="font-mono text-[10px] text-aeris-muted">
-              source: {report.sourceLine}
-            </div>
-            {report.reportedAt ? (
-              <div className="font-mono text-[10px] text-aeris-muted">
-                reported: {report.reportedAt}
-              </div>
-            ) : null}
-            {report.basescanTxHref ? (
-              <a
-                href={report.basescanTxHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block text-xs text-aeris-accent underline decoration-aeris-accent/40 underline-offset-2 hover:text-aeris-text hover:decoration-aeris-text"
-              >
-                View BASE transaction
-              </a>
-            ) : null}
-            {report.photoHref ? (
-              <a
-                href={report.photoHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block text-xs text-aeris-accent underline decoration-aeris-accent/40 underline-offset-2 hover:text-aeris-text hover:decoration-aeris-text"
-              >
-                Open photo
-              </a>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+
+      <p className="mt-2 text-xs leading-snug text-aeris-text line-clamp-4">
+        {messageBody || (
+          <span className="italic text-aeris-muted">No message</span>
+        )}
+      </p>
+
+      {meta.length > 0 ? (
+        <p className="mt-2 font-mono text-[9px] leading-snug text-aeris-muted">
+          {meta.join(" · ")}
+        </p>
+      ) : null}
+
+      {(report.basescanTxHref || report.photoHref) && (
+        <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px]">
+          {report.basescanTxHref ? (
+            <a
+              href={report.basescanTxHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-aeris-accent hover:underline"
+            >
+              Transaction
+            </a>
+          ) : null}
+          {report.photoHref ? (
+            <a
+              href={report.photoHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-aeris-accent hover:underline"
+            >
+              Photo
+            </a>
+          ) : null}
+        </div>
+      )}
+
+      <p
+        className="mt-1.5 truncate font-mono text-[9px] text-aeris-muted/80"
+        title={[report.messageId, report.sourceLine].filter(Boolean).join(" · ")}
+      >
+        {report.messageId ? shortId(report.messageId) : null}
+        {report.messageId && report.sourceLine ? " · " : null}
+        {report.sourceLine}
+      </p>
     </div>
   );
 }

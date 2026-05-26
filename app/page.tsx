@@ -6,10 +6,12 @@ import type { Map as MLMap } from "maplibre-gl";
 import { Header } from "@/components/Header";
 import { MapContainer } from "@/components/MapContainer";
 import { LiveReportsMapOverlay } from "@/components/LiveReportsMapOverlay";
-import { MapSearchBar, type SelectedLocation } from "@/components/MapSearchBar";
+import { type SelectedLocation } from "@/components/MapSearchBar";
+import { MapTopChrome } from "@/components/MapTopChrome";
 import { LocationInfoPanel } from "@/components/panels/LocationInfoPanel";
 import { Sidebar } from "@/components/Sidebar";
 import { BottomPanel } from "@/components/BottomPanel";
+import { MobileTabBar, type MobileTab } from "@/components/MobileTabBar";
 import { ReportPingsSync } from "@/components/ReportPingsSync";
 import { WebcamPingsSync } from "@/components/WebcamPingsSync";
 import { YouTubeFeedsProvider } from "@/components/YouTubeFeedsProvider";
@@ -23,6 +25,7 @@ export default function HomePage() {
   const [map, setMap] = useState<MLMap | null>(null);
   const [opsSidebarCollapsed, setOpsSidebarCollapsed] = useState(false);
   const [liveReportsOpen, setLiveReportsOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<MobileTab>("map");
   const [selectedLocation, setSelectedLocation] =
     useState<SelectedLocation | null>(null);
   const liveReportsTriggerRef = useRef<HTMLDivElement>(null!);
@@ -78,62 +81,77 @@ export default function HomePage() {
         closeLiveReports={closeLiveReports}
         liveReportsTriggerRef={liveReportsTriggerRef}
       />
-      <div className="flex-1 flex min-h-0 flex-col md:flex-row">
-        <main className="flex-1 relative min-w-0 min-h-[50vh] md:min-h-0">
-          <MapContainer
-            onMapReady={handleMapReady}
-            mapOverlay={
-              <>
-                <LiveReportsMapOverlay
-                  open={liveReportsOpen}
-                  onClose={closeLiveReports}
-                  map={map}
-                  popoverRef={liveReportsPopoverRef}
-                />
-                {/* Banner ad — sits above the search bar */}
-                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 w-[min(480px,80%)]">
-                  <a
-                    href="https://www.google.com/adsense"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block w-full rounded-lg overflow-hidden shadow-lg opacity-90 hover:opacity-100 transition-opacity duration-200"
-                    aria-label="Advertisement"
-                  >
-                    <img
-                      src="/ads/ads_v1_2026.gif"
-                      alt="Advertisement"
-                      className="w-full h-auto object-cover block"
-                      draggable={false}
-                    />
-                  </a>
-                  <MapSearchBar map={map} onAddressSelect={handleAddressSelect} />
-                </div>
-                {selectedLocation && (
-                  <div className="absolute bottom-10 right-3 z-20 w-[min(360px,calc(100vw-1.5rem))] max-h-[calc(100vh-7rem)] overflow-y-auto">
-                    <LocationInfoPanel
+      <div className="flex-1 flex min-h-0 flex-col md:flex-row relative">
+        {/* Mobile: map + reports share one slot; map stays sized when Reports tab is open. */}
+        <div className="flex-1 relative min-h-0 min-w-0 flex flex-col md:flex-row">
+          <div
+            className={clsx(
+              "absolute inset-0 flex flex-col min-h-0 min-w-0 md:relative md:flex-1",
+              mobileTab !== "map" &&
+                "max-md:invisible max-md:pointer-events-none",
+            )}
+          >
+            <MapTopChrome
+              map={map}
+              onAddressSelect={handleAddressSelect}
+              className="md:hidden shrink-0 px-2 pt-2 pb-2 border-b border-aeris-border bg-aeris-surface/98"
+            />
+            <main className="flex-1 relative min-h-0 min-w-0">
+              <MapContainer
+                layoutActive={mobileTab === "map"}
+                onMapReady={handleMapReady}
+                mapOverlay={
+                  <>
+                    <LiveReportsMapOverlay
+                      open={liveReportsOpen}
+                      onClose={closeLiveReports}
                       map={map}
-                      location={selectedLocation}
-                      onClose={closeLocationInfo}
+                      popoverRef={liveReportsPopoverRef}
                     />
-                  </div>
-                )}
-              </>
-            }
-          />
-          <ReportPingsSync map={map} />
-          <WebcamPingsSync map={map} />
-        </main>
-        <div
-          className={clsx(
-            "flex-none md:flex-initial min-w-0 border-t md:border-t-0 border-aeris-border overflow-hidden",
-            opsSidebarCollapsed ? "h-auto" : "h-[50vh]",
-            "md:h-auto",
-          )}
-        >
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 hidden md:block w-[min(480px,80%)] pointer-events-none [&>*]:pointer-events-auto">
+                      <MapTopChrome
+                        map={map}
+                        onAddressSelect={handleAddressSelect}
+                      />
+                    </div>
+                    {selectedLocation && (
+                      <div className="absolute bottom-3 right-3 z-20 w-[min(360px,calc(100vw-1.5rem))] max-h-[calc(100vh-9rem)] overflow-y-auto md:bottom-10 md:max-h-[calc(100vh-7rem)]">
+                        <LocationInfoPanel
+                          map={map}
+                          location={selectedLocation}
+                          onClose={closeLocationInfo}
+                        />
+                      </div>
+                    )}
+                  </>
+                }
+              />
+              <ReportPingsSync map={map} />
+              <WebcamPingsSync map={map} />
+            </main>
+          </div>
+
+          <div
+            className={clsx(
+              "absolute inset-0 flex flex-col min-h-0 min-w-0 md:hidden",
+              mobileTab !== "reports" &&
+                "invisible pointer-events-none",
+            )}
+          >
+            <Sidebar map={map} mobileMode />
+          </div>
+        </div>
+
+        <div className="hidden md:flex min-w-0 overflow-hidden md:flex-initial">
           <Sidebar map={map} onCollapsedChange={setOpsSidebarCollapsed} />
         </div>
       </div>
-      <BottomPanel map={map} selectedLocation={selectedLocation} />
+      {/* Intel Feeds (webcams / livestreams / community chat) — desktop only.
+          Mobile is focused on monitoring ground reports. */}
+      <div className="hidden md:block">
+        <BottomPanel map={map} selectedLocation={selectedLocation} />
+      </div>
+      <MobileTabBar active={mobileTab} onChange={setMobileTab} />
     </div>
     </YouTubeFeedsProvider>
   );

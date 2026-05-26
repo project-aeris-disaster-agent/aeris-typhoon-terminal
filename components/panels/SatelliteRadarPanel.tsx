@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Map as MLMap } from "maplibre-gl";
-import { CardHeader, Pill } from "../ui/Card";
+import { clsx } from "clsx";
 import {
   getLiveWeatherSourceContract,
   type LiveImagerySource,
@@ -26,7 +26,7 @@ const SOURCES: Record<
   },
   "himawari-airmass": {
     label: "Air Mass (false color)",
-    short: "AIR MASS",
+    short: "Air mass",
     hint: "GIBS Himawari-9 Air_Mass RGB composite — day/night stable atmospheric analysis",
   },
   "himawari-ir": {
@@ -36,7 +36,6 @@ const SOURCES: Record<
   },
 };
 
-/** Freshness key written by `fetchSatelliteFrames` / `fetchRadarFrames`. */
 function freshnessKeyFor(source: LiveImagerySource): string {
   return source === "radar" ? "radar" : `satellite:${source}`;
 }
@@ -92,76 +91,70 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
         : "Live";
 
   const isForecastFrame = frame?.kind === "nowcast";
+  const isStale =
+    status?.frameAgeMinutes != null &&
+    status.frameAgeMinutes > contract.staleAfterMinutes;
 
   return (
-    <div className="space-y-3">
-      <CardHeader
-        title="Live weather"
-        trailing={
-          <Pill tone="accent" className="flex items-center gap-1.5">
-            <span
-              className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.9)]"
-              aria-hidden
-            />
-            Loop
-          </Pill>
-        }
-      />
-
-      <div className="flex items-center gap-1.5 text-[10px]">
-        <span className="text-aeris-muted uppercase tracking-wider">Status</span>
-        <span className={`rounded border px-1.5 py-0.5 font-medium ${healthTone}`}>
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] leading-tight">
+        <span
+          className={clsx(
+            "rounded border px-1 py-px font-medium uppercase tracking-wide",
+            healthTone,
+          )}
+        >
           {healthLabel}
         </span>
         {status?.frameAgeMinutes != null && (
           <span className="text-aeris-muted">
-            Frame age {status.frameAgeMinutes}m
-            {status.frameAgeMinutes > contract.staleAfterMinutes ? " (stale)" : ""}
+            · {status.frameAgeMinutes}m
+            {isStale ? " stale" : ""}
           </span>
         )}
         {isForecastFrame && (
           <span
-            className="rounded border border-orange-500/40 bg-orange-500/10 px-1.5 py-0.5 font-semibold uppercase tracking-wider text-orange-300"
+            className="rounded border border-orange-500/40 bg-orange-500/10 px-1 py-px font-semibold uppercase tracking-wide text-orange-300"
             title="Model nowcast — forecast precipitation, not an observed scan"
           >
             Forecast
           </span>
         )}
-      </div>
-      <div className="text-[10px] text-aeris-muted/80">
-        Source: {frame?.attribution ?? contract.attribution}
+        {!error && (
+          <FreshnessTag
+            source={freshnessKeyFor(source)}
+            className="text-aeris-muted/80"
+          />
+        )}
       </div>
 
       {error && (
-        <div className="rounded border border-aeris-danger/40 bg-aeris-danger/10 px-2 py-1.5 text-[11px] text-aeris-danger">
+        <p className="rounded border border-aeris-danger/40 bg-aeris-danger/10 px-1.5 py-1 text-[10px] leading-snug text-aeris-danger">
           {error}
-        </div>
+        </p>
       )}
       {!error && status?.message && (
-        <div className="rounded border border-amber-500/35 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-300">
+        <p className="rounded border border-amber-500/35 bg-amber-500/10 px-1.5 py-1 text-[10px] leading-snug text-amber-300">
           {status.message}
-        </div>
+        </p>
       )}
 
-      {!error && <FreshnessTag source={freshnessKeyFor(source)} />}
-
-      <div className="rounded-lg border border-aeris-border/80 bg-aeris-bg/30 p-0.5 flex gap-0.5">
+      <div className="flex gap-0.5 rounded-md border border-aeris-border/80 bg-aeris-bg/30 p-0.5">
         {(Object.keys(SOURCES) as LiveImagerySource[]).map((k) => (
           <button
             key={k}
             type="button"
             onClick={() => setSource(k)}
             title={SOURCES[k].hint}
-            className={`flex-1 min-w-0 rounded-md px-2 py-2 text-left transition-colors ${
+            aria-label={SOURCES[k].label}
+            className={clsx(
+              "min-w-0 flex-1 rounded px-1.5 py-1 text-[10px] font-medium transition-colors",
               source === k
-                ? "bg-aeris-accent/15 text-aeris-accent shadow-sm border border-aeris-accent/25"
-                : "text-aeris-muted hover:text-aeris-text hover:bg-aeris-elev/60 border border-transparent"
-            }`}
+                ? "border border-aeris-accent/25 bg-aeris-accent/15 text-aeris-accent shadow-sm"
+                : "border border-transparent text-aeris-muted hover:bg-aeris-elev/60 hover:text-aeris-text",
+            )}
           >
-            <div className="text-[10px] font-mono uppercase tracking-wider opacity-80">
-              {SOURCES[k].short}
-            </div>
-            <div className="text-[11px] font-medium truncate">{SOURCES[k].label}</div>
+            {SOURCES[k].short}
           </button>
         ))}
       </div>

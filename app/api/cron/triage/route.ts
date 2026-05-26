@@ -1,9 +1,16 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
-import { triagePendingBatch } from "@/services/triage-runner";
+import { triagePendingBatchDetailed } from "@/services/triage-runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+/**
+ * Vercel Hobby caps serverless functions at ~10 seconds; this literal mirrors
+ * that ceiling so the route runs unchanged on free tier. Next.js requires
+ * `maxDuration` to be a static numeric literal, so on Pro/Enterprise raise it
+ * by editing this constant (e.g. 60). The per-invocation workload is also
+ * bounded by `TRIAGE_CRON_BATCH_SIZE` and the deadline budget below.
+ */
+export const maxDuration = 10;
 
 function authorizeCron(request: Request): boolean {
   const cronSecret = process.env.CRON_SECRET?.trim();
@@ -20,17 +27,44 @@ function authorizeCron(request: Request): boolean {
   return false;
 }
 
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
 export async function GET(request: Request) {
   if (!authorizeCron(request)) {
     return jsonError("Unauthorized.", 401);
   }
 
-  const results = await triagePendingBatch(25);
+  const startedAt = Date.now();
+  /**
+   * Default batch size is tuned for Hobby (5 reports x ~1.5s each fits in 10s
+   * even when the LLM is slow). Override with `TRIAGE_CRON_BATCH_SIZE` on Pro.
+   */
+  const limit = parsePositiveInt(process.env.TRIAGE_CRON_BATCH_SIZE, 5);
+  const safetyMarginMs = parsePositiveInt(process.env.TRIAGE_CRON_SAFETY_MS, 1500);
+  const deadlineAt = startedAt + (maxDuration * 1000) - safetyMarginMs;
+
+  const summary = await triagePendingBatchDetailed({
+    limit,
+    deadlineAt,
+    safetyMarginMs,
+  });
+
+  const elapsedMs = Date.now() - startedAt;
   return jsonOkNoStore({
     ok: true,
-    processed: results.length,
-    triaged: results.filter((r) => r.triaged).length,
-    autoRejected: results.filter((r) => r.autoRejected).length,
+    processed: summary.results.length,
+    triaged: summary.results.filter((r) => r.triaged).length,
+    autoRejected: summary.results.filter((r) => r.autoRejected).length,
+    urgent: summary.results.filter((r) => r.result?.priority === "urgent").length,
+    broadcasted: summary.results.filter((r) => r.broadcasted).length,
+    stoppedEarly: summary.stoppedEarly,
+    remaining: summary.remaining,
+    elapsedMs,
+    limit,
+    maxDuration,
     checkedAt: new Date().toISOString(),
   });
 }

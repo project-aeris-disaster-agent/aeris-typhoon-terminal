@@ -105,7 +105,7 @@ describe("SatelliteRadarPanel", () => {
       expect(screen.getByText("Fallback")).toBeInTheDocument();
     });
     expect(screen.getByText(/Radar refresh failed/)).toBeInTheDocument();
-    expect(screen.getByText(/Frame age 42m \(stale\)/)).toBeInTheDocument();
+    expect(screen.getByText(/42m stale/)).toBeInTheDocument();
   });
 
   it("flags forecast (nowcast) frames with a Forecast badge for the active source", async () => {

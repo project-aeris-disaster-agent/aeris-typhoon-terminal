@@ -121,14 +121,14 @@ export function Header({
           <span className="font-mono text-sm tracking-[0.2em] text-aeris-accent">
             A.E.R.I.S.
           </span>
-          <span className="hud-text text-aeris-muted">
+          <span className="hud-text text-aeris-muted hidden lg:inline">
             Autonomous Emergency Reporting Intelligence System · PH
           </span>
         </div>
       </div>
 
       <div className="relative z-10 flex min-w-0 flex-1 items-center justify-end gap-2">
-        <NewsTicker className="max-w-[min(52vw,36rem)]" />
+        <NewsTicker className="hidden md:flex max-w-[min(52vw,36rem)]" />
         <button
           type="button"
           onClick={toggleTheme}
@@ -179,7 +179,7 @@ export function Header({
         ) : (
           <Pill tone="warn">OFFLINE — stale data</Pill>
         )}
-        <span className="hud-text text-aeris-muted tabular-nums">{time}</span>
+        <span className="hud-text text-aeris-muted tabular-nums hidden sm:inline">{time}</span>
       </div>
     </header>
   );

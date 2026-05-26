@@ -62,6 +62,9 @@ export type PublicReport = {
   aiTriageRationale?: string;
   aiTriageConfidence?: number;
   dedupeHash?: string;
+  sessionId?: string;
+  anonymousId?: string;
+  metadata?: Record<string, unknown>;
   onchain?: {
     proxyWallet?: {
       id?: string;
@@ -396,6 +399,33 @@ export async function reviewSupabaseReport(
   if (!rows[0]) throw new Error("Supabase returned no reviewed report.");
 
   await insertReviewEvent(writeCfg, current, rows[0], input);
+
+  // Phase 6.4 - queue for on-chain mint when both gates are satisfied:
+  //   verification_status === 'verified' (operator review)
+  //   phone_verification_status === 'verified' (citizen owns the phone)
+  // We only transition queued from a non-terminal mint state to avoid
+  // re-queueing already-minted reports.
+  if (
+    rows[0].verification_status === "verified" &&
+    rows[0].phone_verification_status === "verified"
+  ) {
+    const currentMint = rows[0].onchain_mint_status ?? "not_started";
+    if (
+      currentMint === "not_started" ||
+      currentMint === "pending_phone" ||
+      currentMint === "pending_review"
+    ) {
+      await fetch(
+        `${writeCfg.url}/rest/v1/disaster_reports?id=eq.${encodeURIComponent(input.reportId)}`,
+        {
+          method: "PATCH",
+          headers: { ...headers(writeCfg.serviceKey), prefer: "return=minimal" },
+          body: JSON.stringify({ onchain_mint_status: "queued" }),
+        },
+      );
+    }
+  }
+
   return toPublicReport(rows[0]);
 }
 
@@ -572,6 +602,15 @@ function toPublicReport(row: SupabaseReportRow): PublicReport {
     aiTriageRationale: row.ai_triage_rationale ?? undefined,
     aiTriageConfidence: row.ai_triage_confidence ?? undefined,
     dedupeHash: row.dedupe_hash ?? undefined,
+    sessionId:
+      typeof metadata.sessionId === "string" && metadata.sessionId.length > 0
+        ? (metadata.sessionId as string)
+        : undefined,
+    anonymousId:
+      typeof metadata.anonymousId === "string" && metadata.anonymousId.length > 0
+        ? (metadata.anonymousId as string)
+        : undefined,
+    metadata: metadata as Record<string, unknown>,
     onchain: {
       proxyWallet: row.proxy_wallet_id || row.proxy_wallet_address
         ? {

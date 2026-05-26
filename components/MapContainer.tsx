@@ -5,7 +5,6 @@ import type { Map as MLMap } from "maplibre-gl";
 import { Map2D } from "./Map2D";
 import { MapModeToggle } from "./MapModeToggle";
 import { LayerLegend, QuickViewsPanel } from "./LayerLegend";
-import { LiveWeatherFrameHud } from "./LiveWeatherFrameHud";
 import { readUrlState, writeUrlState } from "@/services/url-state";
 import { setMapSceneTheme, subscribeSceneLoading } from "@/services/map-scene";
 import { DataLoadingPopup } from "@/components/ui/DataLoadingPopup";
@@ -17,13 +16,19 @@ export type MapContainerProps = {
   onMapReady?: (map: MLMap) => void;
   /** Rendered inside the map frame (e.g. overlays anchored to the map area). */
   mapOverlay?: ReactNode;
+  /** When false (e.g. mobile Reports tab), map stays mounted but parent is hidden — resize when true again. */
+  layoutActive?: boolean;
 };
 
 /**
  * Hosts a single MapLibre map that can be switched between 2D and 3D terrain
  * modes without tearing down the active map session.
  */
-export function MapContainer({ onMapReady, mapOverlay }: MapContainerProps) {
+export function MapContainer({
+  onMapReady,
+  mapOverlay,
+  layoutActive = true,
+}: MapContainerProps) {
   const { theme } = useTheme();
   const [mode, setMode] = useState<MapMode>("2d");
   const [map, setMap] = useState<MLMap | null>(null);
@@ -116,6 +121,15 @@ export function MapContainer({ onMapReady, mapOverlay }: MapContainerProps) {
     setMapSceneTheme(map, theme);
   }, [map, theme]);
 
+  useEffect(() => {
+    if (!map || !layoutActive) return;
+    const id = requestAnimationFrame(() => {
+      map.resize();
+      map.triggerRepaint();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [map, layoutActive]);
+
   return (
     <div className="relative w-full h-full bg-aeris-bg">
       <Map2D mode={mode} theme={theme} onReady={handleReady} />
@@ -126,12 +140,13 @@ export function MapContainer({ onMapReady, mapOverlay }: MapContainerProps) {
         message={loadingMessage}
       />
 
-      <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
+      <div className="absolute z-10 flex flex-col gap-2 top-3 left-3 max-md:bottom-[4.25rem] max-md:top-auto max-md:left-3 max-md:right-auto">
         <MapModeToggle mode={mode} onChange={setMode} />
-        <QuickViewsPanel map={map} mode={mode} />
-        <LayerLegend map={map} mode={mode} />
+        <div className="hidden md:flex flex-col gap-2">
+          <QuickViewsPanel map={map} mode={mode} />
+          <LayerLegend map={map} mode={mode} />
+        </div>
       </div>
-      {mode === "2d" && <LiveWeatherFrameHud />}
     </div>
   );
 }

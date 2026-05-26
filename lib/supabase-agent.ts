@@ -17,12 +17,23 @@ export type WeatherReportRow = {
   created_at: string;
 };
 
+export type AgentMessageSource =
+  | "user"
+  | "assistant"
+  | "system"
+  | "weather_report"
+  | "operator";
+
 export type AgentMessageRow = {
   id: string;
   role: "user" | "assistant" | "system";
-  source: "user" | "assistant" | "system" | "weather_report";
+  source: AgentMessageSource;
   content: string;
   report_id: string | null;
+  disaster_report_id: string | null;
+  session_id: string | null;
+  operator_name: string | null;
+  responded_to_id: string | null;
   created_at: string;
 };
 
@@ -40,7 +51,8 @@ export type PersistedWeatherReport = {
 const REPORT_COLUMNS =
   "id,report_type,scope_type,scope_key,severity_score,headline,body,structured,snapshot,trigger_reason,alert_signature,created_at";
 
-const MESSAGE_COLUMNS = "id,role,source,content,report_id,created_at";
+const MESSAGE_COLUMNS =
+  "id,role,source,content,report_id,disaster_report_id,session_id,operator_name,responded_to_id,created_at";
 
 function supabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -253,6 +265,121 @@ export async function insertUserAgentMessage(content: string): Promise<AgentMess
 
   if (!res.ok) return null;
 
+  const rows = (await res.json()) as AgentMessageRow[];
+  return rows[0] ?? null;
+}
+
+export type UrgentBroadcastContext = {
+  disasterReportId?: string;
+  sessionId?: string;
+};
+
+export async function insertUrgentReportAgentMessage(
+  content: string,
+  context: UrgentBroadcastContext = {},
+): Promise<AgentMessageRow | null> {
+  const cfg = supabaseConfig();
+  if (!cfg?.serviceKey) return null;
+
+  const payload: Record<string, unknown> = {
+    role: "system",
+    source: "system",
+    content,
+  };
+  if (context.disasterReportId) {
+    payload.disaster_report_id = context.disasterReportId;
+  }
+  if (context.sessionId) {
+    payload.session_id = context.sessionId;
+  }
+
+  const res = await fetch(
+    `${cfg.url}/rest/v1/aeris_agent_messages?select=${MESSAGE_COLUMNS}`,
+    {
+      method: "POST",
+      headers: {
+        ...authHeaders(cfg.serviceKey),
+        prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!res.ok) return null;
+
+  const rows = (await res.json()) as AgentMessageRow[];
+  return rows[0] ?? null;
+}
+
+export type OperatorReplyContext = {
+  disasterReportId?: string;
+  sessionId?: string;
+  operatorName?: string;
+  respondedToId?: string;
+};
+
+export async function insertOperatorReplyAgentMessage(
+  content: string,
+  context: OperatorReplyContext = {},
+): Promise<AgentMessageRow | null> {
+  const cfg = supabaseConfig();
+  if (!cfg?.serviceKey) return null;
+
+  const payload: Record<string, unknown> = {
+    role: "assistant",
+    source: "operator",
+    content,
+  };
+  if (context.disasterReportId) {
+    payload.disaster_report_id = context.disasterReportId;
+  }
+  if (context.sessionId) {
+    payload.session_id = context.sessionId;
+  }
+  if (context.operatorName) {
+    payload.operator_name = context.operatorName;
+  }
+  if (context.respondedToId) {
+    payload.responded_to_id = context.respondedToId;
+  }
+
+  const res = await fetch(
+    `${cfg.url}/rest/v1/aeris_agent_messages?select=${MESSAGE_COLUMNS}`,
+    {
+      method: "POST",
+      headers: {
+        ...authHeaders(cfg.serviceKey),
+        prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!res.ok) return null;
+
+  const rows = (await res.json()) as AgentMessageRow[];
+  return rows[0] ?? null;
+}
+
+export async function getLatestUrgentMessageForSession(
+  sessionId: string,
+): Promise<AgentMessageRow | null> {
+  const cfg = supabaseConfig();
+  if (!cfg?.serviceKey) return null;
+
+  const url = new URL(`${cfg.url}/rest/v1/aeris_agent_messages`);
+  url.searchParams.set("select", MESSAGE_COLUMNS);
+  url.searchParams.set("session_id", `eq.${sessionId}`);
+  url.searchParams.set("source", "eq.system");
+  url.searchParams.set("order", "created_at.desc");
+  url.searchParams.set("limit", "1");
+
+  const res = await fetch(url.toString(), {
+    headers: authHeaders(cfg.serviceKey),
+    cache: "no-store",
+  });
+
+  if (!res.ok) return null;
   const rows = (await res.json()) as AgentMessageRow[];
   return rows[0] ?? null;
 }

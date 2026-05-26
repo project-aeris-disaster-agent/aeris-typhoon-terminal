@@ -11,15 +11,23 @@ import {
 import { clsx } from "clsx";
 import { AerisVrmAvatar } from "@/components/agent/AerisVrmAvatar";
 
-type AgentRole = "user" | "assistant";
+type AgentRole = "user" | "assistant" | "system";
 
-type AgentMessageSource = "user" | "assistant" | "system" | "weather_report";
+type AgentMessageSource =
+  | "user"
+  | "assistant"
+  | "system"
+  | "weather_report"
+  | "operator";
 
 type AgentMessage = {
   id: string;
   role: AgentRole;
   content: string;
   source?: AgentMessageSource;
+  sessionId?: string;
+  disasterReportId?: string;
+  operatorName?: string;
 };
 
 type AgentLocationContext = {
@@ -83,13 +91,21 @@ function mapHistoryRow(row: {
   role: string;
   source: string;
   content: string;
+  session_id?: string | null;
+  disaster_report_id?: string | null;
+  operator_name?: string | null;
 }): AgentMessage | null {
-  if (row.role !== "user" && row.role !== "assistant") return null;
+  if (row.role !== "user" && row.role !== "assistant" && row.role !== "system") {
+    return null;
+  }
   return {
     id: row.id,
-    role: row.role,
+    role: row.role as AgentRole,
     content: row.content,
     source: row.source as AgentMessageSource,
+    sessionId: row.session_id ?? undefined,
+    disasterReportId: row.disaster_report_id ?? undefined,
+    operatorName: row.operator_name ?? undefined,
   };
 }
 
@@ -102,8 +118,25 @@ export function AgentAerisPanel({
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [replyToChatSession, setReplyToChatSession] = useState(true);
   const lastPromptRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Most recent urgent broadcast that originated from a chat session. When
+  // present, the operator can back-channel their reply into that chat.
+  const activeBackChannel = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m.source === "system" && m.sessionId) {
+        return {
+          sessionId: m.sessionId,
+          disasterReportId: m.disasterReportId,
+          messageId: m.id,
+        };
+      }
+    }
+    return null;
+  }, [messages]);
 
   const context = useMemo(
     () => buildDashboardContext(selectedLocation),
@@ -120,6 +153,9 @@ export function AgentAerisPanel({
         role: string;
         source: string;
         content: string;
+        session_id?: string | null;
+        disaster_report_id?: string | null;
+        operator_name?: string | null;
       }>;
     };
 
@@ -143,7 +179,7 @@ export function AgentAerisPanel({
     if (!isActive) return;
     const interval = window.setInterval(() => {
       void loadHistory();
-    }, 5 * 60_000);
+    }, 30_000);
     return () => window.clearInterval(interval);
   }, [isActive, loadHistory]);
 
@@ -223,10 +259,35 @@ export function AgentAerisPanel({
             : message,
         ),
       );
+
+      // Phase 4.3: optionally back-channel the operator's message into the
+      // originating chat session. This sends the operator's exact text (not
+      // the LLM response) so the citizen hears from a human.
+      if (replyToChatSession && activeBackChannel) {
+        void fetch("/api/agent/reply", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            content: cleanPrompt,
+            sessionId: activeBackChannel.sessionId,
+            disasterReportId: activeBackChannel.disasterReportId,
+            respondedToId: activeBackChannel.messageId,
+            operatorName: "AERIS Operator",
+          }),
+        }).catch(() => undefined);
+      }
+
       setIsSending(false);
       void loadHistory();
     },
-    [context, isSending, messages, loadHistory],
+    [
+      context,
+      isSending,
+      messages,
+      loadHistory,
+      replyToChatSession,
+      activeBackChannel,
+    ],
   );
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -249,35 +310,55 @@ export function AgentAerisPanel({
           ref={scrollRef}
           className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3"
         >
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={clsx(
-                "max-w-[92%] rounded-lg border px-3 py-2 text-[11px] leading-relaxed whitespace-pre-wrap",
-                message.role === "user"
-                  ? "ml-auto border-aeris-accent/30 bg-aeris-accent/10 text-aeris-text"
-                  : message.source === "weather_report"
-                    ? "border-aeris-warn/40 bg-aeris-warn/5 text-aeris-text/90"
-                    : "border-aeris-border/50 bg-aeris-surface/60 text-aeris-text/90",
-              )}
-            >
-              <div className="mb-1 flex items-center gap-2 text-[8px] font-mono uppercase tracking-widest text-aeris-muted/70">
-                <span>
-                  {message.role === "user"
-                    ? "Operator"
-                    : message.source === "weather_report"
-                      ? "Weather Brief"
-                      : "Agent Aeris"}
-                </span>
-                {message.source === "weather_report" && (
-                  <span className="rounded border border-aeris-warn/30 px-1 py-0.5 text-aeris-warn">
-                    Auto
-                  </span>
+          {messages.map((message) => {
+            const isUser = message.role === "user";
+            const isUrgentBroadcast =
+              message.role === "system" && message.source === "system";
+            const isWeather = message.source === "weather_report";
+            const isOperatorReply = message.source === "operator";
+            const label = isUser
+              ? "Operator"
+              : isOperatorReply
+                ? `Operator → Chat${message.operatorName ? ` (${message.operatorName})` : ""}`
+                : isUrgentBroadcast
+                  ? "Urgent Incident"
+                  : isWeather
+                    ? "Weather Brief"
+                    : "Agent Aeris";
+
+            return (
+              <div
+                key={message.id}
+                className={clsx(
+                  "max-w-[92%] rounded-lg border px-3 py-2 text-[11px] leading-relaxed whitespace-pre-wrap",
+                  isUser
+                    ? "ml-auto border-aeris-accent/30 bg-aeris-accent/10 text-aeris-text"
+                    : isOperatorReply
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-aeris-text"
+                      : isUrgentBroadcast
+                        ? "border-aeris-danger/50 bg-aeris-danger/10 text-aeris-text"
+                        : isWeather
+                          ? "border-aeris-warn/40 bg-aeris-warn/5 text-aeris-text/90"
+                          : "border-aeris-border/50 bg-aeris-surface/60 text-aeris-text/90",
                 )}
+              >
+                <div className="mb-1 flex items-center gap-2 text-[8px] font-mono uppercase tracking-widest text-aeris-muted/70">
+                  <span>{label}</span>
+                  {isWeather && (
+                    <span className="rounded border border-aeris-warn/30 px-1 py-0.5 text-aeris-warn">
+                      Auto
+                    </span>
+                  )}
+                  {isUrgentBroadcast && (
+                    <span className="rounded border border-aeris-danger/40 px-1 py-0.5 text-aeris-danger">
+                      Auto · Urgent
+                    </span>
+                  )}
+                </div>
+                {message.content}
               </div>
-              {message.content}
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {error && (
@@ -291,6 +372,29 @@ export function AgentAerisPanel({
               Retry
             </button>
           </div>
+        )}
+
+        {activeBackChannel && (
+          <label className="mx-3 mb-1 flex items-center gap-2 text-[10px] text-aeris-muted/90">
+            <input
+              type="checkbox"
+              checked={replyToChatSession}
+              onChange={(e) => setReplyToChatSession(e.target.checked)}
+              className="h-3 w-3 accent-aeris-accent"
+            />
+            <span>
+              Reply to chat session{" "}
+              <span className="font-mono text-aeris-accent">
+                {activeBackChannel.sessionId.slice(0, 8)}
+              </span>
+              {activeBackChannel.disasterReportId && (
+                <span className="text-aeris-muted/60">
+                  {" "}
+                  · report {activeBackChannel.disasterReportId.slice(0, 8)}
+                </span>
+              )}
+            </span>
+          </label>
         )}
 
         <form

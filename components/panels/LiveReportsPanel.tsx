@@ -168,7 +168,28 @@ function ReportCard({
             AI:{report.aiPriority}
           </Pill>
         )}
-        {report.onchain?.mint.txHash && <Pill tone="ok">BASE TX</Pill>}
+        {(() => {
+          const mint = report.onchain?.mint;
+          if (!mint || !mint.status || mint.status === "not_started") return null;
+          const tone =
+            mint.status === "minted"
+              ? "ok"
+              : mint.status === "failed"
+                ? "warn"
+                : "warn";
+          const networkLabel = mint.network?.startsWith("skale") ? "SKALE" : "BASE";
+          const label =
+            mint.status === "minted"
+              ? `${networkLabel} ✓`
+              : mint.status === "queued"
+                ? `${networkLabel} queued`
+                : mint.status === "minting"
+                  ? `${networkLabel} minting…`
+                  : mint.status === "failed"
+                    ? `${networkLabel} failed`
+                    : `${networkLabel} ${mint.status}`;
+          return <Pill tone={tone}>{label}</Pill>;
+        })()}
         <time
           dateTime={report.createdAt}
           className="ml-auto text-[9px] font-mono text-aeris-muted"
@@ -228,7 +249,39 @@ function ReportCard({
           <div>msg: {report.messageId ?? report.id}</div>
           <div>mint: {report.onchain?.mint.status ?? "not_started"}</div>
           {report.onchain?.mint.txHash && (
-            <div>tx: {report.onchain.mint.txHash.slice(0, 18)}…</div>
+            <div className="flex items-center gap-1">
+              <span>tx: {report.onchain.mint.txHash.slice(0, 18)}…</span>
+              {(() => {
+                const network = report.onchain?.mint.network ?? "";
+                const tx = report.onchain?.mint.txHash;
+                if (!tx) return null;
+                const explorerBase =
+                  network === "skale-base-mainnet"
+                    ? "https://skale-base-explorer.skalenodes.com"
+                    : network === "skale-base-testnet"
+                      ? "https://base-sepolia-testnet-explorer.skalenodes.com"
+                      : network === "base-mainnet"
+                        ? "https://basescan.org"
+                        : network === "base-sepolia"
+                          ? "https://sepolia.basescan.org"
+                          : null;
+                if (!explorerBase) return null;
+                return (
+                  <a
+                    href={`${explorerBase}/tx/${tx}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-aeris-accent underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    explorer ↗
+                  </a>
+                );
+              })()}
+            </div>
+          )}
+          {report.onchain?.mint.tokenId && (
+            <div>token: {report.onchain.mint.tokenId.slice(0, 14)}…</div>
           )}
           {report.phoneVerificationStatus &&
             report.phoneVerificationStatus !== "unverified" && (
@@ -338,7 +391,7 @@ export function LiveReportsPanel({
     void load();
     const id = window.setInterval(() => {
       void load();
-    }, 60 * 1000);
+    }, 20 * 1000);
     return () => {
       window.clearInterval(id);
     };

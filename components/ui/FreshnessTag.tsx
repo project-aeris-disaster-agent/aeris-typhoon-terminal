@@ -1,5 +1,6 @@
 "use client";
 
+import { clsx } from "clsx";
 import {
   formatAge,
   freshnessTone,
@@ -16,10 +17,12 @@ export function FreshnessTag({
   source,
   label = "Updated",
   hideWhenEmpty = true,
+  className,
 }: {
   source: string;
   label?: string;
   hideWhenEmpty?: boolean;
+  className?: string;
 }) {
   const freshness = useFreshness(source);
   if (!freshness && hideWhenEmpty) return null;
@@ -33,7 +36,12 @@ export function FreshnessTag({
         : "text-aeris-ok";
 
   return (
-    <div className="flex items-center gap-1.5 text-[10px] text-aeris-muted/80">
+    <div
+      className={clsx(
+        "flex items-center gap-1 text-[10px] text-aeris-muted/80",
+        className,
+      )}
+    >
       <span
         className={`inline-block h-1.5 w-1.5 rounded-full ${toneClass}`}
         aria-hidden

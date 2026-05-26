@@ -51,21 +51,65 @@ DASHBOARD_AUTH_DISABLED=true
 
 ## AI Triage
 
-New reports are inserted with `ai_priority = pending`. A cron job calls
-`GET /api/cron/triage` on the schedule in `vercel.json` (once per day on Vercel
-**Hobby**; more frequent schedules require **Pro** or an external scheduler),
-authorized via `CRON_SECRET` or `INTERNAL_TRIAGE_SECRET`, to classify reports as
-`urgent`, `low_priority`, or `rejected`. Obvious spam and duplicates are
-auto-rejected by the AI agent.
+New reports are inserted with `ai_priority = pending`. Two paths flip them to
+`urgent` / `low_priority` / `rejected`:
 
-Manual/internal sweep:
+1. **Real-time (preferred)** — AERIS CHAT calls `POST /api/internal/triage`
+   immediately after a successful report insert (see `lib/reports/triage-notify.ts`
+   in the chat repo). This requires `AERIS_DASHBOARD_API_BASE_URL` and
+   `INTERNAL_TRIAGE_SECRET` to be set on chat, and the same `INTERNAL_TRIAGE_SECRET`
+   on the dashboard. Urgent results are also broadcast to `aeris_agent_messages`
+   so the AGENT AERIS panel surfaces them within ~30s.
+2. **Cron safety-net** — `GET /api/cron/triage` sweeps anything that slipped past
+   real-time triage (chat instance offline, secret missing, dashboard transient
+   error). Authorized via `CRON_SECRET` (Vercel Cron uses `Authorization: Bearer`)
+   or `INTERNAL_TRIAGE_SECRET` header.
+
+Obvious spam and duplicates are auto-rejected by the AI agent (`actorType:
+"ai_agent"` in `report_review_events`).
+
+### Cron schedule and tier limits
+
+`vercel.json` ships a **Hobby-safe** daily schedule (`0 9 * * *`). On Vercel
+**Hobby (free)**:
+
+- Cron may run **at most once per day**.
+- Function invocations are capped at **~10 seconds**.
+
+The cron route honours both: it processes at most `TRIAGE_CRON_BATCH_SIZE`
+reports (default `5`) per tick and bails before the deadline with `stoppedEarly:
+true`. Anything left over is picked up on the next call (real-time notify or
+the next daily run).
+
+On **Pro / Enterprise** you can increase throughput. Example for every-5-minutes
+triage with bigger batches:
+
+```jsonc
+// vercel.json
+{ "path": "/api/cron/triage", "schedule": "*/5 * * * *" }
+```
+
+```bash
+# .env (production)
+TRIAGE_CRON_BATCH_SIZE=25
+```
+
+To raise the function timeout itself, edit `export const maxDuration` in
+`app/api/cron/triage/route.ts` and `app/api/internal/triage/route.ts` to a
+static literal (e.g. `60` on Pro). Next.js requires this to be a literal at
+build time, so it cannot be set via env.
+
+### Manual/internal sweep
 
 ```bash
 curl -X POST https://your-dashboard/api/internal/triage \
   -H "x-internal-triage-secret: $INTERNAL_TRIAGE_SECRET" \
   -H "content-type: application/json" \
-  -d '{"batch": true}'
+  -d '{"batch": true, "limit": 5}'
 ```
+
+Response includes `processed`, `stoppedEarly`, `remaining`, and per-report
+results. Re-issue until `remaining` reaches `0` to drain a backlog from the CLI.
 
 ## Dashboard Roles
 

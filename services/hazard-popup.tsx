@@ -46,7 +46,7 @@ export function registerHazardPopup(map: MLMap): () => void {
     const popup = new maplibregl.Popup({
       closeButton: true,
       closeOnClick: true,
-      maxWidth: "300px",
+      maxWidth: "260px",
       className: "aeris-popup",
     })
       .setLngLat(e.lngLat)

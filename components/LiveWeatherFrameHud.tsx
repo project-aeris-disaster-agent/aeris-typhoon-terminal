@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { clsx } from "clsx";
 import type {
   LiveWeatherFrameDetail,
   LiveWeatherStatusDetail,
@@ -38,13 +39,7 @@ function formatFrameLabel(detail: LiveWeatherFrameDetail, now: number): string {
 
 const LABEL_TICK_MS = 30_000;
 
-/**
- * Map-anchored HUD pill that always shows the timestamp + provider of the
- * frame currently being painted. This is the single most effective trust
- * signal for users who suspect "wrong" satellite imagery — they can verify
- * the scan time against the wall clock at a glance.
- */
-export function LiveWeatherFrameHud() {
+function useLiveWeatherFrameHud() {
   const [frame, setFrame] = useState<LiveWeatherFrameDetail | null>(null);
   const [status, setStatus] = useState<LiveWeatherStatusDetail | null>(null);
   const [now, setNow] = useState<number>(() => Date.now());
@@ -84,16 +79,74 @@ export function LiveWeatherFrameHud() {
     return () => clearInterval(id);
   }, [frame]);
 
+  return { frame, status, now };
+}
+
+function frameDotTone(
+  frame: LiveWeatherFrameDetail,
+  status: LiveWeatherStatusDetail | null,
+): string {
+  const isForecast = frame.kind === "nowcast";
+  if (isForecast) {
+    return "bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.7)]";
+  }
+  if (status?.health === "fallback") {
+    return "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.7)]";
+  }
+  if (status?.health === "delayed") {
+    return "bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.7)]";
+  }
+  return "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]";
+}
+
+/**
+ * Active live-weather frame metadata (provider, scan time, health dot).
+ * Renders inline for sidebar panel headers or as a map-anchored pill.
+ */
+export function LiveWeatherFrameIndicator({
+  variant = "map",
+}: {
+  variant?: "map" | "panel";
+}) {
+  const { frame, status, now } = useLiveWeatherFrameHud();
   if (!frame) return null;
 
   const isForecast = frame.kind === "nowcast";
-  const dotTone = isForecast
-    ? "bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.7)]"
-    : status?.health === "fallback"
-      ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.7)]"
-      : status?.health === "delayed"
-        ? "bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.7)]"
-        : "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]";
+  const dotTone = frameDotTone(frame, status);
+
+  const content = (
+    <>
+      <span
+        className={clsx("inline-block h-1.5 w-1.5 shrink-0 rounded-full", dotTone)}
+        aria-hidden
+      />
+      <span className="truncate text-aeris-muted">{frame.attribution}</span>
+      <span className="truncate text-aeris-text/90">
+        {formatFrameLabel(frame, now)}
+      </span>
+      {isForecast && (
+        <span
+          className="shrink-0 rounded border border-orange-500/50 bg-orange-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-orange-300"
+          title="Model nowcast — forecast precipitation, not an observed scan"
+        >
+          Forecast
+        </span>
+      )}
+    </>
+  );
+
+  if (variant === "panel") {
+    return (
+      <span
+        className="flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-hidden px-1 font-mono text-[10px]"
+        role="status"
+        aria-live="polite"
+        aria-label="Active live weather frame"
+      >
+        {content}
+      </span>
+    );
+  }
 
   return (
     <div
@@ -102,22 +155,12 @@ export function LiveWeatherFrameHud() {
       aria-live="polite"
       aria-label="Active live weather frame"
     >
-      <span
-        className={`inline-block h-1.5 w-1.5 rounded-full ${dotTone}`}
-        aria-hidden
-      />
-      <span className="text-aeris-muted">{frame.attribution}</span>
-      <span className="text-aeris-text/90">
-        {formatFrameLabel(frame, now)}
-      </span>
-      {isForecast && (
-        <span
-          className="rounded border border-orange-500/50 bg-orange-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-orange-300"
-          title="Model nowcast — forecast precipitation, not an observed scan"
-        >
-          Forecast
-        </span>
-      )}
+      {content}
     </div>
   );
+}
+
+/** @deprecated Prefer `LiveWeatherFrameIndicator` in the Live weather panel header. */
+export function LiveWeatherFrameHud() {
+  return <LiveWeatherFrameIndicator variant="map" />;
 }

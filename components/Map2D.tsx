@@ -78,6 +78,11 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
     );
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
+    const resizeMap = () => {
+      map.resize();
+      map.triggerRepaint();
+    };
+
     map.on("load", () => {
       ensureBasemapOverlays(map, themeRef.current);
       mapRef.current = map;
@@ -85,9 +90,17 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
       appliedThemeRef.current = themeRef.current;
       onReadyRef.current?.(map);
       applyMapViewMode(map, modeRef.current);
+      requestAnimationFrame(resizeMap);
     });
 
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => resizeMap())
+        : null;
+    if (ro && containerRef.current) ro.observe(containerRef.current);
+
     return () => {
+      ro?.disconnect();
       mapReadyRef.current = false;
       map.remove();
       mapRef.current = null;
@@ -110,6 +123,11 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
       void reattachMapOverlaysAfterStyleChange(map, {
         theme,
         mode: modeRef.current,
+      }).finally(() => {
+        requestAnimationFrame(() => {
+          map.resize();
+          map.triggerRepaint();
+        });
       });
     });
   }, [theme]);
