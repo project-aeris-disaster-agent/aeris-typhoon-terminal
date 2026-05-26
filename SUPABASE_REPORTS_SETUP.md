@@ -52,9 +52,11 @@ DASHBOARD_AUTH_DISABLED=true
 ## AI Triage
 
 New reports are inserted with `ai_priority = pending`. A cron job calls
-`GET /api/cron/triage` every minute (authorized via `CRON_SECRET` or
-`INTERNAL_TRIAGE_SECRET`) to classify reports as `urgent`, `low_priority`, or
-`rejected`. Obvious spam and duplicates are auto-rejected by the AI agent.
+`GET /api/cron/triage` on the schedule in `vercel.json` (once per day on Vercel
+**Hobby**; more frequent schedules require **Pro** or an external scheduler),
+authorized via `CRON_SECRET` or `INTERNAL_TRIAGE_SECRET`, to classify reports as
+`urgent`, `low_priority`, or `rejected`. Obvious spam and duplicates are
+auto-rejected by the AI agent.
 
 Manual/internal sweep:
 
