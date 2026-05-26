@@ -3,6 +3,7 @@ import "./globals.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { SWRegister } from "@/components/SWRegister";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { RoleProvider } from "@/services/role-context";
 
 export const metadata: Metadata = {
   title: "AERIS — Typhoon Resilience Terminal",
@@ -58,7 +59,9 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <RoleProvider>{children}</RoleProvider>
+        </ThemeProvider>
         <SWRegister />
       </body>
     </html>

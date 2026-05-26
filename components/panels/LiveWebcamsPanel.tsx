@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import type { Map as MLMap } from "maplibre-gl";
 import { CardHeader, Pill } from "../ui/Card";
 import {
   fetchYouTubeFeeds,
@@ -11,6 +12,33 @@ import {
 
 const JAZBAZ_CHANNEL = "@JazBazPhilippines";
 const REFRESH_INTERVAL_MS = 90 * 1000;
+const SLOT_STORAGE_KEY = "aeris.liveWebcams.slotIds.v1";
+
+/** Persisted slot assignments by id; resolved against the live video list on load. */
+type StoredSlots = (string | null)[];
+
+function loadStoredSlots(): StoredSlots | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SLOT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map((v) => (typeof v === "string" ? v : null));
+  } catch {
+    return null;
+  }
+}
+
+function persistSlots(slots: (YtVideo | null)[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const ids: StoredSlots = slots.map((s) => s?.id ?? null);
+    window.localStorage.setItem(SLOT_STORAGE_KEY, JSON.stringify(ids));
+  } catch {
+    /* localStorage may be disabled in private mode */
+  }
+}
 
 const GRID_LAYOUTS = [1, 2, 4, 6] as const;
 type GridSize = (typeof GRID_LAYOUTS)[number];
@@ -31,14 +59,20 @@ function SlotFrame({
   isPickTarget,
   onPick,
   onNextCamera,
+  onShowOnMap,
 }: {
   video: YtVideo | null;
   slotIndex: number;
   isPickTarget: boolean;
   onPick: (slotIndex: number) => void;
   onNextCamera: (slotIndex: number) => void;
+  onShowOnMap: (video: YtVideo) => void;
 }) {
-  const loc = video ? extractLocation(video.title) : null;
+  // Prefer the structured location resolved server-side (which drops the map
+  // ping); fall back to the legacy title-keyword extractor for the overlay
+  // label so old-style entries without a geocode still show *something*.
+  const locLabel = video?.location?.label ?? (video ? extractLocation(video.title) : null);
+  const hasGeocode = Boolean(video?.location);
 
   return (
     <div
@@ -62,7 +96,8 @@ function SlotFrame({
           {/* Overlay label */}
           <div className="absolute bottom-0 left-0 right-0 px-1.5 py-0.5 bg-black/60 flex items-center justify-between gap-1 pointer-events-none">
             <span className="text-[9px] font-mono text-white/80 truncate">
-              {loc ?? video.title.slice(0, 28)}
+              {hasGeocode && <span className="text-aeris-accent mr-0.5">📍</span>}
+              {locLabel ?? video.title.slice(0, 28)}
             </span>
             {video.isLikeLive && (
               <span className="text-[8px] font-mono text-aeris-danger shrink-0">
@@ -72,6 +107,16 @@ function SlotFrame({
           </div>
           {/* Control buttons */}
           <div className="absolute top-1 right-1 flex gap-1 pointer-events-auto">
+            {hasGeocode && (
+              <button
+                type="button"
+                onClick={() => onShowOnMap(video)}
+                className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-black/60 text-aeris-accent hover:bg-aeris-accent/80 hover:text-black transition-colors"
+                title={`Show on map · ${video.location?.label ?? ""}`}
+              >
+                📍
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onNextCamera(slotIndex)}
@@ -104,7 +149,7 @@ function SlotFrame({
   );
 }
 
-export function LiveWebcamsPanel() {
+export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
   const [videos, setVideos] = useState<YtVideo[]>([]);
   const [slots, setSlots] = useState<(YtVideo | null)[]>([
     null,
@@ -119,6 +164,7 @@ export function LiveWebcamsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [pickMode, setPickMode] = useState<PickMode>(null);
+  const [pickerLiveOnly, setPickerLiveOnly] = useState(true);
 
   const load = useCallback(async () => {
     try {
@@ -126,16 +172,42 @@ export function LiveWebcamsPanel() {
         bypassClientCache: true,
       });
       setVideos(result.videos);
-      // Auto-fill empty slots on first load
+
+      const liveVideos = result.videos.filter((v) => v.isLikeLive);
+      const stored = loadStoredSlots();
+      // Re-resolve persisted picks ONLY against the live set. Older versions
+      // of this panel persisted RSS-derived VODs (titled "Live …" but
+      // actually replays); resolving those against the full video list here
+      // would resurrect stale clips on every refresh. Limiting the lookup to
+      // currently-live videos lets a now-ended stream cleanly drop out.
+      const liveById = new Map(liveVideos.map((v) => [v.id, v]));
+
       setSlots((prev) => {
-        const filled = [...prev];
-        let vi = 0;
-        for (let i = 0; i < filled.length; i++) {
-          if (!filled[i] && vi < result.videos.length) {
-            filled[i] = result.videos[vi++];
+        const next: (YtVideo | null)[] = prev.map(() => null);
+        // 1) Restore persisted picks if (and only if) the stream is still live.
+        if (stored) {
+          for (let i = 0; i < next.length && i < stored.length; i++) {
+            const id = stored[i];
+            if (id) {
+              const found = liveById.get(id);
+              if (found) next[i] = found;
+            }
           }
         }
-        return filled;
+        // 2) Auto-fill remaining empty slots with LIVE videos only. We never
+        //    auto-promote a non-live video into a slot — the user can still
+        //    pick one manually via the ✎ picker if they want a replay.
+        const usedIds = new Set(
+          next.filter(Boolean).map((v) => (v as YtVideo).id),
+        );
+        const queue = liveVideos.filter((v) => !usedIds.has(v.id));
+        let qi = 0;
+        for (let i = 0; i < next.length; i++) {
+          if (!next[i] && qi < queue.length) {
+            next[i] = queue[qi++];
+          }
+        }
+        return next;
       });
       setError(result.errors.length > 0 ? result.errors.join("; ") : null);
       setLastUpdated(new Date());
@@ -175,17 +247,34 @@ export function LiveWebcamsPanel() {
     setSlots((prev) => {
       const next = [...prev];
       while (next.length < size) next.push(null);
-      // Auto-fill new slots
-      let vi = prev.filter(Boolean).length;
+      const usedIds = new Set(next.filter(Boolean).map((v) => v!.id));
+      // Live-only auto-fill — same rule as `load()` above. The user can pick
+      // a non-live video via the ✎ picker if they want a recording.
+      const queue = videos.filter((v) => v.isLikeLive && !usedIds.has(v.id));
+      let qi = 0;
       for (let i = 0; i < size; i++) {
-        if (!next[i] && vi < videos.length) {
-          next[i] = videos[vi++];
+        if (!next[i] && qi < queue.length) {
+          next[i] = queue[qi++];
         }
       }
       return next.slice(0, size);
     });
     setPickMode(null);
   };
+
+  const handleShowOnMap = useCallback(
+    (video: YtVideo) => {
+      if (!map || !video.location) return;
+      map.flyTo({
+        center: [video.location.lon, video.location.lat],
+        zoom: Math.max(map.getZoom(), 14),
+        speed: 1.4,
+        curve: 1.6,
+        essential: true,
+      });
+    },
+    [map],
+  );
 
   const handleNextCamera = (slotIndex: number) => {
     if (videos.length === 0) return;
@@ -206,6 +295,10 @@ export function LiveWebcamsPanel() {
     const timer = setInterval(load, REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [load]);
+
+  useEffect(() => {
+    persistSlots(slots);
+  }, [slots]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -301,6 +394,7 @@ export function LiveWebcamsPanel() {
                   isPickTarget={false}
                   onPick={handlePickSlot}
                   onNextCamera={handleNextCamera}
+                  onShowOnMap={handleShowOnMap}
                 />
               ))}
             </div>
@@ -309,8 +403,19 @@ export function LiveWebcamsPanel() {
           {/* Picker overlay: select a stream for the chosen slot */}
           {pickMode && (
             <div className="flex-1 min-h-0 flex flex-col space-y-1">
-              <div className="text-[10px] font-mono text-aeris-accent px-0.5">
-                Select stream for Slot {pickMode.slotIndex + 1}
+              <div className="flex items-center justify-between px-0.5">
+                <div className="text-[10px] font-mono text-aeris-accent">
+                  Select stream for Slot {pickMode.slotIndex + 1}
+                </div>
+                <label className="flex items-center gap-1 text-[10px] font-mono text-aeris-muted cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={pickerLiveOnly}
+                    onChange={(e) => setPickerLiveOnly(e.target.checked)}
+                    className="accent-aeris-accent"
+                  />
+                  Live only
+                </label>
               </div>
               {/* Current slot preview */}
               {slots[pickMode.slotIndex] && (
@@ -331,8 +436,12 @@ export function LiveWebcamsPanel() {
                 </div>
               )}
               <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-                {videos.map((v) => {
-                  const loc = extractLocation(v.title);
+                {videos
+                  .filter((v) => (pickerLiveOnly ? v.isLikeLive : true))
+                  .sort((a, b) => Number(b.isLikeLive) - Number(a.isLikeLive))
+                  .map((v) => {
+                  const loc = v.location?.label ?? extractLocation(v.title);
+                  const hasGeo = Boolean(v.location);
                   const isInSlot = visibleSlots.some((s) => s?.id === v.id);
                   return (
                     <button
@@ -363,7 +472,16 @@ export function LiveWebcamsPanel() {
                             </span>
                           )}
                           {loc && (
-                            <span className="text-[9px] font-mono text-aeris-accent truncate">
+                            <span
+                              className={`text-[9px] font-mono truncate ${
+                                hasGeo ? "text-aeris-accent" : "text-aeris-muted"
+                              }`}
+                              title={
+                                hasGeo
+                                  ? `Mapped — confidence: ${v.location?.confidence}`
+                                  : "Location parsed from title text"
+                              }
+                            >
                               📍 {loc}
                             </span>
                           )}

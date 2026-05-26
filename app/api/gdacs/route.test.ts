@@ -19,7 +19,7 @@ describe("/api/gdacs", () => {
       <rss><channel>
         <item>
           <title><![CDATA[Typhoon near Luzon]]></title>
-          <description><![CDATA[<b>Heavy rainfall</b> expected]]></description>
+          <description><![CDATA[<b>Heavy rainfall</b> expected across Luzon and Visayas with possible flooding in low-lying areas.]]></description>
           <link>https://gdacs.example/1</link>
           <pubDate>Thu, 23 Apr 2026 00:00:00 GMT</pubDate>
           <gdacs:country>Philippines</gdacs:country>
@@ -51,7 +51,8 @@ describe("/api/gdacs", () => {
           source: "GDACS",
           severity: "emergency",
           title: "Typhoon near Luzon",
-          summary: "Heavy rainfall expected",
+          summary:
+            "Heavy rainfall expected across Luzon and Visayas with possible flooding in low-lying areas.",
           url: "https://gdacs.example/1",
         }),
       ],
@@ -63,7 +64,7 @@ describe("/api/gdacs", () => {
     const xml = `
       <rss><channel>
         <item>
-          <description>Philippines advisory with no title or link</description>
+          <description>Philippines tropical cyclone advisory with no title or link but enough detail for operators.</description>
         </item>
       </channel></rss>
     `;
@@ -79,7 +80,8 @@ describe("/api/gdacs", () => {
     expect(body.alerts).toEqual([
       expect.objectContaining({
         id: expect.stringMatching(/^gdacs-/),
-        summary: "Philippines advisory with no title or link",
+        summary:
+          "Philippines tropical cyclone advisory with no title or link but enough detail for operators.",
       }),
     ]);
   });

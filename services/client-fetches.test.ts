@@ -108,38 +108,63 @@ describe("client data services", () => {
     });
   });
 
-  it("fetchAlerts keeps partial official data and reports source degradation", async () => {
+  it("fetchAlerts returns TC and hazard rows from /api/alerts", async () => {
     const { fetchAlerts } = await import("./alerts");
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          alerts: [
-            {
-              id: "gdacs-1",
-              source: "GDACS",
-              severity: "warning",
-              title: "Flood warning",
-              summary: "Heavy rain expected",
-              issuedAt: "2026-04-23T00:00:00.000Z",
-            },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ alerts: [], _error: "pagasa parsing failed" }),
-      }) as typeof fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        alerts: [
+          {
+            id: "tc-1001270",
+            source: "GDACS",
+            severity: "warning",
+            title: "SINLAKU-26 — Tropical storm",
+            summary: "85 km/h · Active in PAR · GDACS track",
+            issuedAt: null,
+          },
+          {
+            id: "gdacs-1",
+            source: "GDACS",
+            severity: "warning",
+            title: "Flood near Mindanao",
+            summary:
+              "Heavy rainfall expected across Mindanao with widespread impacts in low-lying areas.",
+            issuedAt: "2026-04-23T00:00:00.000Z",
+          },
+        ],
+        error: null,
+      }),
+    }) as typeof fetch;
 
-    await expect(fetchAlerts()).resolves.toEqual({
-      alerts: [
-        expect.objectContaining({
-          source: "GDACS",
-          title: "Flood warning",
-        }),
-      ],
-      warnings: ["PAGASA: pagasa parsing failed"],
-    });
+    const result = await fetchAlerts();
+    expect(result.alerts).toHaveLength(2);
+    expect(result.warnings).toEqual([]);
+    expect(result.fetchFailed).toBe(false);
+  });
+
+  it("fetchAlerts reports failure when /api/alerts returns an error", async () => {
+    const { fetchAlerts } = await import("./alerts");
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ alerts: [], error: "GDACS RSS 403" }),
+    }) as typeof fetch;
+
+    const result = await fetchAlerts();
+    expect(result.alerts).toEqual([]);
+    expect(result.fetchFailed).toBe(true);
+    expect(result.warnings).toEqual(["GDACS: GDACS RSS 403"]);
+  });
+
+  it("fetchAlerts succeeds with empty list when feeds work but PAR has no events", async () => {
+    const { fetchAlerts } = await import("./alerts");
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ alerts: [], error: null }),
+    }) as typeof fetch;
+
+    const result = await fetchAlerts();
+    expect(result.alerts).toEqual([]);
+    expect(result.fetchFailed).toBe(false);
+    expect(result.warnings).toEqual([]);
   });
 });

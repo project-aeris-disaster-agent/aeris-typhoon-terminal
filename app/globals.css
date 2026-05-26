@@ -22,7 +22,7 @@
   --aeris-surface: 17 22 29;
   --aeris-elev: 24 31 40;
   --aeris-border: 38 47 59;
-  --aeris-text: 232 238 245;
+  --aeris-text: 255 255 255;
   --aeris-muted: 139 152 169;
   --aeris-accent: 0 217 255;
   --aeris-warn: 255 184 77;
@@ -88,6 +88,40 @@ body > div {
   @apply font-mono text-xs tracking-wider uppercase;
 }
 
+/* Header scrolling news marquee */
+.news-ticker {
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    rgb(0 0 0) 6%,
+    rgb(0 0 0) 94%,
+    transparent
+  );
+}
+
+.news-ticker-track {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  width: max-content;
+  animation-name: aeris-news-ticker;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.news-ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes aeris-news-ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
 .live-dot {
   @apply w-2 h-2 rounded-full bg-aeris-danger animate-pulse-slow;
 }
@@ -101,4 +135,106 @@ body > div {
 
 .aeris-popup.maplibregl-popup {
   z-index: 20;
+}
+
+.aeris-popup-facility .maplibregl-popup-content {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.aeris-popup-facility .maplibregl-popup-close-button {
+  display: none;
+}
+
+.aeris-facility-card {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 10px 12px 11px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--aeris-border));
+  background: rgb(var(--aeris-surface) / 0.97);
+  box-shadow:
+    0 4px 24px rgb(0 0 0 / 0.18),
+    0 0 0 1px rgb(var(--aeris-accent) / 0.12);
+  color: rgb(var(--aeris-text));
+}
+
+.aeris-facility-card--light {
+  box-shadow:
+    0 4px 20px rgb(16 34 52 / 0.12),
+    0 0 0 1px rgb(var(--aeris-accent) / 0.2);
+}
+
+.aeris-facility-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.aeris-facility-card__eyebrow {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--aeris-accent));
+}
+
+.aeris-facility-card__code {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: rgb(var(--aeris-muted));
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgb(var(--aeris-border));
+  background: rgb(var(--aeris-elev) / 0.8);
+}
+
+.aeris-facility-card__name {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: rgb(var(--aeris-text));
+}
+
+.aeris-facility-card__meta {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.aeris-facility-card__row {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 6px;
+  align-items: start;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.aeris-facility-card__row dt {
+  margin: 0;
+  color: rgb(var(--aeris-muted));
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 9px;
+}
+
+.aeris-facility-card__row dd {
+  margin: 0;
+  color: rgb(var(--aeris-text));
+  word-break: break-word;
+}
+
+.aeris-popup-facility.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: rgb(var(--aeris-border));
+}
+
+.aeris-popup-facility.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: rgb(var(--aeris-border));
 }

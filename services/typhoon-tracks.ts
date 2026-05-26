@@ -1,6 +1,7 @@
 "use client";
 
 import type { Map as MLMap } from "maplibre-gl";
+import { layerBeforeDynamicOverlays } from "@/config/map-layers";
 import type { LngLat } from "@/config/region";
 import { recordFailure, recordSuccess } from "@/services/data-freshness";
 
@@ -189,14 +190,7 @@ function setOrUpdateGeoJson(
 
 function ensureLayer(map: MLMap, id: string, spec: maplibregl.AddLayerObject) {
   if (map.getLayer(id)) return;
-  // Anchor typhoon artifacts below facility labels so toponyms remain
-  // readable, and so re-adds after clear/rebuild cycles stay in a stable
-  // z-order relative to other dynamic layers (reports, hazards).
-  const beforeId =
-    typeof map.getLayer === "function" && map.getLayer("lyr-osm-facility-labels")
-      ? "lyr-osm-facility-labels"
-      : undefined;
-  map.addLayer(spec, beforeId);
+  map.addLayer(spec, layerBeforeDynamicOverlays(map));
 }
 
 function buildCone(forecast: TyphoonPoint[]): LngLat[] {

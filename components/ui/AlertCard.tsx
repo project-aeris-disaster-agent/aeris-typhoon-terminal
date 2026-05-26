@@ -1,0 +1,107 @@
+"use client";
+
+import { clsx } from "clsx";
+import {
+  ExternalLink,
+  Info,
+  Megaphone,
+  ShieldAlert,
+  Siren,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  alertSeverityTone,
+  type Alert,
+  type AlertSeverity,
+} from "@/services/alerts";
+
+type SafetyTone = "ok" | "default" | "warn" | "danger";
+
+const TONE_BG: Record<SafetyTone, string> = {
+  ok: "bg-aeris-ok/15 border-aeris-ok/40 text-aeris-ok",
+  default: "bg-aeris-accent/10 border-aeris-accent/40 text-aeris-accent",
+  warn: "bg-aeris-warn/15 border-aeris-warn/50 text-aeris-warn",
+  danger: "bg-aeris-danger/15 border-aeris-danger/50 text-aeris-danger",
+};
+
+const ALERT_SEVERITY_ICON: Record<AlertSeverity, LucideIcon> = {
+  emergency: Siren,
+  warning: ShieldAlert,
+  watch: Megaphone,
+  info: Info,
+};
+
+const TIMESTAMP_FMT: Intl.DateTimeFormatOptions = {
+  month: "short",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+};
+
+function formatTimestamp(iso: string) {
+  return new Date(iso).toLocaleString("en-PH", TIMESTAMP_FMT);
+}
+
+function alertTone(severity: AlertSeverity): SafetyTone {
+  const tone = alertSeverityTone(severity);
+  return tone === "accent" ? "default" : tone;
+}
+
+function normalizeText(text: string) {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+export function AlertCard({ alert }: { alert: Alert }) {
+  const tone = alertTone(alert.severity);
+  const Icon = ALERT_SEVERITY_ICON[alert.severity];
+  const showSummary =
+    alert.summary.length > 0 &&
+    normalizeText(alert.summary) !== normalizeText(alert.title);
+
+  return (
+    <article
+      className={clsx(
+        "rounded-md border px-2.5 py-2 transition-colors",
+        TONE_BG[tone],
+      )}
+    >
+      <header className="flex items-center gap-1.5 mb-1">
+        <Icon size={13} className="shrink-0" aria-hidden />
+        <span className="text-[10px] font-bold uppercase tracking-wider">
+          {alert.severity}
+        </span>
+        <span className="text-[9px] font-mono opacity-70">{alert.source}</span>
+        {alert.issuedAt ? (
+          <time
+            dateTime={alert.issuedAt}
+            className="ml-auto text-[9px] font-mono opacity-70"
+          >
+            {formatTimestamp(alert.issuedAt)}
+          </time>
+        ) : alert.url ? (
+          <a
+            href={alert.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto inline-flex items-center gap-0.5 text-[9px] font-mono uppercase tracking-wider opacity-70 hover:opacity-100"
+            aria-label="Open official source"
+          >
+            <ExternalLink size={9} aria-hidden />
+          </a>
+        ) : null}
+      </header>
+
+      <p className="text-[9px] font-mono uppercase tracking-wider text-aeris-muted/90 mb-0.5">
+        {alert.title}
+      </p>
+
+      {showSummary ? (
+        <p className="text-[11px] text-aeris-text leading-snug line-clamp-4">
+          {alert.summary}
+        </p>
+      ) : (
+        <p className="text-[11px] text-aeris-text leading-snug">{alert.title}</p>
+      )}
+    </article>
+  );
+}

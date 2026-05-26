@@ -20,6 +20,8 @@ import {
 } from "@/services/hazard-layers";
 import {
   SCENE_PRESETS,
+  beginSceneMajorLoading,
+  endSceneMajorLoading,
   flyToScenePreset,
   setActiveScenePreset,
   setFloodImpactHighlight,
@@ -55,6 +57,11 @@ export function LayerLegend({
   const [waterLevelsActive, setWaterLevelsActive] = useState(false);
   const [waterLevelsLoading, setWaterLevelsLoading] = useState(false);
   const [waterLevelsError, setWaterLevelsError] = useState<string | null>(null);
+  // "View Buildings" toggles the full 3D building extrusion (Three.js
+  // `lyr-three-scene` building group). Critical facilities live in a
+  // separate group on the same layer and stay on regardless. Default OFF
+  // so only critical facilities render at 3D-mode entry.
+  const [buildingsVisible, setBuildingsVisible] = useState(false);
   const [floodVizSettings, setFloodVizSettings] =
     useState<FloodVisualizationSettings>(() => ({
       ...DEFAULT_FLOOD_VISUALIZATION_SETTINGS,
@@ -84,7 +91,32 @@ export function LayerLegend({
 
   useEffect(() => {
     if (!map) return;
-    void setActiveFloodPeriod(map, activePeriod, mode);
+    // Toggling flood projections kicks off a Three.js geometry rebuild
+    // (flood patches + wireframes) which can take a noticeable beat on
+    // dense packs. Surface a major-loading state so the existing
+    // ``DataLoadingPopup`` covers the rebuild and the UI doesn't appear
+    // frozen. ``activePeriod`` becoming non-null is the user-visible
+    // "Flood Projections ON" event we want to mask; turning it off is fast
+    // enough that no loader is needed.
+    let loaderActive = false;
+    if (activePeriod !== null) {
+      beginSceneMajorLoading(map, "Loading flood projections...");
+      loaderActive = true;
+    }
+    const release = () => {
+      if (!loaderActive) return;
+      loaderActive = false;
+      endSceneMajorLoading(map);
+    };
+    void setActiveFloodPeriod(map, activePeriod, mode).finally(release);
+    return () => {
+      // If the effect re-runs (period change, mode toggle) while a previous
+      // load is still in-flight, drop the previous loader counter so we
+      // don't leave the popup stuck on. ``release`` is idempotent via the
+      // ``loaderActive`` guard so this is safe whether or not the
+      // ``finally`` already fired.
+      release();
+    };
   }, [map, activePeriod, floodPacks, mode]);
 
   useEffect(() => {
@@ -144,10 +176,14 @@ export function LayerLegend({
     const sceneVisible = mode === "3d";
     if (!sceneVisible) setActiveScenePreset(map, null);
     setSceneLayerVisibility(map, "hillshade", sceneVisible);
-    setSceneLayerVisibility(map, "roads", sceneVisible);
+    setSceneLayerVisibility(map, "roads", false);
     setSceneLayerVisibility(map, "critical-facilities", sceneVisible);
-    setSceneLayerVisibility(map, "buildings", sceneVisible);
-  }, [map, mode]);
+    // Ambient grey buildings follow the user's "View Buildings" toggle
+    // when in 3D, and are forced off in 2D. Critical facilities (above)
+    // stay on regardless so the dashboard's primary signal is always
+    // visible.
+    setSceneLayerVisibility(map, "buildings", sceneVisible && buildingsVisible);
+  }, [map, mode, buildingsVisible]);
 
   useEffect(() => {
     if (!map) return;
@@ -260,6 +296,13 @@ export function LayerLegend({
                 onClick={() => setWaterLevelsActive((current) => !current)}
                 swatch="#38bdf8"
               />
+              <LayerRadio
+                label="View Buildings"
+                checked={buildingsVisible}
+                onClick={() => setBuildingsVisible((current) => !current)}
+                disabled={mode !== "3d"}
+                swatch="#a8b3c2"
+              />
               {!hazardReadyPeriod ? (
                 <div className="px-1.5 py-1 text-[11px] text-aeris-muted italic">
                   Loading flood hazard packs…
@@ -301,10 +344,12 @@ export function LayerLegend({
 
 export function QuickViewsPanel({
   map,
+  mode = "3d",
 }: {
   map: MLMap | null;
+  mode?: MapMode;
 }) {
-  const [selectedPreset, setSelectedPreset] = useState<ScenePresetId>("ncr");
+  const [selectedPreset, setSelectedPreset] = useState<ScenePresetId | null>(null);
 
   return (
     <div className="panel-glass rounded-md overflow-hidden w-64">
@@ -323,7 +368,20 @@ export function QuickViewsPanel({
                 if (!map) return;
                 setSelectedPreset(preset.id);
                 setActiveScenePreset(map, preset.id);
-                flyToScenePreset(map, preset.id);
+                if (mode === "3d") {
+                  flyToScenePreset(map, preset.id);
+                } else {
+                  // 2D mode: fly to the preset centre but keep the camera
+                  // flat (no pitch/bearing) so the 2D view isn't tilted.
+                  map.flyTo({
+                    center: preset.center,
+                    zoom: Math.min(preset.zoom, 12.5),
+                    pitch: 0,
+                    bearing: 0,
+                    duration: 1400,
+                    essential: true,
+                  });
+                }
               }}
               className={clsx(
                 "rounded border px-2 py-1 text-[11px] text-left",

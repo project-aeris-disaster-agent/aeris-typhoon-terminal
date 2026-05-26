@@ -7,6 +7,9 @@ import { clsx } from "clsx";
 import { Pill } from "./ui/Card";
 import { useConnectionStatus } from "@/services/connection-status";
 import { useTheme } from "@/components/providers/ThemeProvider";
+import { useAerisRole } from "@/services/role-context";
+import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { NewsTicker } from "@/components/NewsTicker";
 
 function AlertTriangleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -58,7 +61,16 @@ export function Header({
 }: HeaderProps) {
   const online = useConnectionStatus();
   const { theme, toggleTheme } = useTheme();
+  const { role, authDisabled, userId } = useAerisRole();
   const [time, setTime] = useState<string>("");
+  const showAuthControls = !authDisabled && Boolean(userId);
+
+  const signOut = async () => {
+    await fetch("/api/auth/signout", { method: "POST" });
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
 
   useEffect(() => {
     const tick = () => {
@@ -110,12 +122,13 @@ export function Header({
             A.E.R.I.S.
           </span>
           <span className="hud-text text-aeris-muted">
-            Autonomous Emergency Response Intelligence System · PH
+            Autonomous Emergency Reporting Intelligence System · PH
           </span>
         </div>
       </div>
 
-      <div className="relative z-10 flex items-center gap-2">
+      <div className="relative z-10 flex min-w-0 flex-1 items-center justify-end gap-2">
+        <NewsTicker className="max-w-[min(52vw,36rem)]" />
         <button
           type="button"
           onClick={toggleTheme}
@@ -149,6 +162,18 @@ export function Header({
           </button>
         </div>
 
+        {showAuthControls && (
+          <>
+            <Pill tone={role === "admin" ? "ok" : "warn"}>{role}</Pill>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="hud-text rounded border border-aeris-border px-2 py-1 text-[10px] text-aeris-muted hover:border-aeris-accent/40 hover:text-aeris-text"
+            >
+              Sign out
+            </button>
+          </>
+        )}
         {online ? (
           <Pill tone="ok">LIVE</Pill>
         ) : (

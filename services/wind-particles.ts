@@ -91,6 +91,7 @@ export class WindParticleCanvas {
   private raf = 0;
   private running = false;
   private visible = true;
+  private motionPaused = false;
   private readonly n: number;
   private readonly maxAge: number;
   private readonly container: HTMLElement;
@@ -143,8 +144,24 @@ export class WindParticleCanvas {
   setVisible(visible: boolean) {
     this.visible = visible;
     this.canvas.style.opacity = visible ? "1" : "0";
-    if (!visible) this.stop();
-    else this.start();
+    if (!visible) {
+      this.stop();
+      return;
+    }
+    this.motionPaused = false;
+    this.start();
+  }
+
+  /** Pause animation during map camera motion without hiding the overlay. */
+  pause() {
+    this.motionPaused = true;
+    this.stop();
+  }
+
+  /** Resume animation after camera motion if the overlay should be visible. */
+  resume() {
+    this.motionPaused = false;
+    if (this.visible) this.start();
   }
 
   setPerformanceProfile(profile: WindPerformanceProfile) {
@@ -191,7 +208,7 @@ export class WindParticleCanvas {
   }
 
   start() {
-    if (this.running || !this.visible) return;
+    if (this.running || !this.visible || this.motionPaused) return;
     this.running = true;
     const tick = () => {
       if (!this.running) return;

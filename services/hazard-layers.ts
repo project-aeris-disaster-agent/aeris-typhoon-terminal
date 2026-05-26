@@ -1,4 +1,5 @@
 import type { Map as MLMap } from "maplibre-gl";
+import { layerBeforeBasemapLabels } from "@/config/map-layers";
 import { PAR_POLYGON } from "@/config/region";
 import {
   FLOOD_LEVEL_STYLE,
@@ -93,17 +94,20 @@ export function ensureParLayer(map: MLMap) {
     });
   }
   if (!map.getLayer("lyr-par-boundary")) {
-    map.addLayer({
-      id: "lyr-par-boundary",
-      type: "line",
-      source: "src-par",
-      paint: {
-        "line-color": "#00d9ff",
-        "line-width": 1.5,
-        "line-dasharray": [3, 2],
-        "line-opacity": 0.7,
+    map.addLayer(
+      {
+        id: "lyr-par-boundary",
+        type: "line",
+        source: "src-par",
+        paint: {
+          "line-color": "#00d9ff",
+          "line-width": 1.5,
+          "line-dasharray": [3, 2],
+          "line-opacity": 0.7,
+        },
       },
-    });
+      layerBeforeBasemapLabels(map),
+    );
   }
 }
 
@@ -317,9 +321,7 @@ async function registerPack(
     });
   }
 
-  const beforeId = map.getLayer("lyr-osm-facility-labels")
-    ? "lyr-osm-facility-labels"
-    : undefined;
+  const beforeId = layerBeforeBasemapLabels(map);
 
   // Layer 1: Halo — soft outer wash beneath the main fill
   if (!map.getLayer(haloIdOf(pack))) {
@@ -643,6 +645,22 @@ export function getFloodReturnPeriods(packs: FloodHazardPack[]): string[] {
 export function formatReturnPeriodLabel(period: string): string {
   const m = /^(\d+)yr$/.exec(period);
   return m ? `Flood (${m[1]}-yr)` : `Flood (${period})`;
+}
+
+/** Re-register hazard + PAR layers after basemap style reload. */
+export async function reattachHazardLayersAfterStyleChange(
+  map: MLMap,
+  mapMode: "2d" | "3d",
+): Promise<void> {
+  ensureParLayer(map);
+  const entry = registry.get(map);
+  if (!entry?.packs.length) return;
+
+  for (const pack of entry.packs) {
+    const data = packDataCache.get(pack.path);
+    if (data) await registerPack(map, pack, data);
+  }
+  await setActiveFloodPeriod(map, entry.active, mapMode);
 }
 
 /** Initialise base overlay layers + kick off MGB flood pack loading. */

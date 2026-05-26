@@ -1,6 +1,11 @@
 import { jsonOkNoStore } from "@/lib/api-response";
 import { withBreaker, CircuitOpenError } from "@/lib/circuit-breaker";
-import { FEEDS, TYPHOON_KEYWORDS } from "@/config/feeds";
+import {
+  rankAndFilterNewsItems,
+  splitGoogleNewsTitle,
+  normalizeNewsTitle,
+} from "@/lib/news-relevance";
+import { FEEDS, NEWS_MIN_ITEMS, type FeedSource } from "@/config/feeds";
 
 export const runtime = "edge";
 /** Always run fresh aggregation; avoid CDN / Data Cache staleness on top of the client poll. */
@@ -18,7 +23,7 @@ export async function GET() {
   const tier1Feeds = FEEDS.filter((feed) => feed.tier === 1);
   const results = await Promise.allSettled(
     tier1Feeds.map((feed) =>
-      withBreaker(`rss:${feed.id}`, () => fetchFeed(feed.url, feed.name), {
+      withBreaker(`rss:${feed.id}`, () => fetchFeed(feed), {
         cooldownMs: 300_000,
         timeoutMs: 8_000,
       }),
@@ -37,41 +42,52 @@ export async function GET() {
     }
   });
 
-  const filtered = all
-    .filter((it) => isRelevant(it.title))
+  const ranked = rankAndFilterNewsItems(all, {
+    minItems: NEWS_MIN_ITEMS,
+  });
+
+  const filtered = ranked
     .sort(
       (a, b) =>
-        new Date(b.publishedAt).getTime() -
-        new Date(a.publishedAt).getTime(),
+        new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
     )
-    .slice(0, 80);
+    .slice(0, 80)
+    .map(({ relevance: _relevance, ...item }) => item);
 
   return jsonOkNoStore({ items: filtered, errors });
 }
 
-function isRelevant(title: string): boolean {
-  const t = title.toLowerCase();
-  return TYPHOON_KEYWORDS.some((k) => t.includes(k));
-}
-
-async function fetchFeed(url: string, source: string): Promise<NewsItem[]> {
-  const res = await fetch(url, {
+async function fetchFeed(feed: FeedSource): Promise<NewsItem[]> {
+  const res = await fetch(feed.url, {
     cache: "no-store",
     headers: {
       "user-agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (compatible; AERIS-Typhoon-Terminal/1.0)",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (compatible; AERIS-Typhoon-Terminal/1.0)",
       accept: "application/rss+xml, application/xml, text/xml, */*;q=0.8",
     },
   });
-  if (!res.ok) throw new Error(`${source} ${res.status}`);
+  if (!res.ok) throw new Error(`${feed.name} ${res.status}`);
   const xml = await res.text();
   if (
     xml.includes("Access Denied") ||
     (xml.trimStart().startsWith("<!DOCTYPE") && !xml.includes("<rss"))
   ) {
-    throw new Error(`${source}: blocked or non-RSS response (WAF/HTML)`);
+    throw new Error(`${feed.name}: blocked or non-RSS response (WAF/HTML)`);
   }
-  return parseRss(xml, source);
+  const items = parseRss(xml, feed.name);
+  if (feed.preFiltered) {
+    return items.map((item) => normalizeGoogleItem(item));
+  }
+  return items;
+}
+
+function normalizeGoogleItem(item: NewsItem): NewsItem {
+  const split = splitGoogleNewsTitle(item.title);
+  return {
+    ...item,
+    title: split.title,
+    source: split.source ?? "Google News",
+  };
 }
 
 function parseRss(xml: string, source: string): NewsItem[] {
@@ -85,10 +101,11 @@ function parseRss(xml: string, source: string): NewsItem[] {
       firstMatch(b, /<dc:date[^>]*>([\s\S]*?)<\/dc:date>/i) ??
       new Date().toISOString();
     if (!title || !link) continue;
+    const cleanTitle = normalizeNewsTitle(title);
     items.push({
       id: `${source}-${hash(link)}`,
       source,
-      title,
+      title: cleanTitle,
       url: link,
       publishedAt: new Date(date).toISOString(),
     });
@@ -104,6 +121,9 @@ function firstMatch(s: string, re: RegExp): string | undefined {
 
 function decodeEntities(s: string): string {
   return s
+    .replace(/&#(\d+);/g, (_, code) =>
+      String.fromCharCode(Number.parseInt(code, 10)),
+    )
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')

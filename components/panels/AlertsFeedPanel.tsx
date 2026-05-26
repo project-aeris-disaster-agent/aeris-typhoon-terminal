@@ -1,119 +1,197 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { CardHeader, Pill } from "../ui/Card";
-import { VirtualList } from "../ui/VirtualList";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
+import { Pill } from "../ui/Card";
+import { AlertCard } from "../ui/AlertCard";
 import { FreshnessTag } from "../ui/FreshnessTag";
 import {
   fetchAlerts,
   type AlertsFetchResult,
   type Alert,
-  alertSeverityTone,
 } from "@/services/alerts";
+
+const PAGASA_PORTAL =
+  "https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin";
+const GDACS_PORTAL = "https://www.gdacs.org/";
 
 export function AlertsFeedPanel() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result: AlertsFetchResult = await fetchAlerts();
+      setAlerts(result.alerts);
+      if (result.fetchFailed) {
+        setError(
+          result.warnings[0] ??
+            "Could not reach GDACS. Try Sync again shortly.",
+        );
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      try {
-        const result: AlertsFetchResult = await fetchAlerts();
-        if (!cancelled) {
-          setAlerts(result.alerts);
-          setError(
-            result.alerts.length === 0 && result.warnings.length > 0
-              ? "Official advisory sources are temporarily unavailable."
-              : null,
-          );
-        }
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      if (cancelled) return;
+      await load();
     };
-    run();
+    void run();
     const id = window.setInterval(run, 5 * 60 * 1000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [load]);
+
+  const { activeSystems, bulletins, activeCount, hazardCount } = useMemo(() => {
+    const active: Alert[] = [];
+    const rest: Alert[] = [];
+    for (const a of alerts) {
+      if (a.id.startsWith("tc-")) active.push(a);
+      else rest.push(a);
+    }
+    return {
+      activeSystems: active,
+      bulletins: rest,
+      activeCount: active.length,
+      hazardCount: rest.length,
+    };
+  }, [alerts]);
 
   return (
-    <div className="space-y-2">
-      <CardHeader
-        title="Alerts"
-        trailing={
-          loading ? (
-            <Pill>loading</Pill>
-          ) : (
-            <Pill tone="accent">{alerts.length}</Pill>
-          )
-        }
-      />
-
-      <p className="text-[10px] text-aeris-muted leading-snug">
-        Official advisories from GDACS and PAGASA.
-      </p>
-
-      {error && (
-        <div className="text-xs text-aeris-danger">Error: {error}</div>
-      )}
-      {!loading && !error && alerts.length === 0 && (
-        <p className="text-[10px] text-aeris-muted leading-snug">
-          No official advisories matched. This can happen when there are no
-          Philippines-tagged GDACS events and PAGASA has no current tropical
-          bulletin updates.
+    <div className="space-y-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[10px] text-aeris-muted leading-snug flex-1">
+          Active cyclones in PAR and Philippines-relevant GDACS hazard bulletins.
         </p>
-      )}
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={loading}
+          className="shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
+          aria-label="Refresh alerts"
+        >
+          <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
+          Sync
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        <SourceChip label="Active TC" count={activeCount} loading={loading} />
+        <SourceChip label="Hazards" count={hazardCount} loading={loading} />
+        {loading ? <Pill>loading</Pill> : <Pill tone="accent">{alerts.length}</Pill>}
+      </div>
+
       <FreshnessTag source="alerts" />
 
-      <VirtualList
-        items={alerts}
-        rowHeight={88}
-        className="max-h-[280px]"
-        emptyText={loading ? "Fetching alerts…" : "No alerts"}
-        render={renderAlertRow}
-      />
+      {error ? (
+        <div className="flex items-start gap-1.5 rounded-md border border-aeris-danger/40 bg-aeris-danger/10 px-2 py-1.5 text-[11px] text-aeris-danger">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" aria-hidden />
+          <span>{error}</span>
+        </div>
+      ) : null}
+
+      {loading && alerts.length === 0 ? (
+        <p className="text-[11px] text-aeris-muted py-4 text-center">
+          Fetching advisories…
+        </p>
+      ) : null}
+
+      {!loading && alerts.length === 0 && !error ? <EmptyState /> : null}
+
+      {alerts.length > 0 ? (
+        <div className="max-h-[min(50vh,320px)] overflow-y-auto pr-0.5 space-y-3">
+          {activeSystems.length > 0 ? (
+            <section>
+              <h3 className="text-[9px] font-mono uppercase tracking-wider text-aeris-muted mb-1.5">
+                Active systems
+              </h3>
+              <ul className="space-y-2">
+                {activeSystems.map((alert) => (
+                  <li key={alert.id}>
+                    <AlertCard alert={alert} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {bulletins.length > 0 ? (
+            <section>
+              <h3 className="text-[9px] font-mono uppercase tracking-wider text-aeris-muted mb-1.5">
+                Hazard bulletins
+              </h3>
+              <ul className="space-y-2">
+                {bulletins.map((alert) => (
+                  <li key={alert.id}>
+                    <AlertCard alert={alert} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function renderAlertRow(a: Alert) {
+function SourceChip({
+  label,
+  count,
+  loading,
+}: {
+  label: string;
+  count: number;
+  loading: boolean;
+}) {
   return (
-    <div className="p-2 border-b border-aeris-border/40 text-xs">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 mb-0.5">
-            <Pill tone={alertSeverityTone(a.severity)}>{a.severity}</Pill>
-            <span className="text-aeris-muted text-[10px] font-mono">{a.source}</span>
-          </div>
-          {a.url ? (
-            <a
-              href={a.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-aeris-text truncate hover:underline underline-offset-2"
-            >
-              {a.title}
-            </a>
-          ) : (
-            <div className="font-medium text-aeris-text truncate">{a.title}</div>
-          )}
-          <div className="text-aeris-muted line-clamp-2 mt-0.5">
-            {a.summary}
-          </div>
-        </div>
+    <span className="inline-flex items-center gap-1 rounded-full border border-aeris-border bg-aeris-elev/30 px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider text-aeris-muted">
+      {label}
+      <span className="text-aeris-text">{loading ? "…" : count}</span>
+    </span>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="rounded-md border border-aeris-ok/30 bg-aeris-ok/10 px-2.5 py-2 space-y-2">
+      <div className="flex items-center gap-1.5 text-[11px] text-aeris-ok">
+        <CheckCircle2 size={14} aria-hidden />
+        <span className="font-medium">
+          No active cyclones or hazard bulletins in PAR
+        </span>
       </div>
-      <div className="text-[10px] text-aeris-muted/80 font-mono mt-1">
-        {a.issuedAt
-          ? new Date(a.issuedAt).toLocaleString()
-          : "Source timestamp unavailable"}
+      <p className="text-[10px] text-aeris-muted leading-snug">
+        No GDACS-tracked systems in the Philippine Area of Responsibility right
+        now. For official PAGASA signal numbers, use the link below.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <OfficialLink href={PAGASA_PORTAL} label="PAGASA SWB" />
+        <OfficialLink href={GDACS_PORTAL} label="GDACS" />
       </div>
     </div>
+  );
+}
+
+function OfficialLink({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-[10px] font-mono uppercase tracking-wider text-aeris-accent hover:underline underline-offset-2"
+    >
+      {label} →
+    </a>
   );
 }

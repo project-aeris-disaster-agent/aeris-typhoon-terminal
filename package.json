@@ -5,6 +5,8 @@
   "description": "Palantir Terminal for Typhoon Resilience in the Philippines. Region-locked disaster response dashboard with live satellite, radar, hazard maps, and crowdsourced incident reporting.",
   "scripts": {
     "dev": "next dev",
+    "dev:3001": "next dev -p 3001",
+    "dev:3002": "next dev -p 3002",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -19,16 +21,15 @@
     "vercel:deploy:prod": "npx vercel deploy --prod --yes"
   },
   "dependencies": {
-    "@deck.gl/core": "^9.0.33",
-    "@deck.gl/geo-layers": "^9.0.33",
-    "@deck.gl/layers": "^9.0.33",
-    "@deck.gl/mapbox": "^9.0.33",
     "@pixiv/three-vrm": "^3.5.2",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.106.1",
     "@turf/bbox": "^7.1.0",
     "@turf/buffer": "^7.3.5",
     "@turf/helpers": "^7.1.0",
     "@vercel/kv": "^3.0.0",
     "clsx": "^2.1.1",
+    "lucide-react": "^1.14.0",
     "maplibre-gl": "^4.7.1",
     "next": "14.2.15",
     "react": "^18.3.1",

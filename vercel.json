@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/weather-reports",
       "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/triage",
+      "schedule": "* * * * *"
     }
   ],
   "headers": [

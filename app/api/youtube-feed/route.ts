@@ -1,4 +1,5 @@
 import { jsonOkNoStore, jsonError } from "@/lib/api-response";
+import { extractCctvLocation, type CctvLocation } from "@/services/cctv-locations";
 
 // Node.js runtime — avoids edge runtime fetch quirks in dev mode
 export const dynamic = "force-dynamic";
@@ -13,6 +14,8 @@ export type YtVideo = {
   isLikeLive: boolean;
   embeddable?: boolean;
   liveBroadcastContent?: "live" | "upcoming" | "none";
+  /** Heuristic geocode of the camera derived from title; null if unknown. */
+  location?: CctvLocation | null;
 };
 
 const BROWSER_HEADERS: HeadersInit = {
@@ -26,6 +29,7 @@ const BROWSER_HEADERS: HeadersInit = {
 
 /** In-process caches so repeated hot reloads don't hammer YouTube */
 const rssUrlCache = new Map<string, string>();
+const channelIdCache = new Map<string, string>();
 const xmlCache = new Map<string, { xml: string; at: number }>();
 /** Keep RSS relatively fresh so ended streams drop off the Atom ordering sooner */
 const XML_TTL = 15_000;
@@ -44,6 +48,99 @@ const livePageCache = new Map<
   { videoId: string | null; at: number }
 >();
 const LIVE_PAGE_TTL = 12_000;
+
+/**
+ * Cache for search.list?eventType=live results. Each search costs 100 quota
+ * units (vs 1 for videos.list), so we cache aggressively. 60s is short
+ * enough that newly-started streams appear within ~1 refresh cycle.
+ */
+const liveSearchCache = new Map<
+  string,
+  { videos: YtVideo[]; at: number }
+>();
+const LIVE_SEARCH_TTL = 60_000;
+
+// ---------------------------------------------------------------------------
+// Supabase shared cache — survives cold starts and is shared across all
+// server instances. We cache search.list results here because each call
+// costs 100 YouTube Data API quota units.
+// ---------------------------------------------------------------------------
+
+/** TTL for the Supabase-persisted live-search cache (3 minutes). */
+const SUPABASE_LIVE_CACHE_TTL_MS = 3 * 60 * 1000;
+
+function supabaseCacheConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return null;
+  return { url: url.replace(/\/$/, ""), serviceKey };
+}
+
+function supabaseHeaders(serviceKey: string) {
+  return {
+    apikey: serviceKey,
+    authorization: `Bearer ${serviceKey}`,
+    "content-type": "application/json",
+  };
+}
+
+/** Read a cached live-search result from Supabase. Returns null on miss or error. */
+async function readSupabaseLiveCache(channelId: string): Promise<YtVideo[] | null> {
+  const cfg = supabaseCacheConfig();
+  if (!cfg) return null;
+  try {
+    const params = new URLSearchParams({
+      select: "videos,expires_at",
+      channel_id: `eq.${channelId}`,
+      limit: "1",
+    });
+    const res = await fetch(
+      `${cfg.url}/rest/v1/youtube_feed_cache?${params}`,
+      { headers: supabaseHeaders(cfg.serviceKey), cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const rows = (await res.json()) as Array<{
+      videos: unknown;
+      expires_at: string;
+    }>;
+    const row = rows[0];
+    if (!row) return null;
+    if (new Date(row.expires_at) < new Date()) return null; // expired
+    if (!Array.isArray(row.videos)) return null;
+    return row.videos as YtVideo[];
+  } catch {
+    return null;
+  }
+}
+
+/** Upsert a live-search result into Supabase. Fire-and-forget — errors are swallowed. */
+async function writeSupabaseLiveCache(
+  channelId: string,
+  channelHandle: string,
+  videos: YtVideo[],
+): Promise<void> {
+  const cfg = supabaseCacheConfig();
+  if (!cfg) return;
+  const expiresAt = new Date(Date.now() + SUPABASE_LIVE_CACHE_TTL_MS).toISOString();
+  try {
+    await fetch(`${cfg.url}/rest/v1/youtube_feed_cache`, {
+      method: "POST",
+      headers: {
+        ...supabaseHeaders(cfg.serviceKey),
+        prefer: "resolution=merge-duplicates",
+      },
+      body: JSON.stringify({
+        channel_id: channelId,
+        channel_handle: channelHandle,
+        videos,
+        fetched_at: new Date().toISOString(),
+        expires_at: expiresAt,
+      }),
+    });
+  } catch {
+    // Non-critical — in-process cache still serves as fallback
+  }
+}
 
 type LiveBroadcastContent = "live" | "upcoming" | "none";
 
@@ -88,10 +185,11 @@ async function resolveRssUrl(handle: string): Promise<string> {
   // <link rel="alternate" type="application/rss+xml"
   //       title="RSS" href="https://www.youtube.com/feeds/videos.xml?channel_id=UC...">
   const rssMatch = html.match(
-    /href="(https:\/\/www\.youtube\.com\/feeds\/videos\.xml\?channel_id=[^"]+)"/,
+    /href="(https:\/\/www\.youtube\.com\/feeds\/videos\.xml\?channel_id=([^"&]+))"/,
   );
   if (rssMatch) {
     rssUrlCache.set(handle, rssMatch[1]);
+    channelIdCache.set(handle, rssMatch[2]);
     return rssMatch[1];
   }
 
@@ -106,6 +204,7 @@ async function resolveRssUrl(handle: string): Promise<string> {
     if (m) {
       const rss = `https://www.youtube.com/feeds/videos.xml?channel_id=${m[1]}`;
       rssUrlCache.set(handle, rss);
+      channelIdCache.set(handle, m[1]);
       return rss;
     }
   }
@@ -194,6 +293,141 @@ async function fetchOEmbed(videoId: string): Promise<VideoEnrichment> {
   const embeddable = res.ok;
   oembedCache.set(videoId, { embeddable, at: Date.now() });
   return { embeddable };
+}
+
+/**
+ * Resolves a channel handle (without leading @) to a UC… channelId. Prefers
+ * the Data API channels.list?forHandle when available (1 quota unit), falls
+ * back to scraping the channel HTML which already populates channelIdCache.
+ */
+async function resolveChannelId(handle: string): Promise<string | null> {
+  const cached = channelIdCache.get(handle);
+  if (cached) return cached;
+
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (apiKey) {
+    try {
+      const url = new URL("https://www.googleapis.com/youtube/v3/channels");
+      url.searchParams.set("part", "id");
+      url.searchParams.set("forHandle", `@${handle}`);
+      url.searchParams.set("key", apiKey);
+      const res = await fetch(url.toString(), {
+        headers: { accept: "application/json" },
+      });
+      if (res.ok) {
+        const body = (await res.json()) as {
+          items?: Array<{ id?: string }>;
+        };
+        const id = body.items?.[0]?.id;
+        if (id && /^UC[\w-]{20,}$/.test(id)) {
+          channelIdCache.set(handle, id);
+          return id;
+        }
+      }
+    } catch {
+      /* fall through to RSS scrape */
+    }
+  }
+
+  // Falling back to resolveRssUrl populates channelIdCache as a side effect.
+  try {
+    await resolveRssUrl(handle);
+  } catch {
+    return null;
+  }
+  return channelIdCache.get(handle) ?? null;
+}
+
+/**
+ * Discover ALL currently-live videos for a channel via the Data API
+ * search.list endpoint. This is the only reliable way to enumerate concurrent
+ * livestreams — RSS only contains uploads, and HTML scraping returns just one
+ * stream per channel page. Costs 100 quota units per call.
+ *
+ * Cache hierarchy (cheapest first):
+ *   1. In-process Map (60s) — zero latency, per-instance
+ *   2. Supabase shared table (3 min) — survives cold starts, cross-instance
+ *   3. YouTube Data API search.list — 100 quota units, last resort
+ */
+async function searchLiveStreamsViaApi(
+  apiKey: string,
+  channelId: string,
+  channelHandle: string,
+): Promise<YtVideo[]> {
+  const cacheKey = `${channelId}`;
+
+  // 1. In-process cache
+  const cached = liveSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < LIVE_SEARCH_TTL) {
+    return cached.videos;
+  }
+
+  // 2. Supabase shared cache
+  const supabaseCached = await readSupabaseLiveCache(channelId);
+  if (supabaseCached !== null) {
+    // Populate in-process cache so subsequent calls in this instance are free
+    liveSearchCache.set(cacheKey, { videos: supabaseCached, at: Date.now() });
+    return supabaseCached;
+  }
+
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("channelId", channelId);
+  url.searchParams.set("eventType", "live");
+  url.searchParams.set("type", "video");
+  url.searchParams.set("maxResults", "50");
+  url.searchParams.set("order", "date");
+  url.searchParams.set("key", apiKey);
+
+  const res = await fetch(url.toString(), {
+    headers: { accept: "application/json" },
+  });
+  if (!res.ok) {
+    // Don't poison the cache on transient errors — let next call retry.
+    throw new Error(`search.list HTTP ${res.status}`);
+  }
+  const body = (await res.json()) as {
+    items?: Array<{
+      id?: { videoId?: string };
+      snippet?: {
+        title?: string;
+        publishedAt?: string;
+        channelTitle?: string;
+        thumbnails?: {
+          medium?: { url?: string };
+          high?: { url?: string };
+          default?: { url?: string };
+        };
+      };
+    }>;
+  };
+
+  const videos: YtVideo[] = [];
+  for (const item of body.items ?? []) {
+    const id = item.id?.videoId;
+    if (!id || !/^[\w-]{11}$/.test(id)) continue;
+    const sn = item.snippet ?? {};
+    videos.push({
+      id,
+      title: decodeEntities(sn.title ?? ""),
+      publishedAt: sn.publishedAt ?? new Date().toISOString(),
+      thumbnailUrl:
+        sn.thumbnails?.medium?.url ??
+        sn.thumbnails?.high?.url ??
+        sn.thumbnails?.default?.url ??
+        `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+      channelName: sn.channelTitle ?? channelHandle,
+      channelHandle,
+      isLikeLive: true,
+      embeddable: true,
+      liveBroadcastContent: "live",
+    });
+  }
+
+  // 3. Write through to both caches
+  liveSearchCache.set(cacheKey, { videos, at: Date.now() });
+  void writeSupabaseLiveCache(channelId, channelHandle, videos);
+  return videos;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -626,13 +860,34 @@ export async function GET(req: Request) {
     }
   });
 
-  const useDataApi = Boolean(process.env.YOUTUBE_API_KEY);
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  const useDataApi = Boolean(apiKey);
   const cleanHandles = channelList.map((h) => h.replace(/^@/, ""));
   const liveVideoIdByHandle = new Map<string, string>();
+  const apiLiveVideos: YtVideo[] = [];
 
-  // No Data API: detect actual live streams via /@handle/live + ytInitialPlayerResponse
-  // (oEmbed cannot distinguish live vs replay; RSS titles lie.)
-  if (!useDataApi) {
+  if (useDataApi && apiKey) {
+    // Discover ALL currently-live streams via search.list?eventType=live.
+    // This is the only way to enumerate concurrent livestreams that may not
+    // appear in the RSS upload feed.
+    const liveSearchResults = await Promise.allSettled(
+      cleanHandles.map(async (handle) => {
+        const channelId = await resolveChannelId(handle);
+        if (!channelId) return [] as YtVideo[];
+        return searchLiveStreamsViaApi(apiKey, channelId, handle);
+      }),
+    );
+    for (const result of liveSearchResults) {
+      if (result.status === "fulfilled") {
+        apiLiveVideos.push(...result.value);
+      } else {
+        errors.push(`live-search: ${(result.reason as Error).message}`);
+      }
+    }
+  } else {
+    // No Data API: detect actual live streams via /@handle/live +
+    // ytInitialPlayerResponse (oEmbed cannot distinguish live vs replay; RSS
+    // titles lie). Only resolves one stream per channel.
     const discovered = await Promise.all(
       cleanHandles.map(async (handle) => {
         const id = await fetchCurrentlyLiveVideoId(handle);
@@ -644,30 +899,49 @@ export async function GET(req: Request) {
     }
   }
 
-  const uniqueIds = [...new Set(videos.map((v) => v.id))];
+  // Merge API-discovered live videos into the main list, preferring the
+  // live entry when ids collide (RSS may include the same video as a recent
+  // upload).
+  const apiLiveIds = new Set(apiLiveVideos.map((v) => v.id));
+  const mergedVideos: YtVideo[] = [
+    ...apiLiveVideos,
+    ...videos.filter((v) => !apiLiveIds.has(v.id)),
+  ];
+
+  const uniqueIds = [...new Set(mergedVideos.map((v) => v.id))];
   const scrapedLiveIds = !useDataApi ? [...liveVideoIdByHandle.values()] : [];
   const idsToEnrich = useDataApi
     ? uniqueIds
     : [
         ...new Set([
-          ...videos.filter((v) => v.isLikeLive).map((v) => v.id),
+          ...mergedVideos.filter((v) => v.isLikeLive).map((v) => v.id),
           ...scrapedLiveIds,
         ]),
       ];
 
   const enrichment = await fetchYouTubeVideoMeta(idsToEnrich);
-  let enrichedVideos = videos.map((video) => {
+  let enrichedVideos = mergedVideos.map((video) => {
     const meta = enrichment.get(video.id);
+    const isLiveFromSearch = apiLiveIds.has(video.id);
+    const hasGroundTruth =
+      meta && typeof meta.liveBroadcastContent === "string";
+
+    // Liveness precedence:
+    //   1. videos.list (1-quota, fresh per request) is the ground truth — if
+    //      it says "none", a stale 60s-cached search.list hit must NOT keep
+    //      the video flagged live.
+    //   2. If videos.list didn't return data for this id (search-only entry,
+    //      or quota error), fall back to the search.list signal.
+    const isLikeLive = hasGroundTruth
+      ? meta!.liveBroadcastContent === "live"
+      : isLiveFromSearch;
+
     if (!meta) {
       return {
         ...video,
-        isLikeLive: false,
+        isLikeLive,
       };
     }
-
-    const hasGroundTruth = typeof meta.liveBroadcastContent === "string";
-    const isLikeLive =
-      hasGroundTruth && meta.liveBroadcastContent === "live";
 
     return {
       ...video,
@@ -717,6 +991,11 @@ export async function GET(req: Request) {
       }
     }
   }
+
+  enrichedVideos = enrichedVideos.map((video) => ({
+    ...video,
+    location: extractCctvLocation(video.title, video.id),
+  }));
 
   enrichedVideos.sort((a, b) => {
     if (a.isLikeLive !== b.isLikeLive) return a.isLikeLive ? -1 : 1;

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-24T09:32:42Z",
+  "generatedAt": "2026-05-13T20:19:13Z",
   "simplifyToleranceDegrees": 0.00025,
   "attribution": "Mines and Geosciences Bureau (MGB) Philippines",
   "packs": [
@@ -22,6 +22,27 @@
       },
       "vertices": 96274,
       "sizeBytes": 2046291,
+      "source": "MGB Geohazard Maps (Flo-2D)"
+    },
+    {
+      "province": "Camarines Sur",
+      "provinceSlug": "camarinessur",
+      "psgc": "",
+      "returnPeriod": "5yr",
+      "path": "/flood-hazard/camarinessur-5yr.json",
+      "bbox": [
+        122.55590295351669,
+        13.252524904209631,
+        123.60220563974512,
+        14.00244890589233
+      ],
+      "featureCounts": {
+        "low": 16448,
+        "medium": 11912,
+        "high": 4469
+      },
+      "vertices": 425691,
+      "sizeBytes": 9063877,
       "source": "MGB Geohazard Maps (Flo-2D)"
     },
     {
@@ -148,6 +169,27 @@
       },
       "vertices": 158392,
       "sizeBytes": 3367856,
+      "source": "MGB Geohazard Maps (Flo-2D)"
+    },
+    {
+      "province": "Sorsogon",
+      "provinceSlug": "sorsogon",
+      "psgc": "",
+      "returnPeriod": "5yr",
+      "path": "/flood-hazard/sorsogon-5yr.json",
+      "bbox": [
+        123.54959755517508,
+        12.872180911148515,
+        123.83483902185635,
+        13.03251999971479
+      ],
+      "featureCounts": {
+        "low": 1127,
+        "medium": 1321,
+        "high": 571
+      },
+      "vertices": 31545,
+      "sizeBytes": 672124,
       "source": "MGB Geohazard Maps (Flo-2D)"
     }
   ]

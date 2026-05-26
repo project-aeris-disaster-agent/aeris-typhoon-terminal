@@ -62,7 +62,7 @@ MIN_AREA_DEG2 = 1e-7  # drop slivers smaller than ~1200 m^2 at equator
 FILENAME_RES = [
     re.compile(r"^PH(?P<psgc>\d{9})_FH_(?P<period>[^.]+)\.shp$", re.IGNORECASE),
     re.compile(
-        r"^(?P<name>.+?)_Flood_(?P<period>\d+year)\.shp$",
+        r"^(?P<name>.+?)_Flood_(?P<period>\d+(?:year|yr))\.shp$",
         re.IGNORECASE,
     ),
 ]

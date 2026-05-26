@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { store } from "@/lib/kv";
 import { jsonError } from "@/lib/api-response";
 import { PH_BBOX } from "@/config/region";
+import {
+  buildFacilityCode,
+  buildFacilityId,
+  contactFieldsFromOsmTags,
+} from "@/lib/facility-display";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -165,11 +170,12 @@ function buildPayload(elements: OverpassElement[]) {
     const tags = element.tags ?? {};
 
     if (element.type === "node" && isFacility(tags) && element.lon && element.lat) {
+      const coords: Point = [element.lon, element.lat];
       pushFacilityFeature(
         facilities,
         facilityKeys,
-        [element.lon, element.lat],
-        facilityProperties(tags),
+        coords,
+        facilityProperties(tags, coords, element.id),
       );
       continue;
     }
@@ -213,11 +219,12 @@ function buildPayload(elements: OverpassElement[]) {
     }
 
     if (isFacility(tags)) {
+      const centroid = polygonCentroid(coords);
       pushFacilityFeature(
         facilities,
         facilityKeys,
-        polygonCentroid(coords),
-        facilityProperties(tags),
+        centroid,
+        facilityProperties(tags, centroid, element.id),
       );
     }
   }
@@ -371,14 +378,27 @@ function buildingKind(tags: Record<string, string>) {
   return "building";
 }
 
-function facilityProperties(tags: Record<string, string>): FeatureProperties {
+function facilityProperties(
+  tags: Record<string, string>,
+  coordinates: Point,
+  osmId?: number,
+): FeatureProperties {
   const category = facilityCategory(tags);
+  const contact = contactFieldsFromOsmTags(tags);
+  const [lon, lat] = coordinates;
   return {
     category,
     categoryLabel: facilityLabel(category),
     name: tags.name ?? facilityLabel(category),
     priority: facilityPriority(category),
     source: "OpenStreetMap",
+    facilityId: buildFacilityId(category, lon, lat, osmId),
+    facilityCode: buildFacilityCode(category, lon, lat),
+    osmId: osmId ?? null,
+    contactPhone: contact.contactPhone ?? null,
+    contactEmail: contact.contactEmail ?? null,
+    contactWeb: contact.contactWeb ?? null,
+    contact: contact.contact ?? null,
   };
 }
 

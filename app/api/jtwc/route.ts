@@ -1,7 +1,12 @@
 import { jsonOk } from "@/lib/api-response";
-import { withBreaker } from "@/lib/circuit-breaker";
+import { fetchUpstream } from "@/lib/fetch-upstream";
+import {
+  decodeEntities,
+  fetchGdacsRssXml,
+  firstRssMatch,
+} from "@/lib/gdacs-rss";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const revalidate = 600;
 
 // Legacy route name; data comes from the GDACS tropical cyclone feed
@@ -48,52 +53,31 @@ const BROWSER_UA =
 export async function GET() {
   let primaryError: string | null = null;
   try {
-    const data = await withBreaker(
-      "gdacs-tc",
-      async () => {
-        const url = "https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP?eventtypes=TC";
-        const res = await fetch(url, {
-          next: { revalidate: 600 },
-          headers: {
-            accept: "application/json,text/plain,*/*",
-            "accept-language": "en-US,en;q=0.9",
-            "user-agent": BROWSER_UA,
-          },
-        });
-        if (!res.ok) throw new Error(`GDACS ${res.status} at ${url}`);
-        const payload = (await res.json()) as unknown;
-        if (!isGdacsCollection(payload)) {
-          throw new Error("GDACS returned an invalid tropical cyclone payload.");
-        }
-        return payload;
+    const url =
+      "https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP?eventtypes=TC";
+    const res = await fetchUpstream(url, {
+      next: { revalidate: 600 },
+      headers: {
+        accept: "application/json,text/plain,*/*",
+        "accept-language": "en-US,en;q=0.9",
+        "user-agent": BROWSER_UA,
       },
-      { cooldownMs: 60_000, timeoutMs: 12_000 },
-    );
+    });
+    if (!res.ok) throw new Error(`GDACS ${res.status} at ${url}`);
+    const payload = (await res.json()) as unknown;
+    if (!isGdacsCollection(payload)) {
+      throw new Error("GDACS returned an invalid tropical cyclone payload.");
+    }
+    const data = payload;
     return jsonOk({ storms: mapGeoJsonStorms(data) }, 600);
   } catch (e) {
     primaryError = (e as Error).message;
   }
 
   try {
-    const storms = await withBreaker(
-      "gdacs-tc-rss",
-      async () => {
-        const res = await fetch("https://www.gdacs.org/xml/rss.xml", {
-          next: { revalidate: 600 },
-          headers: { accept: "application/rss+xml,application/xml;q=0.9,*/*;q=0.8" },
-        });
-        if (!res.ok) throw new Error(`GDACS RSS ${res.status}`);
-        return parseRssStorms(await res.text());
-      },
-      { cooldownMs: 60_000, timeoutMs: 10_000 },
-    );
-    return jsonOk(
-      {
-        storms,
-        _warning: `Primary GDACS feed degraded (${primaryError}); serving RSS fallback.`,
-      },
-      300,
-    );
+    const xml = await fetchGdacsRssXml();
+    const storms = parseRssStorms(xml);
+    return jsonOk({ storms }, 600);
   } catch (fallbackError) {
     return jsonOk(
       {
@@ -157,18 +141,18 @@ function parseRssStorms(xml: string): Storm[] {
     if (!/<gdacs:eventtype>TC<\/gdacs:eventtype>/.test(block)) continue;
     if (!/<gdacs:iscurrent>true<\/gdacs:iscurrent>/.test(block)) continue;
 
-    const id = firstMatch(block, /<gdacs:eventid>([\s\S]*?)<\/gdacs:eventid>/);
-    const name = firstMatch(block, /<gdacs:eventname>([\s\S]*?)<\/gdacs:eventname>/);
-    const alertLevel = firstMatch(block, /<gdacs:alertlevel>([\s\S]*?)<\/gdacs:alertlevel>/);
-    const lat = Number(firstMatch(block, /<geo:lat>([\s\S]*?)<\/geo:lat>/));
-    const lng = Number(firstMatch(block, /<geo:long>([\s\S]*?)<\/geo:long>/));
+    const id = firstRssMatch(block, /<gdacs:eventid>([\s\S]*?)<\/gdacs:eventid>/);
+    const name = firstRssMatch(block, /<gdacs:eventname>([\s\S]*?)<\/gdacs:eventname>/);
+    const alertLevel = firstRssMatch(block, /<gdacs:alertlevel>([\s\S]*?)<\/gdacs:alertlevel>/);
+    const lat = Number(firstRssMatch(block, /<geo:lat>([\s\S]*?)<\/geo:lat>/));
+    const lng = Number(firstRssMatch(block, /<geo:long>([\s\S]*?)<\/geo:long>/));
     const severityRaw = block.match(
       /<gdacs:severity[^>]*value="([^"]+)"[^>]*>([\s\S]*?)<\/gdacs:severity>/,
     );
     const windKph = severityRaw ? Math.round(Number(severityRaw[1])) : 0;
     const severityText = severityRaw ? decodeEntities(severityRaw[2]).trim() : "";
-    const link = firstMatch(block, /<link>([\s\S]*?)<\/link>/);
-    const pubDate = firstMatch(block, /<pubDate>([\s\S]*?)<\/pubDate>/);
+    const link = firstRssMatch(block, /<link>([\s\S]*?)<\/link>/);
+    const pubDate = firstRssMatch(block, /<pubDate>([\s\S]*?)<\/pubDate>/);
 
     if (!id || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
@@ -205,22 +189,6 @@ function deriveCategory(
   if (windKph >= 89) return "Tropical Storm";
   if (windKph >= 62) return "Tropical Depression";
   return alertLevel ? `${alertLevel} alert` : "TD";
-}
-
-function firstMatch(s: string, re: RegExp): string | undefined {
-  const m = s.match(re);
-  if (!m) return undefined;
-  return decodeEntities(m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")).trim();
-}
-
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
 }
 
 function coerceString(value: unknown): string | null {

@@ -1,4 +1,5 @@
 import maplibregl, { type Map as MLMap } from "maplibre-gl";
+import { layerBeforeDynamicOverlays } from "@/config/map-layers";
 
 type WaterLevelStation = {
   id: string;
@@ -68,9 +69,7 @@ export function renderWaterLevelsOnMap(map: MLMap, stations: WaterLevelStation[]
     map.addSource(WATER_LEVELS_SOURCE_ID, { type: "geojson", data });
   }
 
-  const beforeId = map.getLayer("lyr-osm-facility-labels")
-    ? "lyr-osm-facility-labels"
-    : undefined;
+  const beforeId = layerBeforeDynamicOverlays(map);
 
   if (!map.getLayer(WATER_LEVELS_POINTS_LAYER_ID)) {
     map.addLayer(

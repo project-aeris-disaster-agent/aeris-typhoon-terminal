@@ -1,5 +1,7 @@
 "use client";
 
+import type { CctvLocation } from "@/services/cctv-locations";
+
 export type YtVideo = {
   id: string;
   title: string;
@@ -10,6 +12,8 @@ export type YtVideo = {
   isLikeLive: boolean;
   embeddable?: boolean;
   liveBroadcastContent?: "live" | "upcoming" | "none";
+  /** Heuristic geocode of the camera derived from title; null if unknown. */
+  location?: CctvLocation | null;
 };
 
 export type YtFeedResult = {

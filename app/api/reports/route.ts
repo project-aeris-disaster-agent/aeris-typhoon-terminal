@@ -51,7 +51,7 @@ export async function GET() {
           },
         },
       );
-    } catch {
+    } catch (error) {
       // Keep the operations panel usable during a Supabase outage by falling
       // back to the legacy short-lived KV feed.
     }

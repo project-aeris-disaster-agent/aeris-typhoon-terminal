@@ -6,6 +6,7 @@ import {
   supabaseServiceRoleEnabled,
 } from "@/lib/supabase-reports";
 import { jsonError } from "@/lib/api-response";
+import { authorizeReportReview } from "@/lib/review-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,10 +49,14 @@ export async function POST(
   const validated = validateReview(body);
   if (!validated.ok) return jsonError(validated.error, 400);
 
+  const auth = await authorizeReportReview(req, validated.data.actorType);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
   try {
     const report = await reviewSupabaseReport({
       reportId: params.id,
       ...validated.data,
+      actorId: validated.data.actorId ?? auth.actorId,
       metadata: {
         ...validated.data.metadata,
         requestSource: "aeris-dashboard-api",

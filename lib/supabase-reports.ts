@@ -1,3 +1,7 @@
+import { computeDedupeHash } from "@/lib/dedupe-hash";
+
+export type AiPriority = "pending" | "urgent" | "low_priority" | "rejected";
+
 type SupabaseReportRow = {
   id: string;
   report_message_id: string | null;
@@ -25,6 +29,11 @@ type SupabaseReportRow = {
   onchain_tx_hash: string | null;
   onchain_token_id: string | null;
   onchain_minted_at: string | null;
+  ai_priority: string | null;
+  ai_triage_at: string | null;
+  ai_triage_rationale: string | null;
+  ai_triage_confidence: number | null;
+  dedupe_hash: string | null;
   metadata?: Record<string, unknown> | null;
   created_at: string;
 };
@@ -48,6 +57,11 @@ export type PublicReport = {
   reviewActorType?: string;
   operatorNote?: string;
   phoneVerificationStatus?: string;
+  aiPriority?: AiPriority;
+  aiTriageAt?: string;
+  aiTriageRationale?: string;
+  aiTriageConfidence?: number;
+  dedupeHash?: string;
   onchain?: {
     proxyWallet?: {
       id?: string;
@@ -74,6 +88,9 @@ export type ReportInsert = {
   locationAccuracyM?: number;
   ipHash: string;
   metadata?: Record<string, unknown>;
+  sourceApp?: string;
+  sourceChannel?: string;
+  anonymousId?: string;
 };
 
 export type ReportReviewAction =
@@ -124,6 +141,11 @@ const REPORT_COLUMNS = [
   "onchain_tx_hash",
   "onchain_token_id",
   "onchain_minted_at",
+  "ai_priority",
+  "ai_triage_at",
+  "ai_triage_rationale",
+  "ai_triage_confidence",
+  "dedupe_hash",
   "created_at",
 ].join(",");
 
@@ -148,13 +170,45 @@ const LEGACY_REPORT_COLUMNS = [
   "created_at",
 ].join(",");
 
+const REPORT_COLUMNS_WITHOUT_AI = [
+  "id",
+  "report_message_id",
+  "source_app",
+  "source_channel",
+  "category",
+  "description",
+  "longitude",
+  "latitude",
+  "photo_url",
+  "confidence",
+  "verification_status",
+  "moderation_status",
+  "confirmations",
+  "reviewed_by",
+  "reviewed_at",
+  "review_actor_type",
+  "operator_note",
+  "phone_verification_status",
+  "proxy_wallet_id",
+  "proxy_wallet_address",
+  "onchain_network",
+  "onchain_chain_id",
+  "onchain_mint_status",
+  "onchain_tx_hash",
+  "onchain_token_id",
+  "onchain_minted_at",
+  "created_at",
+].join(",");
+
 function supabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) return null;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || (!serviceKey && !anonKey)) return null;
   return {
     url: url.replace(/\/$/, ""),
     serviceKey,
+    anonKey,
   };
 }
 
@@ -179,13 +233,31 @@ export async function listSupabaseReports(): Promise<PublicReport[]> {
   const cfg = supabaseConfig();
   if (!cfg) return [];
 
-  let res = await fetchReportsWithColumns(cfg, REPORT_COLUMNS);
-  if (!res.ok && isMissingOnchainSchema(await cloneErrorText(res))) {
-    res = await fetchReportsWithColumns(cfg, LEGACY_REPORT_COLUMNS);
+  const readKeys = [cfg.anonKey, cfg.serviceKey].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+  const triedKeys = new Set<string>();
+  let res: Response | null = null;
+
+  for (const key of readKeys) {
+    if (triedKeys.has(key)) continue;
+    triedKeys.add(key);
+
+    res = await fetchReportsWithColumns(cfg.url, key, REPORT_COLUMNS);
+
+    if (!res.ok && isMissingOnchainSchema(await cloneErrorText(res))) {
+      res = await fetchReportsWithColumns(cfg.url, key, LEGACY_REPORT_COLUMNS);
+    }
+
+    if (!res.ok && isMissingAiSchema(await cloneErrorText(res))) {
+      res = await fetchReportsWithColumns(cfg.url, key, REPORT_COLUMNS_WITHOUT_AI);
+    }
+
+    if (res.ok) break;
   }
 
-  if (!res.ok) {
-    throw new Error(`Supabase reports ${res.status}`);
+  if (!res?.ok) {
+    throw new Error(`Supabase reports ${res?.status ?? "no_response"}`);
   }
 
   const rows = (await res.json()) as SupabaseReportRow[];
@@ -196,14 +268,19 @@ export async function createSupabaseReport(
   input: ReportInsert,
 ): Promise<PublicReport> {
   const cfg = supabaseConfig();
-  if (!cfg) throw new Error("Supabase reports are not configured.");
+  if (!cfg?.serviceKey) throw new Error("Supabase service-role writes are not configured.");
 
   const [longitude, latitude] = input.position;
   const reportMessageId = createReportMessageId();
+  const dedupeHash = await computeDedupeHash({
+    category: input.category,
+    description: input.description,
+    position: input.position,
+  });
   const insertPayload = {
     report_message_id: reportMessageId,
-    source_app: "aeris-dashboard",
-    source_channel: "dashboard_panel",
+    source_app: input.sourceApp ?? "aeris-dashboard",
+    source_channel: input.sourceChannel ?? "dashboard_panel",
     category: input.category,
     description: input.description,
     longitude,
@@ -219,9 +296,12 @@ export async function createSupabaseReport(
     onchain_network: "base-mainnet",
     onchain_chain_id: 8453,
     onchain_mint_status: "not_started",
+    ai_priority: "pending",
+    dedupe_hash: dedupeHash,
     metadata: {
       ...input.metadata,
       messageId: reportMessageId,
+      anonymousId: input.anonymousId ?? null,
       onchain: {
         gasless: true,
         network: "base-mainnet",
@@ -239,6 +319,18 @@ export async function createSupabaseReport(
     },
     body: JSON.stringify(insertPayload),
   });
+
+  if (!res.ok && isMissingAiSchema(await cloneErrorText(res))) {
+    const { ai_priority, dedupe_hash, ...withoutAi } = insertPayload as Record<string, unknown>;
+    res = await fetch(`${cfg.url}/rest/v1/disaster_reports?select=${REPORT_COLUMNS_WITHOUT_AI}`, {
+      method: "POST",
+      headers: {
+        ...headers(cfg.serviceKey),
+        prefer: "return=representation",
+      },
+      body: JSON.stringify(withoutAi),
+    });
+  }
 
   if (!res.ok && isMissingOnchainSchema(await cloneErrorText(res))) {
     res = await fetch(`${cfg.url}/rest/v1/disaster_reports?select=${LEGACY_REPORT_COLUMNS}`, {
@@ -264,12 +356,13 @@ export async function reviewSupabaseReport(
   input: ReportReviewInput,
 ): Promise<PublicReport> {
   const cfg = supabaseConfig();
-  if (!cfg) throw new Error("Supabase reports are not configured.");
-  if (decodeJwtRole(cfg.serviceKey) !== "service_role") {
+  if (!cfg?.serviceKey) throw new Error("Supabase service-role writes are not configured.");
+  const writeCfg = { url: cfg.url, serviceKey: cfg.serviceKey };
+  if (decodeJwtRole(writeCfg.serviceKey) !== "service_role") {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY must be a service_role JWT for report reviews.");
   }
 
-  const current = await getSupabaseReportRow(cfg, input.reportId);
+  const current = await getSupabaseReportRow(writeCfg, input.reportId);
   const next = nextReviewState(current, input);
   const reviewedAt = new Date().toISOString();
 
@@ -284,11 +377,11 @@ export async function reviewSupabaseReport(
   };
 
   const updateRes = await fetch(
-    `${cfg.url}/rest/v1/disaster_reports?id=eq.${encodeURIComponent(input.reportId)}&select=${REPORT_COLUMNS}`,
+    `${writeCfg.url}/rest/v1/disaster_reports?id=eq.${encodeURIComponent(input.reportId)}&select=${REPORT_COLUMNS}`,
     {
       method: "PATCH",
       headers: {
-        ...headers(cfg.serviceKey),
+        ...headers(writeCfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify(updatePayload),
@@ -302,8 +395,148 @@ export async function reviewSupabaseReport(
   const rows = (await updateRes.json()) as SupabaseReportRow[];
   if (!rows[0]) throw new Error("Supabase returned no reviewed report.");
 
-  await insertReviewEvent(cfg, current, rows[0], input);
+  await insertReviewEvent(writeCfg, current, rows[0], input);
   return toPublicReport(rows[0]);
+}
+
+export async function getSupabaseReportById(reportId: string): Promise<PublicReport | null> {
+  const cfg = supabaseConfig();
+  if (!cfg?.serviceKey) return null;
+  try {
+    const row = await getSupabaseReportRow({ url: cfg.url, serviceKey: cfg.serviceKey }, reportId);
+    return toPublicReport(row);
+  } catch {
+    return null;
+  }
+}
+
+export async function listPendingTriageReports(limit = 25): Promise<PublicReport[]> {
+  const cfg = supabaseConfig();
+  if (!cfg?.serviceKey) return [];
+
+  const params = new URLSearchParams({
+    select: REPORT_COLUMNS,
+    ai_priority: "eq.pending",
+    order: "created_at.asc",
+    limit: String(limit),
+  });
+
+  let res = await fetch(`${cfg.url}/rest/v1/disaster_reports?${params}`, {
+    headers: headers(cfg.serviceKey),
+    cache: "no-store",
+  });
+
+  if (!res.ok && isMissingAiSchema(await cloneErrorText(res))) {
+    return [];
+  }
+
+  if (!res.ok) throw new Error(`Supabase pending triage list ${res.status}`);
+  const rows = (await res.json()) as SupabaseReportRow[];
+  return rows.map(toPublicReport);
+}
+
+export async function findDuplicateReport(
+  dedupeHash: string,
+  excludeReportId: string,
+  withinHours = 6,
+): Promise<PublicReport | null> {
+  const cfg = supabaseConfig();
+  if (!cfg?.serviceKey) return null;
+
+  const since = new Date(Date.now() - withinHours * 60 * 60 * 1000).toISOString();
+  const params = new URLSearchParams({
+    select: REPORT_COLUMNS,
+    dedupe_hash: `eq.${dedupeHash}`,
+    id: `neq.${excludeReportId}`,
+    created_at: `gte.${since}`,
+    order: "created_at.asc",
+    limit: "1",
+  });
+
+  let res = await fetch(`${cfg.url}/rest/v1/disaster_reports?${params}`, {
+    headers: headers(cfg.serviceKey),
+    cache: "no-store",
+  });
+
+  if (!res.ok && isMissingAiSchema(await cloneErrorText(res))) {
+    return null;
+  }
+
+  if (!res.ok) return null;
+  const rows = (await res.json()) as SupabaseReportRow[];
+  return rows[0] ? toPublicReport(rows[0]) : null;
+}
+
+export async function patchAiTriageFields(
+  reportId: string,
+  fields: {
+    aiPriority: AiPriority;
+    aiTriageAt: string;
+    aiTriageRationale: string;
+    aiTriageConfidence: number;
+    dedupeHash: string;
+  },
+): Promise<void> {
+  const cfg = supabaseConfig();
+  if (!cfg?.serviceKey) throw new Error("Supabase service-role writes are not configured.");
+
+  const res = await fetch(
+    `${cfg.url}/rest/v1/disaster_reports?id=eq.${encodeURIComponent(reportId)}`,
+    {
+      method: "PATCH",
+      headers: headers(cfg.serviceKey),
+      body: JSON.stringify({
+        ai_priority: fields.aiPriority,
+        ai_triage_at: fields.aiTriageAt,
+        ai_triage_rationale: fields.aiTriageRationale,
+        ai_triage_confidence: fields.aiTriageConfidence,
+        dedupe_hash: fields.dedupeHash,
+      }),
+    },
+  );
+
+  if (!res.ok && isMissingAiSchema(await cloneErrorText(res))) {
+    return;
+  }
+
+  if (!res.ok) {
+    throw new Error(`Supabase ai triage patch ${res.status}`);
+  }
+}
+
+export async function listSupabaseReportsByAnonymousId(
+  anonymousId: string,
+): Promise<PublicReport[]> {
+  const cfg = supabaseConfig();
+  if (!cfg?.serviceKey) return [];
+
+  const params = new URLSearchParams({
+    select: REPORT_COLUMNS,
+    metadata: `cs.{"anonymousId":"${anonymousId}"}`,
+    order: "created_at.desc",
+    limit: "100",
+  });
+
+  let res = await fetch(`${cfg.url}/rest/v1/disaster_reports?${params}`, {
+    headers: headers(cfg.serviceKey),
+    cache: "no-store",
+  });
+
+  if (!res.ok && isMissingAiSchema(await cloneErrorText(res))) {
+    res = await fetch(
+      `${cfg.url}/rest/v1/disaster_reports?${new URLSearchParams({
+        select: REPORT_COLUMNS_WITHOUT_AI,
+        metadata: `cs.{"anonymousId":"${anonymousId}"}`,
+        order: "created_at.desc",
+        limit: "100",
+      })}`,
+      { headers: headers(cfg.serviceKey), cache: "no-store" },
+    );
+  }
+
+  if (!res.ok) return [];
+  const rows = (await res.json()) as SupabaseReportRow[];
+  return rows.map(toPublicReport);
 }
 
 function toPublicReport(row: SupabaseReportRow): PublicReport {
@@ -334,6 +567,11 @@ function toPublicReport(row: SupabaseReportRow): PublicReport {
     reviewActorType: row.review_actor_type ?? undefined,
     operatorNote: row.operator_note ?? undefined,
     phoneVerificationStatus: row.phone_verification_status ?? undefined,
+    aiPriority: (row.ai_priority as AiPriority | null) ?? undefined,
+    aiTriageAt: row.ai_triage_at ?? undefined,
+    aiTriageRationale: row.ai_triage_rationale ?? undefined,
+    aiTriageConfidence: row.ai_triage_confidence ?? undefined,
+    dedupeHash: row.dedupe_hash ?? undefined,
     onchain: {
       proxyWallet: row.proxy_wallet_id || row.proxy_wallet_address
         ? {
@@ -359,10 +597,7 @@ function toPublicReport(row: SupabaseReportRow): PublicReport {
   };
 }
 
-function fetchReportsWithColumns(
-  cfg: { url: string; serviceKey: string },
-  columns: string,
-) {
+function fetchReportsWithColumns(url: string, key: string, columns: string) {
   const params = new URLSearchParams({
     select: columns,
     moderation_status: "neq.hidden",
@@ -371,8 +606,8 @@ function fetchReportsWithColumns(
     limit: "500",
   });
 
-  return fetch(`${cfg.url}/rest/v1/disaster_reports?${params}`, {
-    headers: headers(cfg.serviceKey),
+  return fetch(`${url}/rest/v1/disaster_reports?${params}`, {
+    headers: headers(key),
     cache: "no-store",
   });
 }
@@ -506,6 +741,10 @@ function toLegacyInsertPayload(payload: Record<string, unknown>) {
   return legacyPayload;
 }
 
+function isMissingAiSchema(message: string) {
+  return /ai_priority|ai_triage|dedupe_hash|schema cache/i.test(message);
+}
+
 function isMissingOnchainSchema(message: string) {
   return /report_message_id|phone_verification_status|proxy_wallet|onchain_|schema cache/i.test(
     message,
@@ -527,7 +766,8 @@ function clampConfidence(value: number) {
   return Math.min(1, Math.max(0, Math.round(value * 100) / 100));
 }
 
-function decodeJwtRole(token: string) {
+function decodeJwtRole(token?: string | null) {
+  if (!token) return null;
   const parts = token.split(".");
   if (parts.length < 2) return null;
   try {

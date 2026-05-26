@@ -3,6 +3,11 @@ export type FeedSource = {
   name: string;
   url: string;
   tier: 1 | 2;
+  /**
+   * Feed is already scoped to PH weather/disaster (e.g. Google News search).
+   * Skip outlet keyword gate; items are ranked by relevance score only.
+   */
+  preFiltered?: boolean;
 };
 
 /**
@@ -12,8 +17,25 @@ export type FeedSource = {
  * Tier 2: Regional / specialist sources (opt-in).
  *
  * All RSS fetches go through the Vercel edge proxy at /api/rss to avoid CORS.
+ *
+ * Note: news.abs-cbn.com/rss returns HTTP 500/403 to server-side fetchers (WAF).
+ * ABS-CBN coverage is supplemented via Google News PH search feeds below.
  */
 export const FEEDS: FeedSource[] = [
+  {
+    id: "google-ph-weather",
+    name: "Google News (PH Weather)",
+    url: "https://news.google.com/rss/search?q=Philippines+(typhoon+OR+bagyo+OR+flood+OR+PAGASA+OR+monsoon)&hl=en-PH&gl=PH&ceid=PH:en",
+    tier: 1,
+    preFiltered: true,
+  },
+  {
+    id: "google-ph-disaster",
+    name: "Google News (PH Disasters)",
+    url: "https://news.google.com/rss/search?q=Philippines+(earthquake+OR+landslide+OR+evacuation+OR+rescue+OR+calamity)&hl=en-PH&gl=PH&ceid=PH:en",
+    tier: 1,
+    preFiltered: true,
+  },
   {
     id: "rappler",
     name: "Rappler",
@@ -24,12 +46,6 @@ export const FEEDS: FeedSource[] = [
     id: "inquirer",
     name: "Inquirer.net",
     url: "https://www.inquirer.net/fullfeed",
-    tier: 1,
-  },
-  {
-    id: "abscbn",
-    name: "ABS-CBN News",
-    url: "https://news.abs-cbn.com/rss",
     tier: 1,
   },
   {
@@ -64,4 +80,15 @@ export const TYPHOON_KEYWORDS = [
   "rescue",
   "evacuation",
   "signal",
+  "weather",
+  "earthquake",
+  "monsoon",
+  "cyclone",
+  "rain",
+  "habagat",
+  "calamity",
+  "disaster",
 ];
+
+/** Minimum headlines returned when any source succeeds. */
+export const NEWS_MIN_ITEMS = 10;

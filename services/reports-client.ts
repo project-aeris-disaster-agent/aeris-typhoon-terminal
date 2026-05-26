@@ -1,6 +1,7 @@
 "use client";
 
 import type { Map as MLMap } from "maplibre-gl";
+import { layerBeforeDynamicOverlays } from "@/config/map-layers";
 import type { LngLat } from "@/config/region";
 import { recordFailure, recordSuccess } from "@/services/data-freshness";
 
@@ -30,6 +31,9 @@ export type IncidentReport = {
   confidence?: number;
   verificationStatus?: string;
   phoneVerificationStatus?: string;
+  aiPriority?: "pending" | "urgent" | "low_priority" | "rejected";
+  aiTriageRationale?: string;
+  aiTriageConfidence?: number;
   onchain?: {
     proxyWallet?: {
       id?: string;
@@ -200,6 +204,7 @@ export async function reviewReport(opts: {
   action: ReportReviewAction;
   note?: string;
   confidence?: number;
+  actorId?: string;
 }): Promise<IncidentReport> {
   const res = await fetch(`/api/reports/${encodeURIComponent(opts.reportId)}/review`, {
     method: "POST",
@@ -207,7 +212,7 @@ export async function reviewReport(opts: {
     body: JSON.stringify({
       action: opts.action,
       actorType: "human_operator",
-      actorId: "dashboard-operator",
+      actorId: opts.actorId ?? "dashboard-operator",
       note: opts.note,
       confidence: opts.confidence,
       metadata: {
@@ -263,14 +268,7 @@ export function renderReportsOnMap(map: MLMap, reports: IncidentReport[]) {
   }
 
   if (!map.getLayer(REPORTS_PULSE_LAYER_ID)) {
-    // Anchor below facility labels so text stays readable over report
-    // markers and so repeated add/remove cycles yield a stable z-order
-    // (without `beforeId`, re-adding after removeLayer reinserts the
-    // circles on top of every other layer).
-    const beforeId = map.getLayer("lyr-osm-facility-labels")
-      ? "lyr-osm-facility-labels"
-      : undefined;
-
+    const beforeId = layerBeforeDynamicOverlays(map);
     map.addLayer(
       {
         id: REPORTS_PULSE_LAYER_ID,

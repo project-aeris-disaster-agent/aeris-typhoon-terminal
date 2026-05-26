@@ -1,902 +1,980 @@
 "use client";
 
 import {
-  useState,
   useCallback,
-  useRef,
   useEffect,
-  type KeyboardEvent,
+  useMemo,
+  useState,
+  type ReactNode,
 } from "react";
-import Image from "next/image";
-import { Pill } from "../ui/Card";
 import { clsx } from "clsx";
 import type { Map as MLMap } from "maplibre-gl";
-import type { Address3DTarget } from "@/services/map-scene";
-import { AgentAerisPanel } from "./AgentAerisPanel";
 import {
-  fetchRegions,
-  fetchProvincesByRegion,
-  fetchMunicipalitiesByProvince,
-  fetchBarangaysByMunicipality,
-  REGION_ABBREV,
-  type PsgcRegion,
-  type PsgcProvince,
-  type PsgcMunicipality,
-  type PsgcBarangay,
-} from "@/config/barangays";
+  AlertTriangle,
+  Ambulance,
+  Building2,
+  CheckCircle2,
+  CloudRain,
+  Copy,
+  ExternalLink,
+  Flame,
+  Hospital,
+  Info,
+  Newspaper,
+  Radio,
+  School,
+  Share2,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Tent,
+  Waves,
+  Wind,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { Pill } from "../ui/Card";
+import { AlertCard } from "../ui/AlertCard";
+import type { SelectedLocation } from "../MapSearchBar";
+import {
+  computeForecastAlert,
+  fetchForecast,
+  type ForecastAlert,
+  type ForecastSummary,
+} from "@/services/forecast";
+import {
+  alertSeverityTone,
+  fetchAlerts,
+  type Alert,
+  type AlertSeverity,
+} from "@/services/alerts";
+import { fetchNews, type NewsItem } from "@/services/news";
+import { FLOOD_LEVEL_STYLE, type FloodLevel } from "@/config/flood-colors";
+import { focusAddress3DContext } from "@/services/map-scene";
 
-// ─── Nominatim ────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-type NominatimResult = {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-  type: string;
-  class: string;
-  address: Record<string, string | undefined>;
+type SafetyTone = "ok" | "default" | "warn" | "danger";
+type FloodHit = { returnPeriod: string; worst: FloodLevel };
+
+type FacilityProps = {
+  category: string;
+  categoryLabel: string;
+  name: string | null;
+  priority: number;
+  source: string;
+};
+type FacilityFeature = GeoJSON.Feature<GeoJSON.Point, FacilityProps>;
+type OsmContextPayload = {
+  facilities: GeoJSON.FeatureCollection<GeoJSON.Point>;
+};
+type NearbyFacility = {
+  feature: FacilityFeature;
+  distanceMeters: number;
+  bearing: Compass;
 };
 
-const PLACE_TYPE_LABEL: Record<string, string> = {
-  suburb: "Barangay",
-  village: "Barangay",
-  quarter: "Barangay",
-  neighbourhood: "Barangay",
-  hamlet: "Barangay",
-  isolated_dwelling: "Barangay",
-  allotments: "Barangay",
-  town: "Town",
-  city: "City",
-  municipality: "Municipality",
-  county: "Province",
-  state: "Region",
-  administrative: "Area",
+type Compass = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const EARTH_RADIUS_M = 6_371_000;
+const COMPASS: Compass[] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+const FLOOD_PERIOD_ORDER = ["5yr", "25yr", "100yr"] as const;
+const FLOOD_RANK: Record<FloodLevel, number> = { low: 1, medium: 2, high: 3 };
+const SEVERITY_RANK: Record<AlertSeverity, number> = {
+  info: 0,
+  watch: 1,
+  warning: 2,
+  emergency: 3,
+};
+const TONE_RANK: Record<SafetyTone, number> = {
+  ok: 0,
+  default: 1,
+  warn: 2,
+  danger: 3,
 };
 
-const PLACE_TONE: Record<string, string> = {
-  suburb: "text-aeris-accent",
-  village: "text-aeris-accent",
-  quarter: "text-aeris-accent",
-  neighbourhood: "text-aeris-accent",
-  hamlet: "text-aeris-accent",
-  isolated_dwelling: "text-aeris-accent",
-  allotments: "text-aeris-accent",
-  town: "text-aeris-ok",
-  city: "text-aeris-ok",
-  municipality: "text-aeris-ok",
+const TONE_BG: Record<SafetyTone, string> = {
+  ok: "bg-aeris-ok/15 border-aeris-ok/40 text-aeris-ok",
+  default: "bg-aeris-accent/10 border-aeris-accent/40 text-aeris-accent",
+  warn: "bg-aeris-warn/15 border-aeris-warn/50 text-aeris-warn",
+  danger: "bg-aeris-danger/15 border-aeris-danger/50 text-aeris-danger",
 };
 
-function nominatimShortName(r: NominatimResult): string {
-  const a = r.address;
-  return (
-    a.suburb ??
-    a.village ??
-    a.hamlet ??
-    a.city_district ??
-    a.town ??
-    a.city ??
-    a.county ??
-    r.display_name.split(",")[0].trim()
+const FACILITY_META: Record<string, { Icon: LucideIcon; tone: string }> = {
+  hospital: { Icon: Hospital, tone: "text-aeris-danger" },
+  evacuation: { Icon: Tent, tone: "text-aeris-ok" },
+  fire_station: { Icon: Flame, tone: "text-aeris-warn" },
+  police: { Icon: Shield, tone: "text-aeris-accent" },
+  government: { Icon: Building2, tone: "text-aeris-muted" },
+  school: { Icon: School, tone: "text-aeris-muted" },
+};
+const FACILITY_FALLBACK = { Icon: Building2, tone: "text-aeris-muted" };
+
+const STORM_KEYWORDS = [
+  "typhoon",
+  "bagyo",
+  "storm",
+  "tropical",
+  "lpa",
+  "rain",
+  "flood",
+  "baha",
+  "landslide",
+  "evacuat",
+  "ndrrmc",
+  "pagasa",
+  "habagat",
+  "amihan",
+  "signal no",
+];
+
+const TIMESTAMP_FMT: Intl.DateTimeFormatOptions = {
+  month: "short",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+};
+const formatTimestamp = (iso: string) =>
+  new Date(iso).toLocaleString("en-PH", TIMESTAMP_FMT);
+
+// ─── Geo helpers ─────────────────────────────────────────────────────────────
+
+const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+function haversineMeters(
+  [lon1, lat1]: [number, number],
+  [lon2, lat2]: [number, number],
+) {
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a));
+}
+
+function bearing(
+  [lon1, lat1]: [number, number],
+  [lon2, lat2]: [number, number],
+): Compass {
+  const y = Math.sin(toRad(lon2 - lon1)) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lon2 - lon1));
+  const deg = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+  return COMPASS[Math.round(deg / 45) % 8];
+}
+
+const formatDistance = (m: number) =>
+  m < 1000
+    ? `${Math.round(m)} m`
+    : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
+
+function bboxAround(
+  lat: number,
+  lon: number,
+  meters: number,
+): [number, number, number, number] {
+  const dLat = (meters / EARTH_RADIUS_M) * (180 / Math.PI);
+  const dLon =
+    (meters / (EARTH_RADIUS_M * Math.cos(toRad(lat)))) * (180 / Math.PI);
+  return [lon - dLon, lat - dLat, lon + dLon, lat + dLat];
+}
+
+// ─── Severity / tone helpers ────────────────────────────────────────────────
+
+const floodLevelTone = (l: FloodLevel): SafetyTone =>
+  l === "high" ? "danger" : l === "medium" ? "warn" : "default";
+
+function pickHighestTone(tones: SafetyTone[]): SafetyTone {
+  if (tones.length === 0) return "ok";
+  return tones.reduce((a, b) => (TONE_RANK[a] >= TONE_RANK[b] ? a : b));
+}
+
+// `alertSeverityTone` returns "accent" for `watch`; the panel uses `default`
+// for that visual slot, so we normalize here in one place.
+function alertTone(s: AlertSeverity): SafetyTone {
+  const t = alertSeverityTone(s);
+  return t === "accent" ? "default" : t;
+}
+
+// ─── Flood probe ────────────────────────────────────────────────────────────
+
+const FLOOD_FILL_PREFIX = "lyr-flood-fill-";
+const FLOOD_FILL_LAYER_RE = /^lyr-flood-fill-.+-(\d+yr)$/;
+
+function probeFlood(map: MLMap, lat: number, lon: number): FloodHit[] {
+  const layers = map.getStyle()?.layers;
+  if (!layers) return [];
+  const fillIds = layers
+    .map((l) => l.id)
+    .filter((id) => id.startsWith(FLOOD_FILL_PREFIX));
+  if (fillIds.length === 0) return [];
+
+  let feats: ReturnType<MLMap["queryRenderedFeatures"]>;
+  try {
+    feats = map.queryRenderedFeatures(map.project([lon, lat]), {
+      layers: fillIds,
+    });
+  } catch {
+    return [];
+  }
+
+  const byPeriod = new Map<string, FloodLevel>();
+  for (const f of feats) {
+    const m = FLOOD_FILL_LAYER_RE.exec(f.layer?.id ?? "");
+    if (!m) continue;
+    const level = f.properties?.level as FloodLevel | undefined;
+    if (!level || !(level in FLOOD_RANK)) continue;
+    const prev = byPeriod.get(m[1]);
+    if (!prev || FLOOD_RANK[level] > FLOOD_RANK[prev]) {
+      byPeriod.set(m[1], level);
+    }
+  }
+
+  return Array.from(byPeriod, ([returnPeriod, worst]) => ({
+    returnPeriod,
+    worst,
+  })).sort(
+    (a, b) =>
+      FLOOD_PERIOD_ORDER.indexOf(a.returnPeriod as (typeof FLOOD_PERIOD_ORDER)[number]) -
+      FLOOD_PERIOD_ORDER.indexOf(b.returnPeriod as (typeof FLOOD_PERIOD_ORDER)[number]),
   );
 }
 
-function nominatimBreadcrumb(r: NominatimResult): string {
-  const a = r.address;
-  const parts: string[] = [];
-  const sub = a.suburb ?? a.village ?? a.hamlet;
-  if (sub && (a.city || a.town)) parts.push(a.city ?? a.town ?? "");
-  if (a.county) parts.push(a.county);
-  if (a.state) parts.push(a.state);
-  return parts.filter(Boolean).join(" · ");
+// ─── News relevance ─────────────────────────────────────────────────────────
+
+function locationTokens(loc: SelectedLocation): string[] {
+  return Array.from(
+    new Set(
+      `${loc.shortName} ${loc.breadcrumb}`
+        .toLowerCase()
+        .split(/[\s,·]+/)
+        .filter((s) => s.length >= 3),
+    ),
+  );
 }
 
-// ─── Selected Location ────────────────────────────────────────────────────────
+function scoreNewsRelevance(item: NewsItem, tokens: string[]): number {
+  const t = item.title.toLowerCase();
+  let score = 0;
+  for (const tok of tokens) if (t.includes(tok)) score += 5;
+  for (const kw of STORM_KEYWORDS) if (t.includes(kw)) score += 1;
+  return score;
+}
 
-type SelectedLocation = {
-  name: string;
-  breadcrumb: string;
-  lat: number;
-  lon: number;
-  type: string;
-  displayName: string;
+// ─── Safety verdict ─────────────────────────────────────────────────────────
+
+const VERDICT_PRESET: Record<
+  SafetyTone,
+  { label: string; Icon: LucideIcon; fallback: string }
+> = {
+  danger: {
+    label: "High risk",
+    Icon: ShieldAlert,
+    fallback: "Multiple hazard indicators are elevated for this area.",
+  },
+  warn: {
+    label: "Caution",
+    Icon: AlertTriangle,
+    fallback: "Elevated weather or hazard exposure detected.",
+  },
+  default: {
+    label: "Monitor",
+    Icon: Info,
+    fallback: "No major bulletins right now — keep an eye on updates.",
+  },
+  ok: {
+    label: "Safe",
+    Icon: ShieldCheck,
+    fallback:
+      "No active national bulletins, no high weather risk in the next 7 days, and no mapped flood exposure visible at this point.",
+  },
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const VERDICT_LEAD: Record<SafetyTone, string> = {
+  danger: "Driven by ",
+  warn: "Heads-up: ",
+  default: "",
+  ok: "",
+};
 
-function StatRow({
-  label,
-  value,
-}: {
+type SafetyVerdict = {
+  tone: SafetyTone;
   label: string;
-  value?: string | number;
-}) {
-  return (
-    <div className="flex items-center justify-between py-[5px] text-[10px]">
-      <span className="text-aeris-muted/70 font-mono font-semibold">{label}</span>
-      <span className="text-aeris-text/90 font-mono font-medium tabular-nums">
-        {value !== undefined ? String(value) : "—"}
-      </span>
-    </div>
+  detail: string;
+  Icon: LucideIcon;
+};
+
+function computeVerdict(args: {
+  forecastAlert: ForecastAlert | null;
+  worstAlertSeverity: AlertSeverity | null;
+  worstFlood: FloodLevel | null;
+}): SafetyVerdict {
+  const { forecastAlert, worstAlertSeverity, worstFlood } = args;
+
+  const tone = pickHighestTone(
+    [
+      forecastAlert?.tone,
+      worstAlertSeverity ? alertTone(worstAlertSeverity) : null,
+      worstFlood ? floodLevelTone(worstFlood) : null,
+    ].filter(Boolean) as SafetyTone[],
   );
+
+  const reasons: string[] = [];
+  if (forecastAlert && forecastAlert.level >= 2) {
+    reasons.push(`${forecastAlert.label.toLowerCase()} weather risk in 7 days`);
+  }
+  if (worstAlertSeverity) {
+    reasons.push(`${worstAlertSeverity} bulletin in effect`);
+  }
+  if (worstFlood) {
+    reasons.push(
+      `${FLOOD_LEVEL_STYLE[worstFlood].label.toLowerCase()} flood susceptibility`,
+    );
+  }
+
+  const preset = VERDICT_PRESET[tone];
+  let detail = preset.fallback;
+  if (reasons.length > 0) {
+    const joined = reasons.join(", ");
+    detail = `${VERDICT_LEAD[tone]}${joined}.`;
+    // Capitalize when there's no lead-in word to start the sentence.
+    if (!VERDICT_LEAD[tone]) detail = detail.charAt(0).toUpperCase() + detail.slice(1);
+  }
+
+  return { tone, label: preset.label, detail, Icon: preset.Icon };
 }
 
-function SelectDropdown<T extends { code: string; name: string }>({
-  label,
-  options,
-  value,
-  onChange,
-  loading,
-  disabled,
-}: {
-  label: string;
-  options: T[];
-  value: string;
-  onChange: (val: string) => void;
-  loading?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="space-y-0.5">
-      <label className="text-[10px] font-mono text-aeris-muted/70 uppercase tracking-widest font-semibold">
-        {label}
-      </label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled || loading}
-        className="w-full bg-aeris-bg/60 border border-aeris-border/60 rounded-md px-2.5 py-1.5 text-[11px] text-aeris-text disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:border-aeris-accent/60 focus:ring-1 focus:ring-aeris-accent/20 transition-all"
-      >
-        <option value="">
-          {loading ? "Loading…" : `— Select ${label} —`}
-        </option>
-        {options.map((o) => (
-          <option key={o.code} value={o.code}>
-            {o.name}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
+// ─── Async hook: cancellable fetch ──────────────────────────────────────────
+
+/**
+ * Runs `fetcher` whenever `key` (a coordinate string) changes; ignores stale
+ * resolutions. Errors are swallowed — sections degrade to their empty state.
+ */
+function useAsyncResource<T>(
+  key: string | null,
+  fetcher: () => Promise<T>,
+): { data: T | null; loading: boolean } {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!key) return;
+    let cancelled = false;
+    setData(null);
+    setLoading(true);
+    fetcher()
+      .then((res) => !cancelled && setData(res))
+      .catch(() => {})
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+    // `fetcher` is intentionally re-created per render but we key off `key`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return { data, loading };
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Component ──────────────────────────────────────────────────────────────
 
 export function LocationInfoPanel({
   map,
-  onAddressSelect,
+  location,
+  onClose,
 }: {
-  map?: MLMap | null;
-  onAddressSelect?: (target: Address3DTarget) => void | Promise<void>;
+  map: MLMap | null;
+  location: SelectedLocation | null;
+  onClose: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"location" | "agent">("agent");
+  const key = location ? `${location.lat},${location.lon}` : null;
+  const lat = location?.lat;
+  const lon = location?.lon;
 
-  // ── Search state ────────────────────────────────────────────────
-  const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [activeIdx, setActiveIdx] = useState(-1);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLUListElement>(null);
+  const { data: forecast, loading: forecastLoading } =
+    useAsyncResource<ForecastSummary>(key, () =>
+      fetchForecast([lon as number, lat as number]),
+    );
+  const { data: alertsResult, loading: alertsLoading } = useAsyncResource(
+    key,
+    fetchAlerts,
+  );
+  const alerts: Alert[] = alertsResult?.alerts ?? [];
 
-  // ── Selected location ───────────────────────────────────────────
-  const [selected, setSelected] = useState<SelectedLocation | null>(null);
+  const { data: newsResult, loading: newsLoading } = useAsyncResource(
+    key,
+    fetchNews,
+  );
+  const news: NewsItem[] = newsResult?.items ?? [];
 
-  // ── Browse state ────────────────────────────────────────────────
-  const [browseOpen, setBrowseOpen] = useState(false);
-  const [regions, setRegions] = useState<PsgcRegion[]>([]);
-  const [provinces, setProvinces] = useState<PsgcProvince[]>([]);
-  const [municipalities, setMunicipalities] = useState<PsgcMunicipality[]>([]);
-  const [barangays, setBarangays] = useState<PsgcBarangay[]>([]);
-  const [regionCode, setRegionCode] = useState("");
-  const [provinceCode, setProvinceCode] = useState("");
-  const [municipalityCode, setMunicipalityCode] = useState("");
-  const [barangayCode, setBarangayCode] = useState("");
-  const [selectedPsgc, setSelectedPsgc] = useState<PsgcBarangay | null>(null);
-  const [loadingStep, setLoadingStep] = useState<string | null>(null);
+  const { data: osm, loading: osmLoading } = useAsyncResource<OsmContextPayload>(
+    key,
+    async () => {
+      const [west, south, east, north] = bboxAround(
+        lat as number,
+        lon as number,
+        1500,
+      );
+      const url = `/api/osm-context?bbox=${west.toFixed(4)},${south.toFixed(
+        4,
+      )},${east.toFixed(4)},${north.toFixed(4)}&zoom=14`;
+      const r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) throw new Error(`osm-context ${r.status}`);
+      return r.json() as Promise<OsmContextPayload>;
+    },
+  );
 
-  // ── Load regions on mount ────────────────────────────────────────
+  // Flood probe is map-driven, not URL-fetched, so it stays inline.
+  const [floodHits, setFloodHits] = useState<FloodHit[]>([]);
   useEffect(() => {
-    fetchRegions()
-      .then(setRegions)
-      .catch(() => {});
-  }, []);
-
-  // ── Nominatim search ─────────────────────────────────────────────
-  const runSearch = useCallback((q: string) => {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    if (!q.trim() || q.length < 2) {
-      setSuggestions([]);
-      setDropdownOpen(false);
-      setSearching(false);
+    if (!map || !location) {
+      setFloodHits([]);
       return;
     }
-    setSearching(true);
-    searchTimer.current = setTimeout(async () => {
-      try {
-        const url = new URL("https://nominatim.openstreetmap.org/search");
-        url.searchParams.set("q", q);
-        url.searchParams.set("countrycodes", "ph");
-        url.searchParams.set("format", "json");
-        url.searchParams.set("addressdetails", "1");
-        url.searchParams.set("limit", "10");
-        const res = await fetch(url.toString(), {
-          headers: { Accept: "application/json" },
-        });
-        if (res.ok) {
-          const data = (await res.json()) as NominatimResult[];
-          setSuggestions(data);
-          setDropdownOpen(data.length > 0);
-          setActiveIdx(-1);
-        }
-      } catch {
-        // silent
-      } finally {
-        setSearching(false);
-      }
-    }, 350);
-  }, []);
+    let cancelled = false;
+    const probe = () => {
+      if (!cancelled) setFloodHits(probeFlood(map, location.lat, location.lon));
+    };
+    probe();
+    map.on("idle", probe);
+    return () => {
+      cancelled = true;
+      map.off("idle", probe);
+    };
+  }, [map, location]);
 
-  const handleQueryChange = useCallback(
-    (val: string) => {
-      setQuery(val);
-      if (!val) {
-        setSuggestions([]);
-        setDropdownOpen(false);
-        setSelected(null);
-      } else {
-        runSearch(val);
-      }
-    },
-    [runSearch],
+  const [copied, setCopied] = useState<"coords" | "share" | null>(null);
+  useEffect(() => setCopied(null), [key]);
+
+  // ─── Derived state ────────────────────────────────────────────────────────
+
+  const forecastAlert = useMemo(
+    () => (forecast ? computeForecastAlert(forecast) : null),
+    [forecast],
   );
 
-  // ── Fly to coordinates ────────────────────────────────────────────
-  const flyTo = useCallback(
-    (lat: number, lon: number) => {
-      if (!map) return;
-      map.flyTo({
-        center: [lon, lat],
-        zoom: 15,
-        duration: 2000,
-        essential: true,
-      });
-    },
-    [map],
-  );
-
-  // ── Select a Nominatim suggestion ─────────────────────────────────
-  const selectSuggestion = useCallback(
-    (r: NominatimResult) => {
-      const loc: SelectedLocation = {
-        name: nominatimShortName(r),
-        breadcrumb: nominatimBreadcrumb(r),
-        lat: parseFloat(r.lat),
-        lon: parseFloat(r.lon),
-        type: PLACE_TYPE_LABEL[r.type] ?? r.class,
-        displayName: r.display_name,
-      };
-      setSelected(loc);
-      setQuery(loc.name);
-      setSuggestions([]);
-      setDropdownOpen(false);
-      setSelectedPsgc(null);
-      flyTo(loc.lat, loc.lon);
-      void onAddressSelect?.({ lat: loc.lat, lon: loc.lon });
-      inputRef.current?.blur();
-    },
-    [flyTo, onAddressSelect],
-  );
-
-  // ── Keyboard navigation ──────────────────────────────────────────
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLInputElement>) => {
-      if (!dropdownOpen || suggestions.length === 0) return;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setActiveIdx((i) => Math.min(i + 1, suggestions.length - 1));
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setActiveIdx((i) => Math.max(i - 1, 0));
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        if (activeIdx >= 0 && activeIdx < suggestions.length) {
-          selectSuggestion(suggestions[activeIdx]);
-        }
-      } else if (e.key === "Escape") {
-        setSuggestions([]);
-        setDropdownOpen(false);
-        setActiveIdx(-1);
-      }
-    },
-    [dropdownOpen, suggestions, activeIdx, selectSuggestion],
-  );
-
-  // Scroll active item into view
-  useEffect(() => {
-    if (activeIdx < 0 || !listRef.current) return;
-    const item = listRef.current.children[activeIdx] as HTMLElement | undefined;
-    item?.scrollIntoView({ block: "nearest" });
-  }, [activeIdx]);
-
-  // ── PSGC browse handlers ─────────────────────────────────────────
-  const handleRegionChange = useCallback(async (code: string) => {
-    setRegionCode(code);
-    setProvinceCode("");
-    setMunicipalityCode("");
-    setBarangayCode("");
-    setSelectedPsgc(null);
-    setProvinces([]);
-    setMunicipalities([]);
-    setBarangays([]);
-    if (!code) return;
-    setLoadingStep("province");
-    try {
-      setProvinces(await fetchProvincesByRegion(code));
-    } finally {
-      setLoadingStep(null);
-    }
-  }, []);
-
-  const handleProvinceChange = useCallback(async (code: string) => {
-    setProvinceCode(code);
-    setMunicipalityCode("");
-    setBarangayCode("");
-    setSelectedPsgc(null);
-    setMunicipalities([]);
-    setBarangays([]);
-    if (!code) return;
-    setLoadingStep("municipality");
-    try {
-      setMunicipalities(await fetchMunicipalitiesByProvince(code));
-    } finally {
-      setLoadingStep(null);
-    }
-  }, []);
-
-  const handleMunicipalityChange = useCallback(async (code: string) => {
-    setMunicipalityCode(code);
-    setBarangayCode("");
-    setSelectedPsgc(null);
-    setBarangays([]);
-    if (!code) return;
-    setLoadingStep("barangay");
-    try {
-      setBarangays(await fetchBarangaysByMunicipality(code));
-    } finally {
-      setLoadingStep(null);
-    }
-  }, []);
-
-  const handleBarangayChange = useCallback(
-    async (code: string) => {
-      setBarangayCode(code);
-      const found = barangays.find((b) => b.code === code) ?? null;
-      setSelectedPsgc(found);
-      setSelected(null);
-      if (!found) return;
-
-      // Geocode via Nominatim using full address
-      const muni = municipalities.find((m) => m.code === municipalityCode);
-      const prov = provinces.find((p) => p.code === provinceCode);
-      const q = [found.name, muni?.name, prov?.name, "Philippines"]
-        .filter(Boolean)
-        .join(", ");
-      try {
-        const url = new URL("https://nominatim.openstreetmap.org/search");
-        url.searchParams.set("q", q);
-        url.searchParams.set("countrycodes", "ph");
-        url.searchParams.set("format", "json");
-        url.searchParams.set("limit", "1");
-        const res = await fetch(url.toString(), {
-          headers: { Accept: "application/json" },
-        });
-        if (res.ok) {
-          const data = (await res.json()) as NominatimResult[];
-          if (data[0]) {
-            const lat = parseFloat(data[0].lat);
-            const lon = parseFloat(data[0].lon);
-            flyTo(lat, lon);
-            void onAddressSelect?.({ lat, lon });
+  const peakWeather = useMemo(
+    () =>
+      forecast
+        ? {
+            peakRain: Math.max(...forecast.daily.map((d) => d.rainMm)),
+            maxWind: forecast.maxWindKph,
           }
-        }
-      } catch {
-        // silent — flyTo is best-effort
-      }
-    },
-    [
-      barangays,
-      municipalities,
-      provinces,
-      municipalityCode,
-      provinceCode,
-      flyTo,
-      onAddressSelect,
-    ],
+        : null,
+    [forecast],
   );
 
-  // ── Breadcrumb for PSGC selection ────────────────────────────────
-  const regionName = regions.find((r) => r.code === regionCode)?.name ?? "";
-  const provinceName = provinces.find((p) => p.code === provinceCode)?.name ?? "";
-  const municipalityName =
-    municipalities.find((m) => m.code === municipalityCode)?.name ?? "";
+  const worstFlood = useMemo<FloodLevel | null>(
+    () =>
+      floodHits.length === 0
+        ? null
+        : floodHits.reduce<FloodLevel>(
+            (acc, h) => (FLOOD_RANK[h.worst] > FLOOD_RANK[acc] ? h.worst : acc),
+            "low",
+          ),
+    [floodHits],
+  );
 
-  const psgcBreadcrumb = [municipalityName, provinceName, regionName]
-    .filter(Boolean)
-    .join(" · ");
+  const worstAlertSeverity = useMemo<AlertSeverity | null>(
+    () =>
+      alerts.reduce<AlertSeverity | null>(
+        (acc, a) =>
+          !acc || SEVERITY_RANK[a.severity] > SEVERITY_RANK[acc]
+            ? a.severity
+            : acc,
+        null,
+      ),
+    [alerts],
+  );
+
+  const verdict = useMemo(
+    () => computeVerdict({ forecastAlert, worstAlertSeverity, worstFlood }),
+    [forecastAlert, worstAlertSeverity, worstFlood],
+  );
+
+  const relevantNews = useMemo(() => {
+    if (!location || news.length === 0) return [] as NewsItem[];
+    const tokens = locationTokens(location);
+    return news
+      .map((n) => ({ n, score: scoreNewsRelevance(n, tokens) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map((x) => x.n);
+  }, [location, news]);
+
+  const nearbyFacilities = useMemo<NearbyFacility[]>(() => {
+    if (!osm || !location) return [];
+    const origin: [number, number] = [location.lon, location.lat];
+    return (osm.facilities.features as FacilityFeature[])
+      .map((f) => ({
+        feature: f,
+        distanceMeters: haversineMeters(
+          origin,
+          f.geometry.coordinates as [number, number],
+        ),
+        bearing: bearing(origin, f.geometry.coordinates as [number, number]),
+      }))
+      .sort((a, b) => {
+        const dp = (b.feature.properties.priority ?? 0) - (a.feature.properties.priority ?? 0);
+        return dp !== 0 ? dp : a.distanceMeters - b.distanceMeters;
+      })
+      .slice(0, 5);
+  }, [osm, location]);
+
+  // First-paint "assessing" state: nothing has resolved yet.
+  const isAssessing =
+    forecast === null && alerts.length === 0 && floodHits.length === 0 &&
+    (forecastLoading || alertsLoading || !map);
+
+  // ─── Actions ──────────────────────────────────────────────────────────────
+
+  const flashCopy = useCallback((key: "coords" | "share") => {
+    setCopied(key);
+    window.setTimeout(() => setCopied(null), 1400);
+  }, []);
+
+  const writeClipboard = useCallback(
+    (text: string, key: "coords" | "share") => {
+      void navigator.clipboard?.writeText(text).then(() => flashCopy(key));
+    },
+    [flashCopy],
+  );
+
+  const onCopyCoords = useCallback(() => {
+    if (!location) return;
+    writeClipboard(
+      `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)}`,
+      "coords",
+    );
+  }, [location, writeClipboard]);
+
+  const onShare = useCallback(() => {
+    if (!location) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set(
+      "loc",
+      `${location.lat.toFixed(5)},${location.lon.toFixed(5)}`,
+    );
+    writeClipboard(url.toString(), "share");
+  }, [location, writeClipboard]);
+
+  const onRecenter = useCallback(() => {
+    if (!map || !location) return;
+    map.flyTo({
+      center: [location.lon, location.lat],
+      zoom: 15,
+      duration: 1400,
+      essential: true,
+    });
+  }, [map, location]);
+
+  const onOpen3D = useCallback(() => {
+    if (!map || !location) return;
+    void focusAddress3DContext(map, { lat: location.lat, lon: location.lon });
+  }, [map, location]);
+
+  if (!location) return null;
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="relative flex flex-col h-full min-h-0">
-      <div className="relative z-20 mb-2 flex rounded-lg border border-aeris-border/60 bg-aeris-bg/40 p-1">
-        <button
-          type="button"
-          onClick={() => setActiveTab("location")}
-          className={clsx(
-            "hud-text flex-1 rounded-md px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors",
-            activeTab === "location"
-              ? "bg-aeris-accent/10 text-aeris-accent border border-aeris-accent/30"
-              : "text-aeris-muted hover:text-aeris-text",
-          )}
-          aria-pressed={activeTab === "location"}
-        >
-          Location Info
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("agent")}
-          className={clsx(
-            "hud-text flex-1 rounded-md px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors",
-            activeTab === "agent"
-              ? "bg-aeris-accent/10 text-aeris-accent border border-aeris-accent/30"
-              : "text-aeris-muted hover:text-aeris-text",
-          )}
-          aria-pressed={activeTab === "agent"}
-        >
-          AGENT AERIS
-        </button>
-      </div>
+    <div className="panel-glass rounded-xl text-aeris-text shadow-2xl border border-aeris-border/70 overflow-hidden">
+      <Header
+        location={location}
+        onClose={onClose}
+        onCopyCoords={onCopyCoords}
+        copied={copied === "coords"}
+      />
 
-      {activeTab === "location" && (
-        <div className="relative z-10 flex flex-col gap-2.5 flex-1 min-h-0 pb-[28rem] sm:pb-[30rem] md:pb-[36rem]">
-      {/* Header with gradient accent */}
-      <div className="px-1">
-        <div className="flex items-start justify-between gap-3 mb-1">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-0.5">
-              <svg
-                className="shrink-0 text-aeris-accent"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
-                <path
-                  d="M12 1C6.48 1 2 5.48 2 11s4.48 10 10 10 10-4.48 10-10S17.52 1 12 1z"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  fill="none"
-                />
-                <circle cx="12" cy="11" r="3" fill="currentColor" />
-              </svg>
-              <div className="hud-text text-aeris-text text-sm tracking-tight">
-                Location Info
-              </div>
-            </div>
-            <div className="text-[10px] text-aeris-muted ml-0.5">
-              PSA PSGC · Barangay Census Data
-            </div>
-          </div>
-          <div className="shrink-0">
-            <Pill tone="accent">PSA</Pill>
-          </div>
-        </div>
-      </div>
+      <VerdictBand verdict={verdict} assessing={isAssessing} />
 
-      {/* Search Section */}
-      <div className="relative px-1">
-        <div
-          className={clsx(
-            "group relative flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-200",
-            isFocused || query
-              ? "bg-aeris-accent/5 border border-aeris-accent/40 shadow-sm"
-              : "bg-aeris-bg/40 border border-aeris-border/60 hover:border-aeris-border",
-          )}
-        >
-          {/* Search icon with animation */}
-          <svg
-            className={clsx(
-              "shrink-0 transition-colors duration-200",
-              isFocused || query ? "text-aeris-accent" : "text-aeris-muted/50",
-            )}
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-          >
-            <circle
-              cx="6.5"
-              cy="6.5"
-              r="5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            />
-            <path
-              d="M10.5 10.5L14 14"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => handleQueryChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => {
-              setIsFocused(true);
-              suggestions.length > 0 && setDropdownOpen(true);
-            }}
-            onBlur={() => setIsFocused(false)}
-            placeholder="Search any location in the Philippines…"
-            className="flex-1 bg-transparent text-[12px] text-aeris-text placeholder:text-aeris-muted/40 outline-none min-w-0 font-medium"
-            autoComplete="off"
-            spellCheck={false}
-          />
-
-          {/* Clear / spinner */}
-          <div className="shrink-0 flex items-center gap-1.5">
-            {searching && (
-              <span className="inline-flex gap-1">
-                <span className="w-1.5 h-1.5 bg-aeris-accent/60 rounded-full animate-pulse"></span>
-                <span
-                  className="w-1.5 h-1.5 bg-aeris-accent/60 rounded-full animate-pulse"
-                  style={{ animationDelay: "0.15s" }}
-                ></span>
-                <span
-                  className="w-1.5 h-1.5 bg-aeris-accent/60 rounded-full animate-pulse"
-                  style={{ animationDelay: "0.3s" }}
-                ></span>
-              </span>
-            )}
-            {query && !searching && (
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery("");
-                  setSuggestions([]);
-                  setDropdownOpen(false);
-                  setSelected(null);
-                  inputRef.current?.focus();
-                }}
-                className="text-aeris-muted/60 hover:text-aeris-text transition-colors leading-none p-0.5"
-                aria-label="Clear search"
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <path
-                    d="M2 2L10 10M10 2L2 10"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Suggestions dropdown with smooth animation */}
-        {dropdownOpen && suggestions.length > 0 && (
-          <ul
-            ref={listRef}
-            role="listbox"
-            className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 bg-aeris-surface border border-aeris-border/80 rounded-lg overflow-hidden shadow-xl max-h-56 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150"
-          >
-            {suggestions.map((r, i) => {
-              const shortName = nominatimShortName(r);
-              const breadcrumb = nominatimBreadcrumb(r);
-              const typeLabel = PLACE_TYPE_LABEL[r.type] ?? r.class;
-              const typeTone = PLACE_TONE[r.type] ?? "text-aeris-muted";
-              return (
-                <li key={r.place_id} role="option" aria-selected={i === activeIdx}>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      selectSuggestion(r);
-                    }}
-                    onMouseEnter={() => setActiveIdx(i)}
-                    className={clsx(
-                      "w-full text-left px-3 py-2 transition-all duration-150 flex items-start gap-2 border-b border-aeris-border/20 last:border-0",
-                      i === activeIdx
-                        ? "bg-aeris-accent/8 border-l-2 border-l-aeris-accent pl-[11px]"
-                        : "hover:bg-aeris-elev/40",
-                    )}
-                  >
-                    <div className="flex-1 min-w-0 pt-0.5">
-                      <div className="text-[12px] text-aeris-text truncate font-semibold">
-                        {shortName}
-                      </div>
-                      {breadcrumb && (
-                        <div className="text-[10px] text-aeris-muted/70 truncate mt-0.5">
-                          {breadcrumb}
-                        </div>
-                      )}
-                    </div>
-                    <span
-                      className={clsx(
-                        "shrink-0 text-[8px] font-mono uppercase tracking-wider font-bold mt-0.5 px-1.5 py-0.5 rounded-full border",
-                        typeTone,
-                        "border-current border-opacity-30",
-                      )}
-                    >
-                      {typeLabel}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      {/* Browse section */}
-      <div className="relative px-1">
-        <button
-          type="button"
-          onClick={() => setBrowseOpen((v) => !v)}
-          className={clsx(
-            "w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200",
-            browseOpen
-              ? "bg-aeris-accent/8 border border-aeris-accent/30"
-              : "bg-aeris-bg/30 border border-aeris-border/40 hover:border-aeris-border/60",
-          )}
-        >
-          <span className="text-[11px] font-mono text-aeris-muted uppercase tracking-wide font-semibold">
-            + Browse by Region
-          </span>
-          <svg
-            className={clsx(
-              "text-aeris-muted/60 transition-transform duration-300 ease-out",
-              browseOpen ? "rotate-180" : "",
-            )}
-            width="10"
-            height="10"
-            viewBox="0 0 12 12"
-            fill="none"
-          >
-            <path
-              d="M2 4L6 8L10 4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-
-        {browseOpen && (
-          <div className="mt-1.5 px-3 py-2.5 rounded-lg border border-aeris-border/40 bg-aeris-bg/20 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
-            <SelectDropdown
-              label="Region"
-              options={regions.map((r) => ({
-                ...r,
-                name: `${REGION_ABBREV[r.code] ?? r.regionName} · ${r.name}`,
-              }))}
-              value={regionCode}
-              onChange={handleRegionChange}
-            />
-            {regionCode && (
-              <SelectDropdown
-                label="Province"
-                options={provinces}
-                value={provinceCode}
-                onChange={handleProvinceChange}
-                loading={loadingStep === "province"}
+      <div className="px-3 pb-3">
+        <Section title="Storm impact (next 7 days)" Icon={Wind}>
+          {forecastLoading || !peakWeather || !forecastAlert ? (
+            <SkeletonRow />
+          ) : (
+            <div className="grid grid-cols-3 gap-1.5">
+              <Stat
+                Icon={Wind}
+                label="Peak wind"
+                value={`${peakWeather.maxWind}`}
+                suffix="kph"
+                tone={thresholdTone(peakWeather.maxWind, 45, 60)}
               />
-            )}
-            {provinceCode && (
-              <SelectDropdown
-                label="City / Municipality"
-                options={municipalities}
-                value={municipalityCode}
-                onChange={handleMunicipalityChange}
-                loading={loadingStep === "municipality"}
+              <Stat
+                Icon={CloudRain}
+                label="Peak rain"
+                value={`${peakWeather.peakRain}`}
+                suffix="mm"
+                tone={thresholdTone(peakWeather.peakRain, 20, 40)}
               />
-            )}
-            {municipalityCode && (
-              <SelectDropdown
-                label="Barangay"
-                options={barangays}
-                value={barangayCode}
-                onChange={handleBarangayChange}
-                loading={loadingStep === "barangay"}
-              />
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ── Location details ────────────────────────────────────────── */}
-      {(selected || selectedPsgc) && (
-        <div className="flex-1 min-h-0 overflow-y-auto px-1">
-          <div className="rounded-lg border border-aeris-border/50 bg-gradient-to-br from-aeris-accent/5 to-aeris-elev/30 p-3 space-y-2.5 animate-in fade-in scale-95 duration-200 origin-top">
-            {/* Header with gradient top */}
-            <div className="relative -m-3 mb-2 px-3 py-2.5 -mx-3 border-b border-aeris-border/20 bg-aeris-accent/5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-[13px] font-semibold text-aeris-text leading-tight">
-                    {selectedPsgc?.name ?? selected?.name}
-                  </div>
-                  <div className="text-[10px] text-aeris-muted font-mono mt-1 truncate">
-                    {selectedPsgc
-                      ? psgcBreadcrumb
-                      : selected?.breadcrumb || selected?.displayName.split(",").slice(1, 3).join(",")}
-                  </div>
-                </div>
-                <div className="shrink-0">
-                  {selected && (
-                    <span className="inline-flex text-[9px] font-mono uppercase tracking-widest text-aeris-accent border border-aeris-accent/40 rounded-full px-2 py-1 bg-aeris-accent/5 font-semibold">
-                      {selected.type}
-                    </span>
-                  )}
-                  {selectedPsgc && (
-                    <span className="inline-flex text-[9px] font-mono uppercase tracking-widest text-aeris-accent border border-aeris-accent/40 rounded-full px-2 py-1 bg-aeris-accent/5 font-semibold">
-                      Barangay
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Stats grid */}
-            <div className="space-y-1">
-              {selectedPsgc && (
-                <>
-                  <StatRow
-                    label="PSGC Code"
-                    value={
-                      selectedPsgc.psgc10DigitCode ?? selectedPsgc.code
-                    }
-                  />
-                  <StatRow
-                    label="Urban / Rural"
-                    value={selectedPsgc.urbanRural}
-                  />
-                  <StatRow
-                    label="Population"
-                    value={
-                      selectedPsgc.population !== undefined
-                        ? selectedPsgc.population.toLocaleString()
-                        : undefined
-                    }
-                  />
-                  <StatRow
-                    label="Island Group"
-                    value={selectedPsgc.islandGroup}
-                  />
-                  {selectedPsgc.oldName && (
-                    <StatRow
-                      label="Former Name"
-                      value={selectedPsgc.oldName}
-                    />
-                  )}
-                </>
-              )}
-
-              {selected && !selectedPsgc && (
-                <>
-                  <StatRow
-                    label="Coordinates"
-                    value={`${selected.lat.toFixed(5)}, ${selected.lon.toFixed(5)}`}
-                  />
-                  <StatRow label="Type" value={selected.type} />
-                </>
-              )}
-            </div>
-
-            {/* Fly-to button */}
-            {map && selected && (
-              <button
-                type="button"
-                onClick={() => flyTo(selected.lat, selected.lon)}
-                className="w-full mt-1 py-2 text-[11px] font-mono font-semibold uppercase tracking-wider text-aeris-accent bg-aeris-accent/10 border border-aeris-accent/40 rounded-md hover:bg-aeris-accent/15 hover:border-aeris-accent/60 transition-all duration-200 active:scale-95"
-              >
-                ⚡ Re-centre Map
-              </button>
-            )}
-          </div>
-
-          <div className="mt-2 px-1 text-[9px] text-aeris-muted/50 font-mono">
-            {selectedPsgc
-              ? "Source: PSA PSGC · psgc.gitlab.io · 2020 Census"
-              : "Location: © OpenStreetMap contributors (Nominatim)"}
-          </div>
-        </div>
-      )}
-
-      {/* ── Empty state ─────────────────────────────────────────────── */}
-      {!selected && !selectedPsgc && !query && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-3">
-          <div className="w-12 h-12 rounded-lg bg-aeris-accent/5 border border-aeris-accent/20 flex items-center justify-center">
-            <svg
-              className="text-aeris-accent/40"
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                cx="12"
-                cy="12"
-                r="9"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              />
-              <circle cx="12" cy="12" r="2.5" fill="currentColor" />
-              <path
-                d="M12 2v2M12 20v2M22 12h-2M4 12H2"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-          <div className="space-y-0.5">
-            <p className="text-[12px] font-semibold text-aeris-text">
-              Explore the Philippines
-            </p>
-            <p className="text-[10px] text-aeris-muted/60 leading-relaxed">
-              Search any barangay, city, or municipality to view census data and jump to the map
-            </p>
-          </div>
-        </div>
-      )}
-      </div>
-      )}
-
-      {activeTab === "agent" && (
-        <AgentAerisPanel
-          selectedLocation={
-            selected
-              ? {
-                  name: selected.name,
-                  breadcrumb: selected.breadcrumb,
-                  lat: selected.lat,
-                  lon: selected.lon,
-                  type: selected.type,
+              <Stat
+                Icon={Shield}
+                label="Risk band"
+                value={forecastAlert.label}
+                tone={
+                  forecastAlert.tone === "warn" || forecastAlert.tone === "danger"
+                    ? forecastAlert.tone
+                    : undefined
                 }
-              : selectedPsgc
-                ? {
-                    name: selectedPsgc.name,
-                    breadcrumb: psgcBreadcrumb,
-                    type: "Barangay",
-                    psgcCode:
-                      selectedPsgc.psgc10DigitCode ?? selectedPsgc.code,
-                    population: selectedPsgc.population,
-                  }
-                : null
-          }
-          isActive={activeTab === "agent"}
-        />
-      )}
+              />
+            </div>
+          )}
+        </Section>
 
-      {activeTab === "location" && (
-        <div className="pointer-events-none absolute bottom-0 right-0 z-0 select-none">
-          <Image
-            src="/assets/AERIS_char.svg"
-            alt=""
-            width={850}
-            height={1150}
-            className="h-auto w-[320px] sm:w-[380px] md:w-[420px] object-contain opacity-90 drop-shadow-[0_8px_28px_rgba(15,23,42,0.2)]"
-            loading="lazy"
-            aria-hidden
-          />
+        <Section title="Flood-hazard exposure" Icon={Waves}>
+          {floodHits.length === 0 ? (
+            <Hint>
+              No mapped flood pack covers this point, or the flood layer is
+              hidden. Toggle a return period in the legend to probe.
+            </Hint>
+          ) : (
+            <ul className="space-y-1">
+              {floodHits.map((h) => (
+                <FloodRow key={h.returnPeriod} hit={h} />
+              ))}
+            </ul>
+          )}
+        </Section>
+
+        <Section
+          title="Active national alerts"
+          Icon={Radio}
+          trailing={
+            alertsLoading ? (
+              <Pill>loading</Pill>
+            ) : (
+              <Pill tone={alerts.length > 0 ? "warn" : "ok"}>
+                {alerts.length}
+              </Pill>
+            )
+          }
+        >
+          {!alertsLoading && alerts.length === 0 ? (
+            <div className="flex items-center gap-1.5 text-[11px] text-aeris-ok">
+              <CheckCircle2 size={14} />
+              <span>No GDACS or PAGASA bulletins in effect.</span>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {alerts.slice(0, 3).map((a) => (
+                <li key={a.id}>
+                  <AlertCard alert={a} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+
+        <Section
+          title="Relevant news"
+          Icon={Newspaper}
+          trailing={
+            newsLoading ? <Pill>loading</Pill> : <Pill>{relevantNews.length}</Pill>
+          }
+        >
+          {!newsLoading && relevantNews.length === 0 ? (
+            <Hint>No headlines mention this area or active weather right now.</Hint>
+          ) : (
+            <ul className="space-y-1.5">
+              {relevantNews.map((n) => (
+                <NewsCard key={n.id} item={n} />
+              ))}
+            </ul>
+          )}
+        </Section>
+
+        <Section
+          title="Nearest help"
+          Icon={Ambulance}
+          trailing={
+            osmLoading ? <Pill>loading</Pill> : <Pill>{nearbyFacilities.length}</Pill>
+          }
+        >
+          {!osmLoading && nearbyFacilities.length === 0 ? (
+            <Hint>No facilities tagged in OpenStreetMap within ~1.5 km.</Hint>
+          ) : (
+            <ul className="space-y-1">
+              {nearbyFacilities.map((nf, i) => (
+                <FacilityRow key={`${nf.feature.properties.category}-${i}`} item={nf} />
+              ))}
+            </ul>
+          )}
+        </Section>
+
+        <div className="mt-3 pt-2 border-t border-aeris-border/40 flex flex-wrap gap-1.5">
+          <ActionButton onClick={onRecenter}>Recenter</ActionButton>
+          <ActionButton onClick={onOpen3D}>Open in 3D</ActionButton>
+          <ActionButton onClick={onShare} Icon={Share2}>
+            {copied === "share" ? "Link copied" : "Share"}
+          </ActionButton>
         </div>
-      )}
+      </div>
     </div>
   );
 }
+
+// ─── Subcomponents ──────────────────────────────────────────────────────────
+
+function Header({
+  location,
+  onClose,
+  onCopyCoords,
+  copied,
+}: {
+  location: SelectedLocation;
+  onClose: () => void;
+  onCopyCoords: () => void;
+  copied: boolean;
+}) {
+  return (
+    <div className="px-3 pt-3 pb-2 flex items-start justify-between gap-2 border-b border-aeris-border/40">
+      <div className="min-w-0 flex-1">
+        <div className="hud-text text-[9px] text-aeris-accent tracking-widest mb-0.5">
+          LOCATION INFO · {location.typeLabel}
+        </div>
+        <div className="text-[14px] font-semibold truncate leading-tight">
+          {location.shortName}
+        </div>
+        {location.breadcrumb && (
+          <div className="text-[10px] text-aeris-muted truncate mt-0.5">
+            {location.breadcrumb}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onCopyCoords}
+          className="mt-1 text-[10px] font-mono text-aeris-muted hover:text-aeris-accent transition-colors inline-flex items-center gap-1"
+          title="Copy coordinates"
+        >
+          <Copy size={10} />
+          <span>
+            {location.lat.toFixed(4)}, {location.lon.toFixed(4)}
+          </span>
+          {copied && (
+            <span className="text-aeris-ok text-[9px] uppercase tracking-wider">
+              copied
+            </span>
+          )}
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close location info"
+        className="shrink-0 text-aeris-muted/70 hover:text-aeris-text transition-colors p-1 -m-1 rounded-md hover:bg-aeris-elev/50"
+      >
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
+function VerdictBand({
+  verdict,
+  assessing,
+}: {
+  verdict: SafetyVerdict;
+  assessing: boolean;
+}) {
+  const Icon = verdict.Icon;
+  return (
+    <div
+      className={clsx(
+        "mx-3 mt-3 rounded-lg border px-3 py-2.5 flex items-start gap-2.5",
+        TONE_BG[verdict.tone],
+      )}
+    >
+      <Icon size={22} className="shrink-0 mt-0.5" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-bold uppercase tracking-wide">
+          {assessing ? "Assessing…" : verdict.label}
+        </div>
+        <p className="text-[10.5px] opacity-85 leading-snug mt-1">
+          {assessing
+            ? "Checking forecasts, advisories, and flood maps for this point."
+            : verdict.detail}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function FloodRow({ hit }: { hit: FloodHit }) {
+  return (
+    <li className="flex items-center justify-between gap-2 text-[11px]">
+      <span className="font-mono text-aeris-muted uppercase tracking-wider text-[10px]">
+        {hit.returnPeriod} return
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          className="w-2.5 h-2.5 rounded-sm border border-black/30"
+          style={{ backgroundColor: FLOOD_LEVEL_STYLE[hit.worst].color }}
+        />
+        <Pill tone={floodLevelTone(hit.worst)}>
+          {FLOOD_LEVEL_STYLE[hit.worst].label}
+        </Pill>
+      </span>
+    </li>
+  );
+}
+
+function NewsCard({ item }: { item: NewsItem }) {
+  return (
+    <li>
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block rounded-md border border-aeris-border/40 bg-aeris-elev/30 px-2 py-1.5 hover:border-aeris-accent/50 hover:bg-aeris-elev/60 transition-colors"
+      >
+        <div className="flex items-center gap-1.5 mb-0.5">
+          <span className="text-[9px] font-mono uppercase text-aeris-muted">
+            {item.source}
+          </span>
+          <span className="text-[9px] font-mono text-aeris-muted/70">
+            {formatTimestamp(item.publishedAt)}
+          </span>
+          <ExternalLink size={9} className="ml-auto text-aeris-muted/60" />
+        </div>
+        <div className="text-[11px] text-aeris-text line-clamp-2 leading-snug">
+          {item.title}
+        </div>
+      </a>
+    </li>
+  );
+}
+
+function FacilityRow({ item }: { item: NearbyFacility }) {
+  const p = item.feature.properties;
+  const meta = FACILITY_META[p.category] ?? FACILITY_FALLBACK;
+  const Icon = meta.Icon;
+  return (
+    <li className="flex items-center justify-between gap-2 text-[11px] py-0.5">
+      <div className="min-w-0 flex items-center gap-1.5">
+        <Icon size={14} className={clsx("shrink-0", meta.tone)} />
+        <div className="min-w-0">
+          <div className="truncate font-medium leading-tight">
+            {p.name ?? p.categoryLabel}
+          </div>
+          <div className="text-[9px] text-aeris-muted uppercase tracking-wider">
+            {p.categoryLabel}
+          </div>
+        </div>
+      </div>
+      <span className="shrink-0 font-mono text-[10px] text-aeris-muted">
+        {formatDistance(item.distanceMeters)} {item.bearing}
+      </span>
+    </li>
+  );
+}
+
+function Section({
+  title,
+  Icon,
+  trailing,
+  children,
+}: {
+  title: string;
+  Icon: LucideIcon;
+  trailing?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <Icon size={12} className="text-aeris-muted shrink-0" />
+        <span className="hud-text text-[9px] text-aeris-muted tracking-widest">
+          {title}
+        </span>
+        {trailing && <span className="ml-auto">{trailing}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const STAT_TONE_CLASS: Record<"warn" | "danger", { box: string; text: string }> = {
+  warn: { box: "border-aeris-warn/40 bg-aeris-warn/10", text: "text-aeris-warn" },
+  danger: { box: "border-aeris-danger/40 bg-aeris-danger/10", text: "text-aeris-danger" },
+};
+
+function Stat({
+  label,
+  value,
+  suffix,
+  tone,
+  Icon,
+}: {
+  label: string;
+  value: string;
+  suffix?: string;
+  tone?: "warn" | "danger";
+  Icon?: LucideIcon;
+}) {
+  const t = tone ? STAT_TONE_CLASS[tone] : null;
+  return (
+    <div
+      className={clsx(
+        "rounded-md border px-2 py-1.5",
+        t ? t.box : "border-aeris-border/50 bg-aeris-elev/30",
+      )}
+    >
+      <div className="flex items-center gap-1 text-[8px] uppercase tracking-wider text-aeris-muted font-mono">
+        {Icon && <Icon size={9} />}
+        <span>{label}</span>
+      </div>
+      <div
+        className={clsx("font-semibold text-[13px] leading-tight mt-0.5", t?.text)}
+      >
+        {value}
+        {suffix && (
+          <span className="ml-0.5 text-[9px] font-normal text-aeris-muted">
+            {suffix}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const SkeletonRow = () => (
+  <div className="h-12 rounded-md bg-aeris-elev/30 border border-aeris-border/30 animate-pulse" />
+);
+
+const Hint = ({ children }: { children: ReactNode }) => (
+  <p className="text-[10px] text-aeris-muted leading-snug">{children}</p>
+);
+
+function ActionButton({
+  children,
+  onClick,
+  Icon,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  Icon?: LucideIcon;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded-md border border-aeris-border/60 text-aeris-muted hover:text-aeris-accent hover:border-aeris-accent/60 transition-colors inline-flex items-center gap-1"
+    >
+      {Icon && <Icon size={11} />}
+      {children}
+    </button>
+  );
+}
+
+const thresholdTone = (
+  v: number,
+  warnAt: number,
+  dangerAt: number,
+): "warn" | "danger" | undefined =>
+  v >= dangerAt ? "danger" : v >= warnAt ? "warn" : undefined;

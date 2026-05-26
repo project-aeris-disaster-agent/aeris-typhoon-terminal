@@ -25,7 +25,7 @@ incident reporting in one live terminal.
 |---|---|
 | Framework | Next.js 14 (App Router) |
 | Language | TypeScript 5 |
-| 2D Map | MapLibre GL + deck.gl |
+| 2D Map | MapLibre GL + CARTO vector basemap |
 | 3D Terrain | Three.js + SRTM heightmap |
 | Styling | Tailwind CSS (dark mode) |
 | Edge Proxies | Vercel Edge Functions |
@@ -43,7 +43,7 @@ incident reporting in one live terminal.
 | PAGASA | Official advisory text scrape | Per advisory |
 | Project NOAH | Flood + landslide hazard rasters | Static |
 | OpenStreetMap | Base tiles, roads, boundaries | Static |
-| Philippine RSS | Rappler, Inquirer, ABS-CBN, GMA, PhilStar | 10 min |
+| Philippine RSS | Google News (PH weather/disaster), Rappler, Inquirer, GMA, PhilStar | 10 min |
 
 ## Getting Started
 

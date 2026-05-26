@@ -139,8 +139,7 @@ describe("/api/jtwc", () => {
       category: "Super Typhoon",
     });
     expect(body.storms[0].bestTrack[0].position).toEqual([156.1, 28.7]);
-    expect(body._warning).toContain("403");
-    expect(body._warning).toContain("RSS fallback");
+    expect(body._warning).toBeUndefined();
     expect(body._error).toBeUndefined();
   });
 
@@ -176,7 +175,7 @@ describe("/api/jtwc", () => {
 
     expect(response.status).toBe(200);
     expect(body.storms).toHaveLength(1);
-    expect(body._warning).toContain("invalid tropical cyclone payload");
+    expect(body._warning).toBeUndefined();
   });
 
   it("ignores non-TC and archived items in the RSS fallback", async () => {

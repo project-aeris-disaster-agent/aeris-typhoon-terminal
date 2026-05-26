@@ -16,6 +16,14 @@ import {
   DEFAULT_FLOOD_VISUALIZATION_SETTINGS,
   type FloodVisualizationSettings,
 } from "@/config/flood-visualization";
+import {
+  buildBuildingSpatialIndex,
+  buildingPolygonKey,
+  findBuildingMatch,
+  resolveFacilityPinLngLat,
+  type BuildingFeature,
+  type BuildingSpatialIndex,
+} from "@/lib/facility-building-match";
 
 /**
  * Three.js-powered MapLibre custom layer that renders 3D buildings,
@@ -30,22 +38,7 @@ import {
  * hazard read as contiguous floodwater instead of a mesh of outlines.
  */
 
-export type BuildingFeature = GeoJSON.Feature<
-  GeoJSON.Polygon,
-  {
-    kind?: string;
-    height?: number;
-    minHeight?: number;
-    name?: string;
-    /**
-     * Highest MGB flood hazard level this building footprint intersects
-     * (precomputed offline by ``scripts/annotate_flood_impact.py``). When
-     * ``setFloodHighlight(true)`` is active these buildings are tinted with
-     * the flood palette so you can see the affected structures at a glance.
-     */
-    floodLevel?: "low" | "medium" | "high";
-  }
->;
+export type { BuildingFeature } from "@/lib/facility-building-match";
 
 export type FacilityFeature = GeoJSON.Feature<
   GeoJSON.Point,
@@ -54,6 +47,13 @@ export type FacilityFeature = GeoJSON.Feature<
     categoryLabel?: string;
     name?: string;
     priority?: number;
+    facilityId?: string;
+    facilityCode?: string;
+    contact?: string;
+    contactPhone?: string;
+    contactEmail?: string;
+    contactWeb?: string;
+    osmId?: string | number;
   }
 >;
 
@@ -65,11 +65,6 @@ export type FloodPolygonFeature = GeoJSON.Feature<
 export type ThreeSceneHandle = {
   layer: CustomLayerInterface;
   setBuildings(features: BuildingFeature[]): void;
-  /**
-   * Append building features incrementally without rebuilding existing city
-   * geometry. Used by progressive hydration batches to keep interactions smooth.
-   */
-  appendBuildings(features: BuildingFeature[]): void;
   setFacilities(features: FacilityFeature[]): void;
   setBuildingsVisible(visible: boolean): void;
   setFacilitiesVisible(visible: boolean): void;
@@ -112,29 +107,6 @@ export type ThreeSceneHandle = {
 };
 
 type BucketKey = "normal" | FloodLevel;
-type PreprocessedBuilding = {
-  bucket: BucketKey;
-  minHeight: number;
-  depth: number;
-  points: Array<[number, number]>;
-  color: [number, number, number];
-};
-
-type BuildingPreprocessRequest = {
-  taskId: number;
-  origin: { x: number; y: number };
-  meterScale: number;
-  floodHighlightActive: boolean;
-  floodVisibleLevels: Record<FloodLevel, boolean>;
-  buildingPalette: Record<string, number>;
-  floodBuildingPalette: Record<FloodLevel, number>;
-  features: BuildingFeature[];
-};
-
-type BuildingPreprocessResponse = {
-  taskId: number;
-  items: PreprocessedBuilding[];
-};
 
 // NOAH-inspired neutral greys with slight warm/cool bias per type so the
 // city reads as a coherent massing while landmarks (hospital, government,
@@ -213,11 +185,24 @@ const BUILDING_RENDER_ORDER = 20;
 
 // Map-pin dimensions for critical facility markers.
 // All values in model metres (1 unit = 1 metre after meterScale transform).
-const PIN_FLOAT_HEIGHT = 20;     // metres pin head floats above building roof
-const PIN_HEAD_RADIUS = 3.5;     // sphere head radius
-const PIN_SPIKE_RADIUS = 0.8;    // spike base radius
-// Spike length spans exactly from the sphere bottom to the building roof.
-const PIN_SPIKE_LENGTH = PIN_FLOAT_HEIGHT - PIN_HEAD_RADIUS;
+/** Minimum metres the pin head floats above the roof (readability + hit target). */
+const PIN_FLOAT_HEIGHT_MIN = 18;
+/** Extra clearance on taller extrusions so heads clear the mesh silhouette. */
+const PIN_FLOAT_HEIGHT_PER_METRE = 0.35;
+const PIN_FLOAT_HEIGHT_MAX = 36;
+const PIN_HEAD_RADIUS = 3.5;
+const PIN_SPIKE_RADIUS = 0.75;
+const PIN_BOB_AMPLITUDE = 0.9;
+
+function facilityPinFloatHeight(buildingHeight: number): number {
+  const scaled =
+    PIN_FLOAT_HEIGHT_MIN + buildingHeight * PIN_FLOAT_HEIGHT_PER_METRE;
+  return Math.min(PIN_FLOAT_HEIGHT_MAX, scaled);
+}
+
+function facilityPinSpikeLength(floatHeight: number): number {
+  return floatHeight - PIN_HEAD_RADIUS;
+}
 const FACILITY_DEFAULT_HEIGHT = 14; // fallback building height when no polygon matches
 // Buildings render fully opaque (see `buildBuildings` / `buildFacilities`).
 // Opacity constant intentionally removed — translucent buildings re-introduced
@@ -246,184 +231,6 @@ function getAllPolygonRings(
 }
 
 /**
- * Fast axis-aligned bounding-box pre-filter before the more expensive
- * ray-casting point-in-polygon test.
- */
-function bboxContains(
-  ring: GeoJSON.Position[],
-  lng: number,
-  lat: number,
-): boolean {
-  let minX = Infinity, maxX = -Infinity;
-  let minY = Infinity, maxY = -Infinity;
-  for (const c of ring) {
-    if (c[0] < minX) minX = c[0];
-    if (c[0] > maxX) maxX = c[0];
-    if (c[1] < minY) minY = c[1];
-    if (c[1] > maxY) maxY = c[1];
-  }
-  return lng >= minX && lng <= maxX && lat >= minY && lat <= maxY;
-}
-
-/**
- * Ray-casting even-odd rule point-in-polygon for a single ring.
- */
-function pointInRing(
-  ring: GeoJSON.Position[],
-  lng: number,
-  lat: number,
-): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1];
-    const xj = ring[j][0], yj = ring[j][1];
-    const crosses = (yi > lat) !== (yj > lat);
-    const xIntersect = ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
-    if (crosses && lng < xIntersect) inside = !inside;
-  }
-  return inside;
-}
-
-function isPointInsidePolygonRings(
-  rings: GeoJSON.Position[][],
-  lng: number,
-  lat: number,
-): boolean {
-  const outer = rings[0];
-  if (!outer) return false;
-  if (!bboxContains(outer, lng, lat) || !pointInRing(outer, lng, lat)) return false;
-  for (const hole of rings.slice(1)) {
-    if (hole.length < 4) continue;
-    if (bboxContains(hole, lng, lat) && pointInRing(hole, lng, lat)) return false;
-  }
-  return true;
-}
-
-type RingBBox = { minX: number; minY: number; maxX: number; maxY: number };
-
-function ringBBox(ring: GeoJSON.Position[]): RingBBox {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const c of ring) {
-    if (c[0] < minX) minX = c[0];
-    if (c[0] > maxX) maxX = c[0];
-    if (c[1] < minY) minY = c[1];
-    if (c[1] > maxY) maxY = c[1];
-  }
-  return { minX, minY, maxX, maxY };
-}
-
-function bboxesIntersect(a: RingBBox, b: RingBBox): boolean {
-  return !(
-    a.maxX < b.minX ||
-    a.minX > b.maxX ||
-    a.maxY < b.minY ||
-    a.minY > b.maxY
-  );
-}
-
-type IndexedBuilding = {
-  feature: BuildingFeature;
-  ring: GeoJSON.Position[];
-  bbox: RingBBox;
-  cx: number;
-  cy: number;
-};
-
-type BuildingSpatialIndex = {
-  cells: Map<string, IndexedBuilding[]>;
-  all: IndexedBuilding[];
-  cellSize: number;
-};
-
-const BUILDING_INDEX_CELL_DEGREES = 0.003;
-
-function buildBuildingSpatialIndex(
-  buildings: BuildingFeature[],
-  cellSize = BUILDING_INDEX_CELL_DEGREES,
-): BuildingSpatialIndex {
-  const cells = new Map<string, IndexedBuilding[]>();
-  const all: IndexedBuilding[] = [];
-  for (const feature of buildings) {
-    const ring = feature.geometry.coordinates[0];
-    if (!ring || ring.length < 4) continue;
-    const bbox = ringBBox(ring);
-    let cx = 0;
-    let cy = 0;
-    for (const c of ring) {
-      cx += c[0];
-      cy += c[1];
-    }
-    cx /= ring.length;
-    cy /= ring.length;
-    const item: IndexedBuilding = { feature, ring, bbox, cx, cy };
-    all.push(item);
-    const minCellX = Math.floor(bbox.minX / cellSize);
-    const maxCellX = Math.floor(bbox.maxX / cellSize);
-    const minCellY = Math.floor(bbox.minY / cellSize);
-    const maxCellY = Math.floor(bbox.maxY / cellSize);
-    for (let ix = minCellX; ix <= maxCellX; ix++) {
-      for (let iy = minCellY; iy <= maxCellY; iy++) {
-        const id = `${ix}:${iy}`;
-        const list = cells.get(id);
-        if (list) list.push(item);
-        else cells.set(id, [item]);
-      }
-    }
-  }
-  return { cells, all, cellSize };
-}
-
-/**
- * Return the building polygon that contains the facility point, or the
- * nearest building by centroid distance within ``maxDist`` degrees (~100 m).
- * Uses a coarse grid index to avoid scanning all polygons on every lookup.
- */
-function findBuildingPolygon(
-  lng: number,
-  lat: number,
-  index: BuildingSpatialIndex,
-  maxDist = 0.001,
-): BuildingFeature | null {
-  const centerX = Math.floor(lng / index.cellSize);
-  const centerY = Math.floor(lat / index.cellSize);
-  const nearby = new Set<IndexedBuilding>();
-  for (let ox = -1; ox <= 1; ox++) {
-    for (let oy = -1; oy <= 1; oy++) {
-      const cell = index.cells.get(`${centerX + ox}:${centerY + oy}`);
-      if (!cell) continue;
-      for (const candidate of cell) nearby.add(candidate);
-    }
-  }
-  const candidates = nearby.size > 0 ? Array.from(nearby) : index.all;
-
-  for (const item of candidates) {
-    if (
-      lng < item.bbox.minX ||
-      lng > item.bbox.maxX ||
-      lat < item.bbox.minY ||
-      lat > item.bbox.maxY
-    ) {
-      continue;
-    }
-    if (pointInRing(item.ring, lng, lat)) return item.feature;
-  }
-
-  let best: BuildingFeature | null = null;
-  let bestDist = maxDist;
-  for (const item of candidates) {
-    const d = Math.hypot(lng - item.cx, lat - item.cy);
-    if (d < bestDist) {
-      bestDist = d;
-      best = item.feature;
-    }
-  }
-  return best;
-}
-
-/**
  * Build a Three.js MapLibre custom layer. The returned handle exposes
  * setters for swapping feature payloads and toggling sub-group visibility
  * without re-adding the layer.
@@ -447,54 +254,6 @@ function perfEnd(label: string, start: number, extra?: Record<string, number>) {
   }
   // eslint-disable-next-line no-console
   console.debug(parts.join("  "));
-}
-
-function preprocessBuildingsOnMainThread(
-  features: BuildingFeature[],
-  toModelXY: (lng: number, lat: number) => [number, number],
-  floodHighlight: boolean,
-  visibleLevels: Record<FloodLevel, boolean>,
-): PreprocessedBuilding[] {
-  const out: PreprocessedBuilding[] = [];
-  for (const feat of features) {
-    const props = feat.properties ?? {};
-    const kind = typeof props.kind === "string" ? props.kind : "building";
-    const height = Math.max(4, typeof props.height === "number" ? props.height : 10);
-    const minHeight = Math.max(
-      0,
-      typeof props.minHeight === "number" ? props.minHeight : 0,
-    );
-    const depth = Math.max(2, height - minHeight);
-    const ring = feat.geometry.coordinates[0];
-    if (!ring || ring.length < 4) continue;
-
-    const points: Array<[number, number]> = [];
-    for (let i = 0; i < ring.length; i++) {
-      const [x, y] = toModelXY(ring[i][0], ring[i][1]);
-      points.push([x, y]);
-    }
-    if (points.length < 4) continue;
-
-    const floodLevel = props.floodLevel as FloodLevel | undefined;
-    const isFlooded =
-      floodHighlight &&
-      floodLevel !== undefined &&
-      visibleLevels[floodLevel];
-    const baseColor = isFlooded
-      ? FLOOD_BUILDING_PALETTE[floodLevel!]
-      : (BUILDING_PALETTE[kind] ?? BUILDING_PALETTE.building);
-    const seed = Math.abs(Math.sin(ring[0][0] * 127.1 + ring[0][1] * 311.7));
-    const jitter = isFlooded ? 1 : 0.9 + ((seed * 1000) % 1) * 0.2;
-    const threeColor = new THREE.Color(baseColor).multiplyScalar(jitter);
-    out.push({
-      bucket: isFlooded ? (floodLevel as FloodLevel) : "normal",
-      minHeight,
-      depth,
-      points,
-      color: [threeColor.r, threeColor.g, threeColor.b],
-    });
-  }
-  return out;
 }
 
 export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
@@ -555,13 +314,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   let pendingRetintRebuild = false;
   let floodRebuildWaitTimer: ReturnType<typeof setTimeout> | null = null;
   const rebuildWaiters: Array<() => void> = [];
-  let buildingPreprocessWorker: Worker | null = null;
-  let buildingWorkerTaskSeq = 0;
-  const buildingWorkerCallbacks = new Map<
-    number,
-    (items: PreprocessedBuilding[]) => void
-  >();
-
   function resolveRebuildWaiters() {
     if (rebuildWaiters.length === 0) return;
     for (const resolve of rebuildWaiters.splice(0)) resolve();
@@ -623,57 +375,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     // MapLibre mercator Y grows southward, our model Y = north-meters.
     const dy = -(m.y - origin.y) / meterScale;
     return [dx, dy];
-  }
-
-  function ensureBuildingPreprocessWorker() {
-    if (buildingPreprocessWorker || typeof window === "undefined") return;
-    try {
-      buildingPreprocessWorker = new Worker(
-        new URL("../workers/building-preprocess.worker.ts", import.meta.url),
-        { type: "module" },
-      );
-      buildingPreprocessWorker.onmessage = (event: MessageEvent<BuildingPreprocessResponse>) => {
-        const payload = event.data;
-        const resolve = buildingWorkerCallbacks.get(payload.taskId);
-        if (!resolve) return;
-        buildingWorkerCallbacks.delete(payload.taskId);
-        resolve(payload.items ?? []);
-      };
-    } catch {
-      buildingPreprocessWorker = null;
-    }
-  }
-
-  function preprocessBuildingsChunk(
-    features: BuildingFeature[],
-  ): Promise<PreprocessedBuilding[]> {
-    if (!origin || features.length === 0) return Promise.resolve([]);
-    ensureBuildingPreprocessWorker();
-    if (!buildingPreprocessWorker) {
-      return Promise.resolve(
-        preprocessBuildingsOnMainThread(
-          features,
-          toModelXY,
-          floodHighlightActive,
-          floodVisibleLevels,
-        ),
-      );
-    }
-    const taskId = ++buildingWorkerTaskSeq;
-    const req: BuildingPreprocessRequest = {
-      taskId,
-      origin: { x: origin.x, y: origin.y },
-      meterScale,
-      floodHighlightActive,
-      floodVisibleLevels,
-      buildingPalette: BUILDING_PALETTE,
-      floodBuildingPalette: FLOOD_BUILDING_PALETTE,
-      features,
-    };
-    return new Promise<PreprocessedBuilding[]>((resolve) => {
-      buildingWorkerCallbacks.set(taskId, resolve);
-      buildingPreprocessWorker?.postMessage(req);
-    });
   }
 
   function clearGroups() {
@@ -743,112 +444,33 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     }, 140);
   }
 
-  function appendPreprocessedBuildings(items: PreprocessedBuilding[]) {
-    if (items.length === 0) return;
-    const t0 = perfStart("appendPreprocessedBuildings");
-    const renderEdges = shouldRenderBuildingEdges();
-    type Bucket = {
-      geoms: THREE.BufferGeometry[];
-      edgeGeoms: THREE.BufferGeometry[];
-      isFlooded: boolean;
-      level?: FloodLevel;
-    };
-    const buckets: Map<BucketKey, Bucket> = new Map();
-
-    for (const item of items) {
-      if (item.points.length < 4) continue;
-      const shape = new THREE.Shape();
-      shape.moveTo(item.points[0][0], item.points[0][1]);
-      for (let i = 1; i < item.points.length - 1; i++) {
-        shape.lineTo(item.points[i][0], item.points[i][1]);
-      }
-      shape.closePath();
-      const geom = new THREE.ExtrudeGeometry(shape, {
-        depth: item.depth,
-        bevelEnabled: false,
-        curveSegments: 1,
-      });
-      if (item.minHeight > 0) geom.translate(0, 0, item.minHeight);
-      const vertexCount = geom.attributes.position.count;
-      const colors = new Float32Array(vertexCount * 3);
-      for (let i = 0; i < vertexCount; i++) {
-        colors[i * 3] = item.color[0];
-        colors[i * 3 + 1] = item.color[1];
-        colors[i * 3 + 2] = item.color[2];
-      }
-      geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-      const edges = renderEdges
-        ? new THREE.EdgesGeometry(geom, BUILDING_EDGE_ANGLE_THRESHOLD)
-        : null;
-      let bucket = buckets.get(item.bucket);
-      if (!bucket) {
-        const isFlooded = item.bucket !== "normal";
-        bucket = {
-          geoms: [],
-          edgeGeoms: [],
-          isFlooded,
-          level: isFlooded ? (item.bucket as FloodLevel) : undefined,
-        };
-        buckets.set(item.bucket, bucket);
-      }
-      bucket.geoms.push(geom);
-      if (edges) bucket.edgeGeoms.push(edges);
+  /**
+   * Pre-compute the set of building keys that `buildFacilities` will claim
+   * (so the regular grey extrusion pass can skip them — otherwise the same
+   * polygon paints twice and the colored facility version z-fights the grey
+   * one). Uses the same `findBuildingMatch` lookup as `buildFacilities`.
+   */
+  function computeFacilityBuildingKeys(
+    index: BuildingSpatialIndex,
+  ): Set<string> {
+    const keys = new Set<string>();
+    for (const feat of pendingFacilities) {
+      const props = feat.properties ?? {};
+      const priority = typeof props.priority === "number" ? props.priority : 0;
+      if (priority < facilityPriorityFilter) continue;
+      const matched = findBuildingMatch(
+        feat.geometry.coordinates[0],
+        feat.geometry.coordinates[1],
+        index,
+      );
+      if (!matched) continue;
+      const key = buildingPolygonKey(matched.feature);
+      if (key) keys.add(key);
     }
-
-    for (const bucket of buckets.values()) {
-      if (bucket.geoms.length === 0) continue;
-      const merged = BufferGeometryUtils.mergeGeometries(bucket.geoms, false);
-      for (const g of bucket.geoms) g.dispose();
-      const emissiveColor = bucket.isFlooded
-        ? FLOOD_BUILDING_PALETTE[bucket.level!]
-        : 0x000000;
-      const sharedMat = new THREE.MeshStandardMaterial({
-        vertexColors: true,
-        emissive: emissiveColor,
-        emissiveIntensity: bucket.isFlooded ? 0.25 : 0,
-        metalness: 0.05,
-        roughness: bucket.isFlooded ? 0.6 : 0.85,
-        flatShading: false,
-        depthTest: true,
-        depthWrite: true,
-        ...(bucket.isFlooded
-          ? { transparent: true, opacity: BUILDING_OPACITY_FLOODED }
-          : { transparent: false, opacity: BUILDING_OPACITY_NORMAL }),
-      });
-      if (!bucket.isFlooded) normalBuildingMaterials.push(sharedMat);
-      const mesh = new THREE.Mesh(merged, sharedMat);
-      mesh.renderOrder = BUILDING_RENDER_ORDER;
-      buildingGroup.add(mesh);
-
-      if (renderEdges && bucket.edgeGeoms.length > 0) {
-        const edgeColor = bucket.isFlooded
-          ? FLOOD_BUILDING_PALETTE[bucket.level!]
-          : BUILDING_WIREFRAME_COLOR;
-        const edgeMat = new THREE.LineBasicMaterial({
-          color: edgeColor,
-          transparent: true,
-          opacity: BUILDING_WIREFRAME_OPACITY,
-          depthTest: true,
-          depthWrite: false,
-        });
-        const mergedEdges = BufferGeometryUtils.mergeGeometries(
-          bucket.edgeGeoms,
-          false,
-        );
-        for (const g of bucket.edgeGeoms) g.dispose();
-        const edgeMesh = new THREE.LineSegments(mergedEdges, edgeMat);
-        edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
-        buildingGroup.add(edgeMesh);
-        disposables.push(merged, sharedMat, mergedEdges, edgeMat);
-        continue;
-      }
-      for (const g of bucket.edgeGeoms) g.dispose();
-      disposables.push(merged, sharedMat);
-    }
-    perfEnd("appendPreprocessedBuildings", t0, { items: items.length });
+    return keys;
   }
 
-  function buildBuildings() {
+  function buildBuildings(skipKeys: Set<string>) {
     // Draw-call batching: every building used to produce its own
     // `ExtrudeGeometry` + `MeshStandardMaterial` + `EdgesGeometry` +
     // `LineBasicMaterial`, which for N-thousand OSM packs meant O(N)
@@ -868,6 +490,11 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     const buckets: Map<BucketKey, Bucket> = new Map();
 
     for (const feat of pendingBuildings) {
+      // Skip buildings claimed by a facility: `buildFacilities` will
+      // re-extrude them in their category colour. Painting them here too
+      // produces double geometry and z-fighting under the colored version.
+      const skipKey = buildingPolygonKey(feat);
+      if (skipKey && skipKeys.has(skipKey)) continue;
       const props = feat.properties ?? {};
       const kind = typeof props.kind === "string" ? props.kind : "building";
       const height = Math.max(
@@ -1013,8 +640,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     }
   }
 
-  function buildFacilities() {
-    const buildingIndex = buildBuildingSpatialIndex(pendingBuildings);
+  function buildFacilities(buildingIndex: BuildingSpatialIndex) {
     for (const feat of pendingFacilities) {
       const props = feat.properties ?? {};
       const priority = typeof props.priority === "number" ? props.priority : 0;
@@ -1025,20 +651,25 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       const threeColor = new THREE.Color(color);
       const facilityLng = feat.geometry.coordinates[0];
       const facilityLat = feat.geometry.coordinates[1];
-      const [cx, cy] = toModelXY(facilityLng, facilityLat);
-
-      // ── 3D Building ──────────────────────────────────────────────────────
-      // Try to find the actual property polygon from the buildings pack so
-      // the facility renders with its true footprint outline, not a generic box.
-      const matchedBuilding = findBuildingPolygon(
+      const buildingMatch = findBuildingMatch(
         facilityLng,
         facilityLat,
         buildingIndex,
       );
+      const [pinLng, pinLat] = resolveFacilityPinLngLat(
+        facilityLng,
+        facilityLat,
+        buildingMatch,
+      );
+      const [cx, cy] = toModelXY(pinLng, pinLat);
 
+      // ── 3D Building ──────────────────────────────────────────────────────
+      // Try to find the actual property polygon from the buildings pack so
+      // the facility renders with its true footprint outline, not a generic box.
       let buildingHeight: number;
 
-      if (matchedBuilding) {
+      if (buildingMatch) {
+        const matchedBuilding = buildingMatch.feature;
         const bProps = matchedBuilding.properties ?? {};
         buildingHeight = Math.max(
           6,
@@ -1163,7 +794,9 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       // ConeGeometry default axis: +Y. After rotation.x = -π/2 the tip
       // moves to -Z (downward in world space), which is what we need.
 
-      const baseZ = buildingHeight + PIN_FLOAT_HEIGHT;
+      const pinFloatHeight = facilityPinFloatHeight(buildingHeight);
+      const pinSpikeLength = facilityPinSpikeLength(pinFloatHeight);
+      const baseZ = buildingHeight + pinFloatHeight;
       const pointerGroup = new THREE.Group();
       pointerGroup.position.set(cx, cy, baseZ);
 
@@ -1182,7 +815,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
 
       // Downward spike — tip points toward the building below.
       // rotation.x = -π/2  →  ConeGeometry +Y tip becomes -Z (downward).
-      const spikeGeom = new THREE.ConeGeometry(PIN_SPIKE_RADIUS, PIN_SPIKE_LENGTH, 8);
+      const spikeGeom = new THREE.ConeGeometry(PIN_SPIKE_RADIUS, pinSpikeLength, 8);
       const spikeMat = new THREE.MeshStandardMaterial({
         color,
         emissive: color,
@@ -1192,9 +825,8 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       });
       const spikeMesh = new THREE.Mesh(spikeGeom, spikeMat);
       spikeMesh.rotation.x = -Math.PI / 2;
-      // Centre the spike so its base (~sphere bottom) is just below the head
-      // and its tip reaches the building roof level.
-      spikeMesh.position.z = -(PIN_HEAD_RADIUS + PIN_SPIKE_LENGTH) / 2;
+      // Cone centre: sphere bottom at -PIN_HEAD_RADIUS, tip at -pinFloatHeight.
+      spikeMesh.position.z = -(PIN_HEAD_RADIUS + pinSpikeLength / 2);
       pointerGroup.add(spikeMesh);
 
       facilityGroup.add(pointerGroup);
@@ -1266,19 +898,23 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     toXY: (lng: number, lat: number) => [number, number],
     z: number,
   ): THREE.BufferGeometry | null {
+    // Performance: we used to carve every overlapping building footprint as
+    // an additional hole on the flood ``THREE.Shape``. With dense packs
+    // (Bicol's 3000 buildings × multiple flood polygons) this fed earcut's
+    // ``findHoleBridge`` an O(holes^2) workload synchronously on the main
+    // thread and produced a multi-second hang the moment the user toggled
+    // Flood Projections on. We now rely on the existing render-order
+    // contract instead:
+    //   - Flood fill draws at ``FLOOD_RENDER_ORDER_FILL = 10``
+    //   - Buildings draw at ``BUILDING_RENDER_ORDER = 20`` with depthWrite
+    //     enabled, so their massing always paints over the flood decal.
+    // The visual difference (no carved holes under buildings) is negligible
+    // because the buildings already occlude the flood surface from above.
     const geometries: THREE.BufferGeometry[] = [];
-    const buildingRings = pendingBuildings
-      .map((f) => {
-        const ring = f.geometry.coordinates[0];
-        if (!ring || ring.length < 4) return null;
-        return { ring, bbox: ringBBox(ring) };
-      })
-      .filter((item): item is { ring: GeoJSON.Position[]; bbox: RingBBox } => item !== null);
 
     const addPolygon = (rings: GeoJSON.Position[][]) => {
       const outerRing = rings[0];
       if (!outerRing || outerRing.length < 4) return;
-      const outerBbox = ringBBox(outerRing);
 
       const shape = new THREE.Shape();
       const [x0, y0] = toXY(outerRing[0][0], outerRing[0][1]);
@@ -1296,24 +932,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         hole.moveTo(hx0, hy0);
         for (let i = 1; i < holeRing.length - 1; i++) {
           const [x, y] = toXY(holeRing[i][0], holeRing[i][1]);
-          hole.lineTo(x, y);
-        }
-        hole.closePath();
-        shape.holes.push(hole);
-      }
-
-      // Clip flood patches around building footprints by carving building
-      // outers as additional holes when fully inside the flood polygon.
-      for (const building of buildingRings) {
-        if (!bboxesIntersect(outerBbox, building.bbox)) continue;
-        const sample = building.ring[0];
-        if (!sample) continue;
-        if (!isPointInsidePolygonRings(rings, sample[0], sample[1])) continue;
-        const hole = new THREE.Path();
-        const [hx0, hy0] = toXY(building.ring[0][0], building.ring[0][1]);
-        hole.moveTo(hx0, hy0);
-        for (let i = 1; i < building.ring.length - 1; i++) {
-          const [x, y] = toXY(building.ring[i][0], building.ring[i][1]);
           hole.lineTo(x, y);
         }
         hole.closePath();
@@ -1564,13 +1182,19 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     origin = computeOrigin();
     meterScale = origin.meterInMercatorCoordinateUnits();
 
+    // Build the spatial index once and share it between the facility-key
+    // pre-pass and the facility extrusion pass.
+    const buildingIndex = buildBuildingSpatialIndex(pendingBuildings);
+    const facilityBuildingKeys = computeFacilityBuildingKeys(buildingIndex);
+
     const buildBuildingsT0 = perfStart("rebuild.buildings");
-    buildBuildings();
+    buildBuildings(facilityBuildingKeys);
     perfEnd("rebuild.buildings", buildBuildingsT0, {
       buildings: pendingBuildings.length,
+      skipped: facilityBuildingKeys.size,
     });
     const buildFacilitiesT0 = perfStart("rebuild.facilities");
-    buildFacilities();
+    buildFacilities(buildingIndex);
     perfEnd("rebuild.facilities", buildFacilitiesT0, {
       facilities: pendingFacilities.length,
     });
@@ -1697,7 +1321,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       // variable-height buildings all animate relative to their own roofline.
       if (animationsEnabled && facilityPointers.length > 0) {
         for (const { pointer, baseZ } of facilityPointers) {
-          pointer.position.z = baseZ + Math.sin(time * 2.0) * 1.8;
+          pointer.position.z = baseZ + Math.sin(time * 2.0) * PIN_BOB_AMPLITUDE;
         }
       }
 
@@ -1757,9 +1381,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       floodFillMaterials.length = 0;
       floodLineMaterials.length = 0;
       floodLineMeshes.length = 0;
-      buildingWorkerCallbacks.clear();
-      buildingPreprocessWorker?.terminate();
-      buildingPreprocessWorker = null;
       renderer?.dispose();
       renderer = null;
       scene = null;
@@ -1775,33 +1396,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       buildingDataEpoch += 1;
       pendingRetintRebuild = false;
       if (scene) scheduleRebuild();
-    },
-    appendBuildings(features) {
-      const next = features ?? [];
-      if (next.length === 0) return;
-      const map = mapRef.current;
-      if (map && typeof map.isMoving === "function" && map.isMoving()) {
-        pendingBuildings = pendingBuildings.concat(next);
-        scheduleRebuild();
-        return;
-      }
-      const targetEpoch = buildingDataEpoch;
-      pendingBuildings = pendingBuildings.concat(next);
-      if (!scene || !origin) {
-        scheduleRebuild();
-        return;
-      }
-      const t0 = perfStart("appendBuildings.preprocess");
-      void preprocessBuildingsChunk(next).then((items) => {
-        perfEnd("appendBuildings.preprocess", t0, {
-          features: next.length,
-          items: items.length,
-        });
-        if (targetEpoch !== buildingDataEpoch) return;
-        if (!scene || !origin) return;
-        appendPreprocessedBuildings(items);
-        mapRef.current?.triggerRepaint();
-      });
     },
     setFacilities(features) {
       pendingFacilities = features ?? [];
@@ -1914,9 +1508,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       floodFillMaterials.length = 0;
       floodLineMaterials.length = 0;
       floodLineMeshes.length = 0;
-      buildingWorkerCallbacks.clear();
-      buildingPreprocessWorker?.terminate();
-      buildingPreprocessWorker = null;
       renderer?.dispose();
       renderer = null;
       scene = null;

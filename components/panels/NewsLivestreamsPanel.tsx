@@ -37,6 +37,10 @@ export function NewsLivestreamsPanel() {
   );
   /** Ref-only: must NOT be a useCallback([videos]) or it recreates `load` every fetch and retriggers useEffect → API spam. */
   const lastLiveChannelHandlesRef = useRef<Set<string>>(new Set());
+  /** True after the first successful load completes — used to skip auto-channel-select on subsequent refreshes when the user has manually chosen. */
+  const hasLoadedOnceRef = useRef(false);
+  /** True when the user has manually picked a channel or video — prevents periodic refreshes from overriding their choice. */
+  const userHasPickedRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -50,17 +54,23 @@ export function NewsLivestreamsPanel() {
       setError(result.errors.length > 0 ? result.errors.join("; ") : null);
       setLastUpdated(new Date());
 
-      // Always follow live if any channel has one; otherwise newest upload globally (API sort).
-      setActiveVideo(null);
       const list = result.videos.filter(isPlayableVideo);
       const channelWithLive = NEWS_CHANNELS.find((c) =>
         list.some((v) => v.channelHandle === c.handle && isConfirmedLive(v)),
       );
-      if (channelWithLive) {
-        setActiveChannel(channelWithLive.handle);
-      } else if (list.length > 0) {
-        setActiveChannel(list[0].channelHandle);
+
+      // Only auto-select channel/video on the very first load, or if the user
+      // hasn't manually picked anything yet. On subsequent refreshes we leave
+      // the user's selection intact so the playing video isn't interrupted.
+      if (!hasLoadedOnceRef.current || !userHasPickedRef.current) {
+        setActiveVideo(null);
+        if (channelWithLive) {
+          setActiveChannel(channelWithLive.handle);
+        } else if (list.length > 0) {
+          setActiveChannel(list[0].channelHandle);
+        }
       }
+      hasLoadedOnceRef.current = true;
 
       const currentLiveChannels = new Set(
         NEWS_CHANNELS.filter((c) =>
@@ -95,10 +105,15 @@ export function NewsLivestreamsPanel() {
     return () => clearInterval(timer);
   }, [load]);
 
-  // When channel changes, reset to the best video for that channel
+  // When channel changes (including user-driven), reset to best video for that channel
   useEffect(() => {
     setActiveVideo(null);
   }, [activeChannel]);
+
+  const handleChannelSelect = useCallback((handle: string) => {
+    userHasPickedRef.current = true;
+    setActiveChannel(handle);
+  }, []);
 
   const channelVideos = useMemo(() => {
     const rows = videos.filter(
@@ -144,19 +159,21 @@ export function NewsLivestreamsPanel() {
   
   const goToNextVideo = useCallback(() => {
     if (hasNextVideo) {
-      const nextIdx = currentVideoIndex + 1;
-      setActiveVideo(channelVideos[nextIdx]);
+      userHasPickedRef.current = true;
+      setActiveVideo(channelVideos[currentVideoIndex + 1]);
     }
   }, [currentVideoIndex, hasNextVideo, channelVideos]);
   
   const goToPrevVideo = useCallback(() => {
     if (hasPrevVideo) {
-      const prevIdx = currentVideoIndex - 1;
-      setActiveVideo(channelVideos[prevIdx]);
+      userHasPickedRef.current = true;
+      setActiveVideo(channelVideos[currentVideoIndex - 1]);
     }
   }, [currentVideoIndex, hasPrevVideo, channelVideos]);
   
   const goToMostRecent = useCallback(() => {
+    // "Latest" explicitly resets to auto-select — re-enable auto-follow
+    userHasPickedRef.current = false;
     setActiveVideo(null);
   }, []);
 
@@ -192,7 +209,7 @@ export function NewsLivestreamsPanel() {
             <button
               key={ch.handle}
               type="button"
-              onClick={() => setActiveChannel(ch.handle)}
+              onClick={() => handleChannelSelect(ch.handle)}
               className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-[10px] font-mono border transition-colors ${
                 isActive
                   ? "bg-aeris-accent/10 border-aeris-accent/40 text-aeris-accent"
@@ -323,7 +340,7 @@ export function NewsLivestreamsPanel() {
                 <button
                   key={v.id}
                   type="button"
-                  onClick={() => setActiveVideo(v)}
+                  onClick={() => { userHasPickedRef.current = true; setActiveVideo(v); }}
                   className={`w-full flex items-start gap-2 p-1.5 rounded text-left transition-colors ${
                     isSelected
                       ? "bg-aeris-accent/10 border border-aeris-accent/30"

@@ -13,9 +13,13 @@ them through the Supabase MCP:
 
 `AERIS CHAT/06 AERIS CHAT/supabase/migrations/20260424215500_add_report_review_workflow.sql`
 
+`AERIS CHAT/06 AERIS CHAT/supabase/migrations/20260521120000_add_ai_triage_and_user_roles.sql`
+
 The migrations create `public.disaster_reports`, indexes, RLS policies, the
-`updated_at` trigger, public read access for visible non-rejected reports, and
-`public.report_review_events` for append-only human/AI review decisions.
+`updated_at` trigger, public read access for visible non-rejected reports,
+`public.report_review_events` for append-only human/AI review decisions,
+AI triage columns on `disaster_reports`, and `public.aeris_user_roles` for
+dashboard admin/volunteer assignments.
 
 ## Required Environment Variables
 
@@ -26,10 +30,49 @@ NEXT_PUBLIC_SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
 
-AERIS Chat also needs:
+Dashboard also needs:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+INTERNAL_TRIAGE_SECRET=
+CRON_SECRET=
+```
+
+AERIS Chat uses the same Supabase project credentials for shared report intake.
+
+Configure Supabase Auth **Phone** provider (Twilio/MessageBird/etc.) in the
+Supabase dashboard before enabling the dashboard OTP login gate.
+
+Optional local bypass:
+
+```bash
+DASHBOARD_AUTH_DISABLED=true
+```
+
+## AI Triage
+
+New reports are inserted with `ai_priority = pending`. A cron job calls
+`GET /api/cron/triage` every minute (authorized via `CRON_SECRET` or
+`INTERNAL_TRIAGE_SECRET`) to classify reports as `urgent`, `low_priority`, or
+`rejected`. Obvious spam and duplicates are auto-rejected by the AI agent.
+
+Manual/internal sweep:
+
+```bash
+curl -X POST https://your-dashboard/api/internal/triage \
+  -H "x-internal-triage-secret: $INTERNAL_TRIAGE_SECRET" \
+  -H "content-type: application/json" \
+  -d '{"batch": true}'
+```
+
+## Dashboard Roles
+
+Users without a row in `aeris_user_roles` are treated as `guest_viewer`
+(read-only Live Reports). Assign roles with SQL:
+
+```sql
+insert into public.aeris_user_roles (user_id, role)
+values ('<auth.users uuid>', 'admin');
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` must decode to JWT role `service_role` for report
