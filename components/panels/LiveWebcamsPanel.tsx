@@ -3,15 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { CardHeader, Pill } from "../ui/Card";
+import { useYouTubeFeeds } from "@/components/YouTubeFeedsProvider";
 import {
-  fetchYouTubeFeeds,
   extractLocation,
   getEmbedUrl,
   type YtVideo,
 } from "@/services/youtube-feeds";
-
-const JAZBAZ_CHANNEL = "@JazBazPhilippines";
-const REFRESH_INTERVAL_MS = 90 * 1000;
 const SLOT_STORAGE_KEY = "aeris.liveWebcams.slotIds.v1";
 
 /** Persisted slot assignments by id; resolved against the live video list on load. */
@@ -150,7 +147,12 @@ function SlotFrame({
 }
 
 export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
-  const [videos, setVideos] = useState<YtVideo[]>([]);
+  const { state, videosForJazbaz: videos } = useYouTubeFeeds();
+  const loading = state.loading;
+  const error =
+    state.errors.length > 0 ? state.errors.join("; ") : null;
+  const lastUpdated = state.lastUpdated;
+
   const [slots, setSlots] = useState<(YtVideo | null)[]>([
     null,
     null,
@@ -160,63 +162,43 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
     null,
   ]);
   const [gridSize, setGridSize] = useState<GridSize>(6);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [pickMode, setPickMode] = useState<PickMode>(null);
   const [pickerLiveOnly, setPickerLiveOnly] = useState(true);
 
-  const load = useCallback(async () => {
-    try {
-      const result = await fetchYouTubeFeeds([JAZBAZ_CHANNEL], {
-        bypassClientCache: true,
-      });
-      setVideos(result.videos);
+  useEffect(() => {
+    if (loading) return;
 
-      const liveVideos = result.videos.filter((v) => v.isLikeLive);
-      const stored = loadStoredSlots();
-      // Re-resolve persisted picks ONLY against the live set. Older versions
-      // of this panel persisted RSS-derived VODs (titled "Live …" but
-      // actually replays); resolving those against the full video list here
-      // would resurrect stale clips on every refresh. Limiting the lookup to
-      // currently-live videos lets a now-ended stream cleanly drop out.
-      const liveById = new Map(liveVideos.map((v) => [v.id, v]));
+    const liveVideos = videos.filter((v) => v.isLikeLive);
+    const stored = loadStoredSlots();
+    const liveById = new Map(liveVideos.map((v) => [v.id, v]));
 
-      setSlots((prev) => {
-        const next: (YtVideo | null)[] = prev.map(() => null);
-        // 1) Restore persisted picks if (and only if) the stream is still live.
-        if (stored) {
-          for (let i = 0; i < next.length && i < stored.length; i++) {
-            const id = stored[i];
-            if (id) {
-              const found = liveById.get(id);
-              if (found) next[i] = found;
-            }
+    setSlots((prev) => {
+      const len = Math.max(prev.length, 6);
+      const next: (YtVideo | null)[] = Array.from({ length: len }, () => null);
+
+      if (stored) {
+        for (let i = 0; i < next.length && i < stored.length; i++) {
+          const id = stored[i];
+          if (id) {
+            const found = liveById.get(id);
+            if (found) next[i] = found;
           }
         }
-        // 2) Auto-fill remaining empty slots with LIVE videos only. We never
-        //    auto-promote a non-live video into a slot — the user can still
-        //    pick one manually via the ✎ picker if they want a replay.
-        const usedIds = new Set(
-          next.filter(Boolean).map((v) => (v as YtVideo).id),
-        );
-        const queue = liveVideos.filter((v) => !usedIds.has(v.id));
-        let qi = 0;
-        for (let i = 0; i < next.length; i++) {
-          if (!next[i] && qi < queue.length) {
-            next[i] = queue[qi++];
-          }
+      }
+
+      const usedIds = new Set(
+        next.filter(Boolean).map((v) => (v as YtVideo).id),
+      );
+      const queue = liveVideos.filter((v) => !usedIds.has(v.id));
+      let qi = 0;
+      for (let i = 0; i < next.length; i++) {
+        if (!next[i] && qi < queue.length) {
+          next[i] = queue[qi++];
         }
-        return next;
-      });
-      setError(result.errors.length > 0 ? result.errors.join("; ") : null);
-      setLastUpdated(new Date());
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      }
+      return next;
+    });
+  }, [videos, loading]);
 
   const liveCount = videos.filter((v) => v.isLikeLive).length;
 
@@ -289,12 +271,6 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
       return next;
     });
   };
-
-  useEffect(() => {
-    load();
-    const timer = setInterval(load, REFRESH_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [load]);
 
   useEffect(() => {
     persistSlots(slots);

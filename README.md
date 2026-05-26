@@ -15,7 +15,7 @@ incident reporting in one live terminal.
 - **Forecast** — 7-day Open-Meteo per-region wind, rain, pressure
 - **Live reports** — open crowdsourced incident submission with rate limiting, spam filtering, 72h TTL
 - **News** — virtualized RSS aggregation from major Philippine outlets
-- **Live cams** — embedded PAGASA, NDRRMC, MMDA, and news livestreams
+- **Intel feeds** — JazBaz CCTV grid, PH news YouTube livestreams (cached, single API budget)
 - **AGENT AERIS companion** — native in-panel AI chat proxy with compact dashboard context and optional VRM avatar
 - **PWA offline** — service worker caches hazard tiles, last-known alerts, and queues reports when offline
 
@@ -138,7 +138,7 @@ config/
   region.ts               # PH bbox + PAR polygon
   panels.ts               # Panel registry
   feeds.ts                # RSS source list
-  livecams.ts             # Livestream registry
+  lib/youtube-feed/       # YouTube poll, Supabase cache, channel constants
 public/
   manifest.json           # PWA manifest
   sw.js                   # Service worker
@@ -150,7 +150,8 @@ public/
 
 | Key | Action |
 |---|---|
-| `1`–`8` | Toggle panels (Typhoon, Hazard, Satellite, Forecast, Alerts, Reports, News, LiveCam) |
+| `1`–`5` | Toggle sidebar panels (Typhoon, Satellite, Forecast, Alerts, News RSS) |
+| `0`, `A`–`C` | Bottom Intel Feeds (collapse, Live Webcams, News Livestreams, Community Chat) |
 | `\` | Collapse/expand sidebar |
 
 ## License Notes

@@ -12,6 +12,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { BottomPanel } from "@/components/BottomPanel";
 import { ReportPingsSync } from "@/components/ReportPingsSync";
 import { WebcamPingsSync } from "@/components/WebcamPingsSync";
+import { YouTubeFeedsProvider } from "@/components/YouTubeFeedsProvider";
 import { initMapLayers } from "@/services/hazard-layers";
 import { focusAddress3DContext, initMapScene } from "@/services/map-scene";
 import { registerHazardPopup } from "@/services/hazard-popup";
@@ -69,6 +70,7 @@ export default function HomePage() {
   const closeLocationInfo = useCallback(() => setSelectedLocation(null), []);
 
   return (
+    <YouTubeFeedsProvider>
     <div className="h-screen w-screen flex flex-col">
       <Header
         liveReportsOpen={liveReportsOpen}
@@ -133,5 +135,6 @@ export default function HomePage() {
       </div>
       <BottomPanel map={map} selectedLocation={selectedLocation} />
     </div>
+    </YouTubeFeedsProvider>
   );
 }

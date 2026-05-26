@@ -1,33 +1,38 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { CardHeader, Pill } from "../ui/Card";
+import { useYouTubeFeeds } from "@/components/YouTubeFeedsProvider";
 import {
-  fetchYouTubeFeeds,
-  getEmbedUrl,
-  type YtVideo,
-} from "@/services/youtube-feeds";
+  NEWS_CHANNEL_HANDLES,
+  YOUTUBE_NEWS_HANDLES,
+} from "@/lib/youtube-feed/constants";
+import { getEmbedUrl, type YtVideo } from "@/services/youtube-feeds";
 
 const NEWS_CHANNELS = [
-  { handle: "gmanews2026", label: "GMA News", short: "GMA" },
-  { handle: "abscbnnews", label: "ABS-CBN News", short: "ABS-CBN" },
-  { handle: "OneNewsPH", label: "One News PH", short: "One News" },
+  { handle: YOUTUBE_NEWS_HANDLES[0], label: "GMA News", short: "GMA" },
+  { handle: YOUTUBE_NEWS_HANDLES[1], label: "ABS-CBN News", short: "ABS-CBN" },
+  { handle: YOUTUBE_NEWS_HANDLES[2], label: "One News PH", short: "One News" },
 ];
 
-const REFRESH_INTERVAL_MS = 90 * 1000;
+type NewsChannelHandle = (typeof NEWS_CHANNELS)[number]["handle"];
+
 const isPlayableVideo = (video: YtVideo) => video.embeddable !== false;
 /** `liveBroadcastContent: "live"` is set by the API (Data API or channel /live page scrape) */
 const isConfirmedLive = (video: YtVideo) =>
   video.liveBroadcastContent === "live";
 
 export function NewsLivestreamsPanel() {
-  const [videos, setVideos] = useState<YtVideo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const { state, videosForNews: videos, errorsForNews } = useYouTubeFeeds();
+  const loading = state.loading;
+  const error =
+    errorsForNews.length > 0 ? errorsForNews.join("; ") : null;
+  const lastUpdated = state.lastUpdated;
 
   // Active channel — drives both the iframe and the video list
-  const [activeChannel, setActiveChannel] = useState(NEWS_CHANNELS[0].handle);
+  const [activeChannel, setActiveChannel] = useState<NewsChannelHandle>(
+    NEWS_CHANNELS[0].handle,
+  );
   // Active video within that channel (null = show latest / channel live default)
   const [activeVideo, setActiveVideo] = useState<YtVideo | null>(null);
   
@@ -42,75 +47,55 @@ export function NewsLivestreamsPanel() {
   /** True when the user has manually picked a channel or video — prevents periodic refreshes from overriding their choice. */
   const userHasPickedRef = useRef(false);
 
-  const load = useCallback(async () => {
-    try {
-      const prevLiveSnapshot = new Set(lastLiveChannelHandlesRef.current);
+  useEffect(() => {
+    if (loading || videos.length === 0) return;
 
-      const result = await fetchYouTubeFeeds(
-        NEWS_CHANNELS.map((c) => `@${c.handle}`),
-        { bypassClientCache: true },
-      );
-      setVideos(result.videos);
-      setError(result.errors.length > 0 ? result.errors.join("; ") : null);
-      setLastUpdated(new Date());
+    const prevLiveSnapshot = new Set(lastLiveChannelHandlesRef.current);
+    const list = videos.filter(isPlayableVideo);
+    const channelWithLive = NEWS_CHANNELS.find((c) =>
+      list.some((v) => v.channelHandle === c.handle && isConfirmedLive(v)),
+    );
 
-      const list = result.videos.filter(isPlayableVideo);
-      const channelWithLive = NEWS_CHANNELS.find((c) =>
-        list.some((v) => v.channelHandle === c.handle && isConfirmedLive(v)),
-      );
-
-      // Only auto-select channel/video on the very first load, or if the user
-      // hasn't manually picked anything yet. On subsequent refreshes we leave
-      // the user's selection intact so the playing video isn't interrupted.
-      if (!hasLoadedOnceRef.current || !userHasPickedRef.current) {
-        setActiveVideo(null);
-        if (channelWithLive) {
-          setActiveChannel(channelWithLive.handle);
-        } else if (list.length > 0) {
-          setActiveChannel(list[0].channelHandle);
+    if (!hasLoadedOnceRef.current || !userHasPickedRef.current) {
+      setActiveVideo(null);
+      if (channelWithLive) {
+        setActiveChannel(channelWithLive.handle);
+      } else if (list.length > 0) {
+        const h = list[0].channelHandle;
+        if (NEWS_CHANNEL_HANDLES.has(h)) {
+          setActiveChannel(h as NewsChannelHandle);
         }
       }
-      hasLoadedOnceRef.current = true;
-
-      const currentLiveChannels = new Set(
-        NEWS_CHANNELS.filter((c) =>
-          list.some((v) => v.channelHandle === c.handle && isConfirmedLive(v))
-        ).map((c) => c.handle)
-      );
-      lastLiveChannelHandlesRef.current = currentLiveChannels;
-
-      const newly = new Set<string>();
-      currentLiveChannels.forEach((ch) => {
-        if (!prevLiveSnapshot.has(ch)) newly.add(ch);
-      });
-
-      if (newly.size > 0) {
-        setNewlyLiveChannels(newly);
-        setTimeout(() => {
-          setNewlyLiveChannels(new Set());
-        }, 5000);
-      }
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
     }
-  }, []);
+    hasLoadedOnceRef.current = true;
 
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => {
-      void load();
-    }, REFRESH_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [load]);
+    const currentLiveChannels = new Set(
+      NEWS_CHANNELS.filter((c) =>
+        list.some((v) => v.channelHandle === c.handle && isConfirmedLive(v)),
+      ).map((c) => c.handle),
+    );
+    lastLiveChannelHandlesRef.current = currentLiveChannels;
+
+    const newly = new Set<string>();
+    currentLiveChannels.forEach((ch) => {
+      if (!prevLiveSnapshot.has(ch)) newly.add(ch);
+    });
+
+    if (newly.size > 0) {
+      setNewlyLiveChannels(newly);
+      const timer = window.setTimeout(() => {
+        setNewlyLiveChannels(new Set());
+      }, 5000);
+      return () => window.clearTimeout(timer);
+    }
+  }, [videos, loading]);
 
   // When channel changes (including user-driven), reset to best video for that channel
   useEffect(() => {
     setActiveVideo(null);
   }, [activeChannel]);
 
-  const handleChannelSelect = useCallback((handle: string) => {
+  const handleChannelSelect = useCallback((handle: NewsChannelHandle) => {
     userHasPickedRef.current = true;
     setActiveChannel(handle);
   }, []);

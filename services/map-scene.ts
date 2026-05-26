@@ -584,35 +584,43 @@ async function ensureThreeSceneLayer(
   return state.threePromise;
 }
 
+const FACILITY_HIT_CIRCLE_RADIUS: maplibregl.DataDrivenPropertyValueSpecification<number> =
+  [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    11,
+    10,
+    13,
+    12,
+    15,
+    16,
+    17,
+    18,
+  ];
+
 function ensureFacilityHitLayer(map: MLMap) {
-  if (map.getLayer(FACILITY_HIT_LAYER_ID)) return;
-  map.addLayer(
-    {
-      id: FACILITY_HIT_LAYER_ID,
-      type: "circle",
-      source: FACILITY_POINTS_SOURCE_ID,
-      minzoom: 11,
-      layout: { visibility: "none" },
-      paint: {
-        // Large invisible targets so pitched 3D pins (well above the footprint)
-        // remain easy to hover despite screen-space offset from ground coords.
-        "circle-radius": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          11,
-          18,
-          13,
-          28,
-          15,
-          40,
-          17,
-          52,
-        ],
-        "circle-opacity": 0,
+  if (!map.getLayer(FACILITY_HIT_LAYER_ID)) {
+    map.addLayer(
+      {
+        id: FACILITY_HIT_LAYER_ID,
+        type: "circle",
+        source: FACILITY_POINTS_SOURCE_ID,
+        minzoom: 11,
+        layout: { visibility: "none" },
+        paint: {
+          "circle-radius": FACILITY_HIT_CIRCLE_RADIUS,
+          "circle-opacity": 0,
+        },
       },
-    },
-    layerBeforeBasemapLabels(map),
+      layerBeforeBasemapLabels(map),
+    );
+    return;
+  }
+  map.setPaintProperty(
+    FACILITY_HIT_LAYER_ID,
+    "circle-radius",
+    FACILITY_HIT_CIRCLE_RADIUS,
   );
 }
 
@@ -628,16 +636,19 @@ function ensureFacilityInteractions(map: MLMap) {
     }
     const pitch = map.getPitch();
     const pad =
-      pitch >= 50 ? 56 : pitch >= 30 ? 44 : pitch >= 10 ? 32 : 20;
-    const x = event.point.x;
-    const y = event.point.y;
-    const features = map.queryRenderedFeatures(
-      [
-        [x - pad, y - pad],
-        [x + pad, y + pad],
-      ],
-      { layers: [FACILITY_HIT_LAYER_ID] },
-    );
+      pitch >= 50 ? 18 : pitch >= 30 ? 12 : pitch >= 10 ? 8 : 0;
+    const features =
+      pad > 0
+        ? map.queryRenderedFeatures(
+            [
+              [event.point.x - pad, event.point.y - pad],
+              [event.point.x + pad, event.point.y + pad],
+            ],
+            { layers: [FACILITY_HIT_LAYER_ID] },
+          )
+        : map.queryRenderedFeatures(event.point, {
+            layers: [FACILITY_HIT_LAYER_ID],
+          });
     const hit = features[0] ?? null;
     if (hit?.geometry?.type === "Point") {
       const coordinates = hit.geometry.coordinates as [number, number];
