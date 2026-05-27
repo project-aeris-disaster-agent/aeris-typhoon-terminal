@@ -52,11 +52,19 @@ const SUB_PANELS: {
 export function BottomPanel({
   map,
   selectedLocation,
+  collapsed: collapsedProp,
+  onCollapsedChange,
 }: {
   map?: MLMap | null;
   selectedLocation: SelectedLocation | null;
+  /** Controlled Intel Feeds collapse (lifted to page for layout sync). */
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsedInternal, setCollapsedInternal] = useState(true);
+  const collapsed = collapsedProp ?? collapsedInternal;
+  const setCollapsed = onCollapsedChange ?? setCollapsedInternal;
+
   const [openPanels, setOpenPanels] = useState<Record<SubPanel, boolean>>({
     webcams: true,
     news: true,
@@ -68,20 +76,22 @@ export function BottomPanel({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "0") {
         e.preventDefault();
-        setCollapsed((v) => !v);
+        setCollapsed(!collapsed);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [collapsed, setCollapsed]);
 
   const toggleSub = (id: SubPanel) =>
     setOpenPanels((prev) => ({ ...prev, [id]: !prev[id] }));
 
+  const toggleCollapsed = () => setCollapsed(!collapsed);
+
   return (
     <div
       className={clsx(
-        "w-full border-t border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[height] duration-300 shadow-[0_-2px_14px_rgba(15,23,42,0.08)]",
+        "w-full border-t border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[height] duration-300 shadow-[var(--aeris-shadow-up)]",
         collapsed ? "h-8" : "h-[38vh] min-h-[200px] max-h-[500px]",
       )}
     >
@@ -90,7 +100,7 @@ export function BottomPanel({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setCollapsed((v) => !v)}
+            onClick={toggleCollapsed}
             className="hud-text text-aeris-muted hover:text-aeris-text flex items-center gap-1.5"
             aria-label={collapsed ? "Expand intel feeds" : "Collapse intel feeds"}
           >

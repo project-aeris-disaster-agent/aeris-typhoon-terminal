@@ -51,7 +51,7 @@ export function MobileTabBar({
     <nav
       className={clsx(
         "md:hidden shrink-0 border-t border-aeris-border bg-aeris-surface/95 backdrop-blur-md",
-        "flex items-stretch h-14 shadow-[0_-2px_14px_rgba(15,23,42,0.08)]",
+        "flex items-stretch h-14 shadow-[var(--aeris-shadow-up)]",
       )}
       aria-label="Mobile navigation"
     >

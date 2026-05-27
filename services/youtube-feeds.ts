@@ -55,15 +55,40 @@ export function extractLocation(title: string): string | null {
   return null;
 }
 
+export type EmbedUrlOptions = {
+  cacheBust?: number;
+  /** Hide controls and reduce in-player chrome (webcam grid / map popups). */
+  minimalChrome?: boolean;
+};
+
 export function getEmbedUrl(
   videoId: string,
   autoplay = true,
   muted = true,
-  cacheBust?: number,
+  cacheBustOrOptions?: number | EmbedUrlOptions,
 ): string {
-  const base = `https://www.youtube.com/embed/${videoId}?autoplay=${autoplay ? 1 : 0}&mute=${muted ? 1 : 0}`;
-  if (cacheBust != null && cacheBust > 0) {
-    return `${base}&_=${cacheBust}`;
+  let cacheBust: number | undefined;
+  let minimalChrome = false;
+  if (typeof cacheBustOrOptions === "number") {
+    cacheBust = cacheBustOrOptions;
+  } else if (cacheBustOrOptions) {
+    cacheBust = cacheBustOrOptions.cacheBust;
+    minimalChrome = cacheBustOrOptions.minimalChrome ?? false;
   }
-  return base;
+
+  const params = new URLSearchParams({
+    autoplay: autoplay ? "1" : "0",
+    mute: muted ? "1" : "0",
+  });
+  if (minimalChrome) {
+    params.set("controls", "0");
+    params.set("modestbranding", "1");
+    params.set("disablekb", "1");
+    params.set("rel", "0");
+    params.set("iv_load_policy", "3");
+  }
+  if (cacheBust != null && cacheBust > 0) {
+    params.set("_", String(cacheBust));
+  }
+  return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
 }

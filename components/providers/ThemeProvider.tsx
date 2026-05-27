@@ -9,38 +9,39 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  applyThemeToDocument,
+  readStoredTheme,
+  STORAGE_KEY,
+  type AppTheme,
+} from "@/lib/theme-storage";
 
-export type AppTheme = "light" | "dark";
-
-const STORAGE_KEY = "aeris-theme";
+export type { AppTheme };
 
 type ThemeContextValue = {
   theme: AppTheme;
+  resolvedTheme: AppTheme;
   setTheme: (theme: AppTheme) => void;
   toggleTheme: () => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function applyThemeClass(theme: AppTheme) {
-  const root = document.documentElement;
-  root.classList.toggle("dark", theme === "dark");
-  root.setAttribute("data-theme", theme);
-}
+/** SSR/hydration-safe default — must match `readStoredTheme()` when `window` is undefined. */
+const SSR_THEME: AppTheme = "light";
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<AppTheme>("light");
+  const [theme, setThemeState] = useState<AppTheme>(SSR_THEME);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    const next: AppTheme = saved === "dark" ? "dark" : "light";
+    const next = readStoredTheme();
     setThemeState(next);
-    applyThemeClass(next);
+    applyThemeToDocument(next);
   }, []);
 
   const setTheme = useCallback((next: AppTheme) => {
     setThemeState(next);
-    applyThemeClass(next);
+    applyThemeToDocument(next);
     window.localStorage.setItem(STORAGE_KEY, next);
   }, []);
 
@@ -49,7 +50,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [setTheme, theme]);
 
   const value = useMemo(
-    () => ({ theme, setTheme, toggleTheme }),
+    () => ({
+      theme,
+      resolvedTheme: theme,
+      setTheme,
+      toggleTheme,
+    }),
     [setTheme, theme, toggleTheme],
   );
 

@@ -14,6 +14,9 @@
   --aeris-warn: 199 123 0;
   --aeris-danger: 216 64 91;
   --aeris-ok: 15 159 110;
+  --aeris-shadow-up: 0 -2px 14px rgb(15 23 42 / 0.08);
+  /** Space reserved above MapLibre bottom-right attribution (ctrl margin + compact bar). */
+  --aeris-map-attribution-reserve: 2.75rem;
 }
 
 .dark {
@@ -28,6 +31,7 @@
   --aeris-warn: 255 184 77;
   --aeris-danger: 255 77 109;
   --aeris-ok: 61 220 151;
+  --aeris-shadow-up: 0 -2px 14px rgb(0 0 0 / 0.35);
 }
 
 html,
@@ -36,6 +40,10 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
+  /* On mobile, use the dynamic viewport so layout height tracks the visible
+     area as the browser address bar collapses/expands. Desktop browsers
+     ignore dvh-as-percentage and fall back to the static 100% above. */
+  height: 100dvh;
   overflow: hidden;
   font-family: "Inter", system-ui, sans-serif;
   font-feature-settings: "cv11", "ss01";

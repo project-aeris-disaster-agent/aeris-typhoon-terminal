@@ -243,9 +243,25 @@ export async function persistWeatherReportBundle(args: {
   return { report: toPersisted(reportRow), message: messageRow };
 }
 
-export async function insertUserAgentMessage(content: string): Promise<AgentMessageRow | null> {
+export type InsertAgentMessageOptions = {
+  /** Optional caller-supplied UUID, propagated to Postgres so the client can
+   *  reconcile optimistic UI state with the persisted row by stable id. */
+  id?: string;
+};
+
+export async function insertUserAgentMessage(
+  content: string,
+  opts: InsertAgentMessageOptions = {},
+): Promise<AgentMessageRow | null> {
   const cfg = supabaseConfig();
   if (!cfg?.serviceKey) return null;
+
+  const payload: Record<string, unknown> = {
+    role: "user",
+    source: "user",
+    content,
+  };
+  if (opts.id) payload.id = opts.id;
 
   const res = await fetch(
     `${cfg.url}/rest/v1/aeris_agent_messages?select=${MESSAGE_COLUMNS}`,
@@ -255,11 +271,7 @@ export async function insertUserAgentMessage(content: string): Promise<AgentMess
         ...authHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
-      body: JSON.stringify({
-        role: "user",
-        source: "user",
-        content,
-      }),
+      body: JSON.stringify(payload),
     },
   );
 
@@ -386,9 +398,17 @@ export async function getLatestUrgentMessageForSession(
 
 export async function insertAssistantAgentMessage(
   content: string,
+  opts: InsertAgentMessageOptions = {},
 ): Promise<AgentMessageRow | null> {
   const cfg = supabaseConfig();
   if (!cfg?.serviceKey) return null;
+
+  const payload: Record<string, unknown> = {
+    role: "assistant",
+    source: "assistant",
+    content,
+  };
+  if (opts.id) payload.id = opts.id;
 
   const res = await fetch(
     `${cfg.url}/rest/v1/aeris_agent_messages?select=${MESSAGE_COLUMNS}`,
@@ -398,11 +418,7 @@ export async function insertAssistantAgentMessage(
         ...authHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
-      body: JSON.stringify({
-        role: "assistant",
-        source: "assistant",
-        content,
-      }),
+      body: JSON.stringify(payload),
     },
   );
 

@@ -19,6 +19,11 @@ export type GdacsAlert = {
 const PH_RE =
   /philippines|luzon|visayas|mindanao|philippine\s+sea|filipino|par\b|phl\b|metro\s+manila|manila|cebu|davao|palawan|leyte|samar|bicol|caraga|iloc/i;
 
+const GDACS_IS_CURRENT = /<gdacs:iscurrent>true<\/gdacs:iscurrent>/;
+
+/** Drop ended GDACS hazard rows that linger in RSS with old pubDates. */
+export const HAZARD_MAX_AGE_MS = 72 * 60 * 60 * 1000;
+
 /** One GDACS RSS fetch → active TC in PAR + PH-relevant hazard bulletins. */
 export async function buildAlertsFromGdacsRss(): Promise<GdacsAlert[]> {
   const xml = await fetchGdacsRssXml();
@@ -54,7 +59,7 @@ function parseTcBlock(
   maxLat: number,
 ): GdacsAlert | null {
   if (!/<gdacs:eventtype>TC<\/gdacs:eventtype>/.test(block)) return null;
-  if (!/<gdacs:iscurrent>true<\/gdacs:iscurrent>/.test(block)) return null;
+  if (!GDACS_IS_CURRENT.test(block)) return null;
 
   const id = firstRssMatch(block, /<gdacs:eventid>([\s\S]*?)<\/gdacs:eventid>/);
   const name =
@@ -92,6 +97,7 @@ function parseTcBlock(
 
 function parseHazardBlock(block: string, tcNames: Set<string>): GdacsAlert | null {
   if (/<gdacs:eventtype>TC<\/gdacs:eventtype>/.test(block)) return null;
+  if (!GDACS_IS_CURRENT.test(block)) return null;
 
   const title = firstRssMatch(block, /<title[^>]*>([\s\S]*?)<\/title>/);
   const description = firstRssMatch(block, /<description[^>]*>([\s\S]*?)<\/description>/);
@@ -110,6 +116,8 @@ function parseHazardBlock(block: string, tcNames: Set<string>): GdacsAlert | nul
 
   const link = firstRssMatch(block, /<link>([\s\S]*?)<\/link>/);
   const pubDate = firstRssMatch(block, /<pubDate>([\s\S]*?)<\/pubDate>/);
+  if (!isWithinMaxAge(pubDate, HAZARD_MAX_AGE_MS)) return null;
+
   const alertLevel = firstRssMatch(
     block,
     /<gdacs:alertlevel[^>]*>([\s\S]*?)<\/gdacs:alertlevel>/,
@@ -183,4 +191,11 @@ function hash(s: string): string {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
   return Math.abs(h).toString(36);
+}
+
+function isWithinMaxAge(pubDate: string | undefined, maxAgeMs: number): boolean {
+  if (!pubDate) return true;
+  const ms = Date.parse(pubDate);
+  if (!Number.isFinite(ms)) return true;
+  return Date.now() - ms <= maxAgeMs;
 }

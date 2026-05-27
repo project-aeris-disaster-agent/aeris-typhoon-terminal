@@ -42,6 +42,19 @@ function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("en-PH", TIMESTAMP_FMT);
 }
 
+function issuedLabel(iso: string) {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return `Issued ${formatTimestamp(iso)}`;
+  const ageMs = Date.now() - ms;
+  if (ageMs < 60 * 60 * 1000) return `Issued ${formatTimestamp(iso)}`;
+  if (ageMs < 86_400_000) {
+    const hours = Math.floor(ageMs / 3_600_000);
+    return `Issued ${hours}h ago`;
+  }
+  const days = Math.floor(ageMs / 86_400_000);
+  return `Issued ${days}d ago`;
+}
+
 function alertTone(severity: AlertSeverity): SafetyTone {
   const tone = alertSeverityTone(severity);
   return tone === "accent" ? "default" : tone;
@@ -74,9 +87,10 @@ export function AlertCard({ alert }: { alert: Alert }) {
         {alert.issuedAt ? (
           <time
             dateTime={alert.issuedAt}
+            title={formatTimestamp(alert.issuedAt)}
             className="ml-auto text-[9px] font-mono opacity-70"
           >
-            {formatTimestamp(alert.issuedAt)}
+            {issuedLabel(alert.issuedAt)}
           </time>
         ) : alert.url ? (
           <a

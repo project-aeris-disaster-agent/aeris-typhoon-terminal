@@ -28,6 +28,44 @@ function isServeableStale(row: ChannelCacheRow, now = Date.now()): boolean {
   return now - fetched < CHANNEL_FEED_STALE_MAX_MS;
 }
 
+function countLiveVideos(videos: YtVideo[]): number {
+  return videos.filter((v) => v.isLikeLive).length;
+}
+
+/** Quota/rate-limit failures that return incomplete live enumeration. */
+function isDegradedYoutubePoll(result: YtFeedResult): boolean {
+  return result.errors.some(
+    (e) =>
+      e.includes("live-search") &&
+      (/HTTP 429/.test(e) || /HTTP 403/.test(e) || /quota/i.test(e)),
+  );
+}
+
+/**
+ * When search.list fails (429), scrapes may return fewer streams than a prior
+ * good cache. Keep the previous snapshot instead of overwriting with degraded data.
+ */
+function preserveCacheOnDegradedPoll(
+  handle: string,
+  previous: ChannelCacheRow | undefined,
+  polled: YtFeedResult,
+): YtFeedResult {
+  if (!previous || previous.videos.length === 0) return polled;
+  if (!isDegradedYoutubePoll(polled)) return polled;
+
+  const prevLive = countLiveVideos(previous.videos);
+  const nextLive = countLiveVideos(polled.videos);
+  if (nextLive >= prevLive) return polled;
+
+  return {
+    videos: previous.videos,
+    errors: [
+      ...polled.errors,
+      `${handle}: preserved ${prevLive} cached live stream(s); degraded poll had ${nextLive}`,
+    ],
+  };
+}
+
 async function refreshChannelIfNeeded(
   handle: string,
   row: ChannelCacheRow | undefined,
@@ -50,8 +88,9 @@ async function refreshChannelIfNeeded(
 
   try {
     const polled = await pollYoutubeChannel(handle);
-    await writeChannelCache(handle, polled);
-    return polled;
+    const resolved = preserveCacheOnDegradedPoll(handle, row, polled);
+    await writeChannelCache(handle, resolved);
+    return resolved;
   } catch (e) {
     if (row && isServeableStale(row, now)) return rowToResult(row);
     return {

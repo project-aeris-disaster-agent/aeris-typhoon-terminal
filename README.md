@@ -11,7 +11,7 @@ incident reporting in one live terminal.
 - **Hazard overlays** — Project NOAH / MGB flood (5/25/100-year return period) and landslide susceptibility
 - **Animated weather** — NASA GIBS Himawari-9 satellite loops and RainViewer radar precipitation
 - **Typhoon tracking** — GDACS-sourced active storm tracks, forecast cones, wind radii rings, PAR boundary
-- **Alerts feed** — GDACS tropical cyclone alerts and PAGASA advisory scraping
+- **Alerts feed** — GDACS active cyclones in PAR and current Philippines-relevant hazards
 - **Forecast** — 7-day Open-Meteo per-region wind, rain, pressure
 - **Live reports** — open crowdsourced incident submission with rate limiting, spam filtering, 72h TTL
 - **News** — virtualized RSS aggregation from major Philippine outlets
@@ -39,8 +39,8 @@ incident reporting in one live terminal.
 | NASA GIBS WMTS | Himawari-9 satellite imagery | Near real-time |
 | RainViewer | Animated radar (PAGASA included) | ~10 min |
 | Open-Meteo | Wind/pressure/rainfall forecast | 1-6 hrs |
-| GDACS | Typhoon tracks + disaster alerts | Hourly |
-| PAGASA | Official advisory text scrape | Per advisory |
+| GDACS | Typhoon tracks + disaster alerts | ~5 min |
+| PAGASA | Daily weather / outside-PAR TC text (`/api/pagasa-daily`) | Daily |
 | Project NOAH | Flood + landslide hazard rasters | Static |
 | OpenStreetMap | Base tiles, roads, boundaries | Static |
 | Philippine RSS | Google News (PH weather/disaster), Rappler, Inquirer, GMA, PhilStar | 10 min |
@@ -83,10 +83,17 @@ Environment variables are documented in `.env.example`. All are **optional** —
 the app functions without any credentials; incident report storage falls back
 to an in-memory map in development.
 
-For AGENT AERIS chat, set `AERIS_CHAT_API_BASE_URL` to the free/self-hosted
-AERIS CHAT LLM backend base URL. If that backend requires a bearer token, set
-`AERIS_CHAT_API_KEY`; otherwise the dashboard will also use `LLM_API_KEY` when
-present.
+For AGENT AERIS chat, AI triage, and weather briefs, the dashboard proxies
+every LLM call through the **AERIS CHAT** app. Set `AERIS_CHAT_API_BASE_URL`
+to the deployed AERIS CHAT URL (e.g. `https://aeris-chat.vercel.app`) and
+`AERIS_CHAT_API_KEY` to the same secret as `LLM_API_KEY` on the AERIS CHAT
+project. The dashboard never calls NVIDIA directly.
+
+See [`docs/AGENT_BACKEND.md`](docs/AGENT_BACKEND.md) for every call site and
+the AERIS CHAT repo's `docs/AGENT_CONTRACT.md` for the frozen HTTP contract.
+When changing `/api/llm/chat` on AERIS CHAT, both documents must be updated
+and every call site listed in `AGENT_BACKEND.md` re-verified — there is no
+shared package, the HTTP contract is the source of truth.
 
 The VRM avatar loader looks for `public/models/aeris-companion.vrm`. If the
 model is absent or fails to load, the companion keeps chat available and shows a
@@ -102,8 +109,8 @@ app/                      # Next.js App Router
     rainviewer/           # RainViewer radar
     open-meteo/           # Forecast
     jtwc/                 # Typhoon tracks (via GDACS)
-    gdacs/                # Disaster alerts
-    pagasa/               # PAGASA scraper
+    alerts/               # GDACS cyclone + hazard feed
+    pagasa-daily/         # PAGASA daily weather scrape
     rss/                  # News aggregator
     reports/              # Incident reports CRUD
   layout.tsx              # Root layout + SW registration
@@ -163,9 +170,9 @@ reference, not a direct code lift.
 
 ## Limitations and Caveats
 
-- **PAGASA** has no public JSON API. The scraper is brittle against HTML
-  changes — monitor the `/api/pagasa` endpoint after each visible PAGASA site
-  redesign.
+- **PAGASA** has no public JSON API for severe-weather bulletins. The alerts
+  feed uses GDACS only; daily TC context comes from `/api/pagasa-daily` and may
+  break if PAGASA redesigns their site.
 - **Project NOAH WMS** endpoints have had uptime issues historically. Drop
   static GeoJSON snapshots into `public/hazards/` as a fallback.
 - **RainViewer** free tier has modest rate limits. Edge-cached for 5 minutes.

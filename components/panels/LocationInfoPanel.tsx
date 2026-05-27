@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -14,13 +15,12 @@ import {
   Ambulance,
   Building2,
   CheckCircle2,
+  ChevronDown,
   CloudRain,
   Copy,
-  ExternalLink,
   Flame,
   Hospital,
   Info,
-  Newspaper,
   Radio,
   School,
   Share2,
@@ -48,7 +48,6 @@ import {
   type Alert,
   type AlertSeverity,
 } from "@/services/alerts";
-import { fetchNews, type NewsItem } from "@/services/news";
 import { FLOOD_LEVEL_STYLE, type FloodLevel } from "@/config/flood-colors";
 import { focusAddress3DContext } from "@/services/map-scene";
 
@@ -111,33 +110,6 @@ const FACILITY_META: Record<string, { Icon: LucideIcon; tone: string }> = {
   school: { Icon: School, tone: "text-aeris-muted" },
 };
 const FACILITY_FALLBACK = { Icon: Building2, tone: "text-aeris-muted" };
-
-const STORM_KEYWORDS = [
-  "typhoon",
-  "bagyo",
-  "storm",
-  "tropical",
-  "lpa",
-  "rain",
-  "flood",
-  "baha",
-  "landslide",
-  "evacuat",
-  "ndrrmc",
-  "pagasa",
-  "habagat",
-  "amihan",
-  "signal no",
-];
-
-const TIMESTAMP_FMT: Intl.DateTimeFormatOptions = {
-  month: "short",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-};
-const formatTimestamp = (iso: string) =>
-  new Date(iso).toLocaleString("en-PH", TIMESTAMP_FMT);
 
 // ─── Geo helpers ─────────────────────────────────────────────────────────────
 
@@ -242,27 +214,6 @@ function probeFlood(map: MLMap, lat: number, lon: number): FloodHit[] {
       FLOOD_PERIOD_ORDER.indexOf(a.returnPeriod as (typeof FLOOD_PERIOD_ORDER)[number]) -
       FLOOD_PERIOD_ORDER.indexOf(b.returnPeriod as (typeof FLOOD_PERIOD_ORDER)[number]),
   );
-}
-
-// ─── News relevance ─────────────────────────────────────────────────────────
-
-function locationTokens(loc: SelectedLocation): string[] {
-  return Array.from(
-    new Set(
-      `${loc.shortName} ${loc.breadcrumb}`
-        .toLowerCase()
-        .split(/[\s,·]+/)
-        .filter((s) => s.length >= 3),
-    ),
-  );
-}
-
-function scoreNewsRelevance(item: NewsItem, tokens: string[]): number {
-  const t = item.title.toLowerCase();
-  let score = 0;
-  for (const tok of tokens) if (t.includes(tok)) score += 5;
-  for (const kw of STORM_KEYWORDS) if (t.includes(kw)) score += 1;
-  return score;
 }
 
 // ─── Safety verdict ─────────────────────────────────────────────────────────
@@ -380,6 +331,26 @@ function useAsyncResource<T>(
   return { data, loading };
 }
 
+type SectionId = "storm" | "flood" | "alerts" | "help";
+
+const SECTION_IDS: SectionId[] = ["storm", "flood", "alerts", "help"];
+
+function shouldOpenAlerts(
+  alertCount: number,
+  worstAlertSeverity: AlertSeverity | null,
+  urgentVerdict: boolean,
+): boolean {
+  if (urgentVerdict) return true;
+  if (alertCount > 0) return true;
+  if (
+    worstAlertSeverity &&
+    SEVERITY_RANK[worstAlertSeverity] >= SEVERITY_RANK.watch
+  ) {
+    return true;
+  }
+  return false;
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function LocationInfoPanel({
@@ -403,13 +374,10 @@ export function LocationInfoPanel({
     key,
     fetchAlerts,
   );
-  const alerts: Alert[] = alertsResult?.alerts ?? [];
-
-  const { data: newsResult, loading: newsLoading } = useAsyncResource(
-    key,
-    fetchNews,
+  const alerts: Alert[] = useMemo(
+    () => alertsResult?.alerts ?? [],
+    [alertsResult],
   );
-  const news: NewsItem[] = newsResult?.items ?? [];
 
   const { data: osm, loading: osmLoading } = useAsyncResource<OsmContextPayload>(
     key,
@@ -496,17 +464,6 @@ export function LocationInfoPanel({
     [forecastAlert, worstAlertSeverity, worstFlood],
   );
 
-  const relevantNews = useMemo(() => {
-    if (!location || news.length === 0) return [] as NewsItem[];
-    const tokens = locationTokens(location);
-    return news
-      .map((n) => ({ n, score: scoreNewsRelevance(n, tokens) }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 3)
-      .map((x) => x.n);
-  }, [location, news]);
-
   const nearbyFacilities = useMemo<NearbyFacility[]>(() => {
     if (!osm || !location) return [];
     const origin: [number, number] = [location.lon, location.lat];
@@ -575,26 +532,148 @@ export function LocationInfoPanel({
 
   const onOpen3D = useCallback(() => {
     if (!map || !location) return;
-    void focusAddress3DContext(map, { lat: location.lat, lon: location.lon });
+    void focusAddress3DContext(map, {
+      lat: location.lat,
+      lon: location.lon,
+      zoom: location.zoom,
+    });
   }, [map, location]);
+
+  const urgentVerdict =
+    verdict.tone === "warn" || verdict.tone === "danger";
+
+  const userToggledRef = useRef<Set<SectionId>>(new Set());
+  const [openSections, setOpenSections] = useState<Record<SectionId, boolean>>({
+    storm: true,
+    flood: false,
+    alerts: false,
+    help: false,
+  });
+
+  useEffect(() => {
+    userToggledRef.current = new Set();
+    setOpenSections({
+      storm: true,
+      flood: false,
+      alerts: false,
+      help: false,
+    });
+  }, [key]);
+
+  useEffect(() => {
+    if (!key) return;
+    setOpenSections((prev) => {
+      const next = { ...prev };
+      if (!userToggledRef.current.has("flood") && floodHits.length > 0) {
+        next.flood = true;
+      }
+      if (
+        !userToggledRef.current.has("alerts") &&
+        shouldOpenAlerts(alerts.length, worstAlertSeverity, urgentVerdict)
+      ) {
+        next.alerts = true;
+      }
+      if (urgentVerdict && !userToggledRef.current.has("storm")) {
+        next.storm = true;
+      }
+      return next;
+    });
+  }, [key, floodHits.length, alerts.length, worstAlertSeverity, urgentVerdict]);
+
+  const toggleSection = useCallback((id: SectionId) => {
+    userToggledRef.current.add(id);
+    setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const expandAllSections = useCallback(() => {
+    userToggledRef.current = new Set(SECTION_IDS);
+    setOpenSections({
+      storm: true,
+      flood: true,
+      alerts: true,
+      help: true,
+    });
+  }, []);
+
+  const collapseAllSections = useCallback(() => {
+    userToggledRef.current = new Set(SECTION_IDS);
+    setOpenSections({
+      storm: false,
+      flood: false,
+      alerts: false,
+      help: false,
+    });
+  }, []);
+
+  const stormSummary = useMemo(() => {
+    if (forecastLoading || !peakWeather || !forecastAlert) return "Loading…";
+    return `${peakWeather.maxWind} kph · ${peakWeather.peakRain} mm · ${forecastAlert.label}`;
+  }, [forecastLoading, peakWeather, forecastAlert]);
+
+  const floodSummary = useMemo(() => {
+    if (floodHits.length === 0) return "No mapped hazard";
+    const worst = floodHits.reduce<FloodHit>(
+      (acc, h) => (FLOOD_RANK[h.worst] > FLOOD_RANK[acc.worst] ? h : acc),
+      floodHits[0],
+    );
+    return `${worst.returnPeriod}: ${FLOOD_LEVEL_STYLE[worst.worst].label}`;
+  }, [floodHits]);
+
+  const alertsSummary = useMemo(() => {
+    if (alertsLoading) return "Loading…";
+    if (alerts.length === 0) return "None";
+    const sev = worstAlertSeverity ?? "info";
+    return `${alerts.length} active · ${sev}`;
+  }, [alertsLoading, alerts.length, worstAlertSeverity]);
+
+  const helpSummary = useMemo(() => {
+    if (osmLoading) return "Loading…";
+    if (nearbyFacilities.length === 0) return "None nearby";
+    return `${nearbyFacilities.length} within 1.5 km`;
+  }, [osmLoading, nearbyFacilities.length]);
 
   if (!location) return null;
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="panel-glass rounded-xl text-aeris-text shadow-2xl border border-aeris-border/70 overflow-hidden">
-      <Header
-        location={location}
-        onClose={onClose}
-        onCopyCoords={onCopyCoords}
-        copied={copied === "coords"}
-      />
+    <div className="flex flex-col min-h-0 max-h-full overflow-hidden text-aeris-text md:backdrop-blur-md md:bg-aeris-surface/50 md:rounded-xl md:shadow-2xl md:border md:border-aeris-border/70">
+      <div className="shrink-0">
+        <Header
+          location={location}
+          onClose={onClose}
+          onCopyCoords={onCopyCoords}
+          copied={copied === "coords"}
+        />
+        <VerdictBand verdict={verdict} assessing={isAssessing} />
+        <div className="mx-3 mb-2 flex items-center justify-end gap-2 text-[9px] font-mono uppercase tracking-wider">
+          <button
+            type="button"
+            onClick={expandAllSections}
+            className="text-aeris-muted hover:text-aeris-accent transition-colors"
+          >
+            Expand all
+          </button>
+          <span className="text-aeris-border">·</span>
+          <button
+            type="button"
+            onClick={collapseAllSections}
+            className="text-aeris-muted hover:text-aeris-accent transition-colors"
+          >
+            Collapse all
+          </button>
+        </div>
+      </div>
 
-      <VerdictBand verdict={verdict} assessing={isAssessing} />
-
-      <div className="px-3 pb-3">
-        <Section title="Storm impact (next 7 days)" Icon={Wind}>
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3">
+        <CollapsibleSection
+          id="storm"
+          title="Storm impact (next 7 days)"
+          Icon={Wind}
+          summary={stormSummary}
+          open={openSections.storm}
+          onToggle={() => toggleSection("storm")}
+        >
           {forecastLoading || !peakWeather || !forecastAlert ? (
             <SkeletonRow />
           ) : (
@@ -625,9 +704,16 @@ export function LocationInfoPanel({
               />
             </div>
           )}
-        </Section>
+        </CollapsibleSection>
 
-        <Section title="Flood-hazard exposure" Icon={Waves}>
+        <CollapsibleSection
+          id="flood"
+          title="Flood-hazard exposure"
+          Icon={Waves}
+          summary={floodSummary}
+          open={openSections.flood}
+          onToggle={() => toggleSection("flood")}
+        >
           {floodHits.length === 0 ? (
             <Hint>
               No mapped flood pack covers this point, or the flood layer is
@@ -640,11 +726,15 @@ export function LocationInfoPanel({
               ))}
             </ul>
           )}
-        </Section>
+        </CollapsibleSection>
 
-        <Section
+        <CollapsibleSection
+          id="alerts"
           title="Active national alerts"
           Icon={Radio}
+          summary={alertsSummary}
+          open={openSections.alerts}
+          onToggle={() => toggleSection("alerts")}
           trailing={
             alertsLoading ? (
               <Pill>loading</Pill>
@@ -669,29 +759,15 @@ export function LocationInfoPanel({
               ))}
             </ul>
           )}
-        </Section>
+        </CollapsibleSection>
 
-        <Section
-          title="Relevant news"
-          Icon={Newspaper}
-          trailing={
-            newsLoading ? <Pill>loading</Pill> : <Pill>{relevantNews.length}</Pill>
-          }
-        >
-          {!newsLoading && relevantNews.length === 0 ? (
-            <Hint>No headlines mention this area or active weather right now.</Hint>
-          ) : (
-            <ul className="space-y-1.5">
-              {relevantNews.map((n) => (
-                <NewsCard key={n.id} item={n} />
-              ))}
-            </ul>
-          )}
-        </Section>
-
-        <Section
+        <CollapsibleSection
+          id="help"
           title="Nearest help"
           Icon={Ambulance}
+          summary={helpSummary}
+          open={openSections.help}
+          onToggle={() => toggleSection("help")}
           trailing={
             osmLoading ? <Pill>loading</Pill> : <Pill>{nearbyFacilities.length}</Pill>
           }
@@ -705,15 +781,15 @@ export function LocationInfoPanel({
               ))}
             </ul>
           )}
-        </Section>
+        </CollapsibleSection>
+      </div>
 
-        <div className="mt-3 pt-2 border-t border-aeris-border/40 flex flex-wrap gap-1.5">
-          <ActionButton onClick={onRecenter}>Recenter</ActionButton>
-          <ActionButton onClick={onOpen3D}>Open in 3D</ActionButton>
-          <ActionButton onClick={onShare} Icon={Share2}>
-            {copied === "share" ? "Link copied" : "Share"}
-          </ActionButton>
-        </div>
+      <div className="shrink-0 px-3 py-2 border-t border-aeris-border/40 bg-aeris-surface/80 backdrop-blur-sm flex flex-wrap gap-1.5">
+        <ActionButton onClick={onRecenter}>Recenter</ActionButton>
+        <ActionButton onClick={onOpen3D}>Open in 3D</ActionButton>
+        <ActionButton onClick={onShare} Icon={Share2}>
+          {copied === "share" ? "Link copied" : "Share"}
+        </ActionButton>
       </div>
     </div>
   );
@@ -824,32 +900,6 @@ function FloodRow({ hit }: { hit: FloodHit }) {
   );
 }
 
-function NewsCard({ item }: { item: NewsItem }) {
-  return (
-    <li>
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block rounded-md border border-aeris-border/40 bg-aeris-elev/30 px-2 py-1.5 hover:border-aeris-accent/50 hover:bg-aeris-elev/60 transition-colors"
-      >
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <span className="text-[9px] font-mono uppercase text-aeris-muted">
-            {item.source}
-          </span>
-          <span className="text-[9px] font-mono text-aeris-muted/70">
-            {formatTimestamp(item.publishedAt)}
-          </span>
-          <ExternalLink size={9} className="ml-auto text-aeris-muted/60" />
-        </div>
-        <div className="text-[11px] text-aeris-text line-clamp-2 leading-snug">
-          {item.title}
-        </div>
-      </a>
-    </li>
-  );
-}
-
 function FacilityRow({ item }: { item: NearbyFacility }) {
   const p = item.feature.properties;
   const meta = FACILITY_META[p.category] ?? FACILITY_FALLBACK;
@@ -874,27 +924,68 @@ function FacilityRow({ item }: { item: NearbyFacility }) {
   );
 }
 
-function Section({
+function CollapsibleSection({
+  id,
   title,
   Icon,
+  summary,
+  open,
+  onToggle,
   trailing,
   children,
 }: {
+  id: SectionId;
   title: string;
   Icon: LucideIcon;
+  summary: string;
+  open: boolean;
+  onToggle: () => void;
   trailing?: ReactNode;
   children: ReactNode;
 }) {
+  const panelId = `location-section-${id}`;
   return (
-    <div className="mt-3">
-      <div className="flex items-center gap-1.5 mb-1.5">
+    <div className="mt-2 border-b border-aeris-border/30 pb-2 last:border-b-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className={clsx(
+          "flex w-full items-center gap-1.5 rounded-md px-1 py-1.5 text-left transition-colors",
+          open
+            ? "bg-aeris-accent/5"
+            : "hover:bg-aeris-elev/40",
+        )}
+      >
         <Icon size={12} className="text-aeris-muted shrink-0" />
-        <span className="hud-text text-[9px] text-aeris-muted tracking-widest">
+        <span className="hud-text text-[9px] text-aeris-muted tracking-widest shrink-0">
           {title}
         </span>
-        {trailing && <span className="ml-auto">{trailing}</span>}
-      </div>
-      {children}
+        {!open && (
+          <span className="min-w-0 flex-1 truncate text-[10px] text-aeris-text/80 font-mono normal-case tracking-normal ml-1">
+            {summary}
+          </span>
+        )}
+        {trailing && (
+          <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+            {trailing}
+          </span>
+        )}
+        <ChevronDown
+          size={14}
+          aria-hidden
+          className={clsx(
+            "shrink-0 text-aeris-muted transition-transform ml-auto",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+      {open && (
+        <div id={panelId} className="mt-1.5 px-1">
+          {children}
+        </div>
+      )}
     </div>
   );
 }

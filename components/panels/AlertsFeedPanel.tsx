@@ -72,7 +72,8 @@ export function AlertsFeedPanel() {
     <div className="space-y-2.5">
       <div className="flex items-start justify-between gap-2">
         <p className="text-[10px] text-aeris-muted leading-snug flex-1">
-          Active cyclones in PAR and Philippines-relevant GDACS hazard bulletins.
+          Active cyclones in PAR and current GDACS hazards for the Philippines.
+          Official PAGASA signal numbers are linked below.
         </p>
         <button
           type="button"
@@ -92,7 +93,7 @@ export function AlertsFeedPanel() {
         {loading ? <Pill>loading</Pill> : <Pill tone="accent">{alerts.length}</Pill>}
       </div>
 
-      <FreshnessTag source="alerts" />
+      <FreshnessTag source="alerts" label="Synced" />
 
       {error ? (
         <div className="flex items-start gap-1.5 rounded-md border border-aeris-danger/40 bg-aeris-danger/10 px-2 py-1.5 text-[11px] text-aeris-danger">
@@ -128,7 +129,7 @@ export function AlertsFeedPanel() {
           {bulletins.length > 0 ? (
             <section>
               <h3 className="text-[9px] font-mono uppercase tracking-wider text-aeris-muted mb-1.5">
-                Hazard bulletins
+                Active hazards
               </h3>
               <ul className="space-y-2">
                 {bulletins.map((alert) => (
@@ -168,7 +169,7 @@ function EmptyState() {
       <div className="flex items-center gap-1.5 text-[11px] text-aeris-ok">
         <CheckCircle2 size={14} aria-hidden />
         <span className="font-medium">
-          No active cyclones or hazard bulletins in PAR
+          No active cyclones or GDACS hazards for the Philippines
         </span>
       </div>
       <p className="text-[10px] text-aeris-muted leading-snug">

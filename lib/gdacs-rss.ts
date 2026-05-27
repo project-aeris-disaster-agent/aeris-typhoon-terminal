@@ -15,7 +15,7 @@ export function gdacsFetchHeaders(accept = "application/xml,text/xml;q=0.9,*/*;q
   };
 }
 
-export async function fetchGdacsRssXml(revalidateSeconds = 600): Promise<string> {
+export async function fetchGdacsRssXml(revalidateSeconds = 300): Promise<string> {
   const headers = gdacsFetchHeaders();
   const res = await fetchUpstream(GDACS_RSS_URL, {
     next: { revalidate: revalidateSeconds },

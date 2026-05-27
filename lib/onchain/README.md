@@ -50,6 +50,7 @@ operator verify in Dashboard
 | `scripts/mint-testnet.ts` | E2E smoke - inserts synthetic verified report, drains queue. Run with `npm run smoke:mint`. |
 | `supabase/migrations/20260528020000_default_skale_base.sql` | Defaults `onchain_network` + `onchain_chain_id` to SKALE Base Sepolia. |
 | `supabase/migrations/20260528030000_mint_webhook_trigger.sql` | `pg_net` trigger that POSTs to the push endpoint on `queued` transitions. |
+| `supabase/migrations/20260528050000_mint_webhook_pgnet_timeout.sql` | Raises `pg_net` `timeout_milliseconds` to 60s (matches Vercel `maxDuration`). |
 
 ## Required env
 

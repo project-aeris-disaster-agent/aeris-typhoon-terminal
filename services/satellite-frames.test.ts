@@ -12,6 +12,7 @@ import {
   getLiveWeatherSourceContract,
   normalizeLiveImagerySource,
   GIBS_WMTS,
+  getAllImageryRasterPaints,
 } from "./satellite-frames";
 
 describe("buildRadarTileUrl", () => {
@@ -113,6 +114,21 @@ describe("GIBS request diagnostics", () => {
     expect(d.clamped).toBe(true);
     expect(d.effectiveIsoTime).toBe("2026-06-15T13:25:00.000Z");
     jest.useRealTimers();
+  });
+});
+
+describe("imagery raster paint contract", () => {
+  it("never re-enables MapLibre native tile fade (JS ticker owns crossfades)", () => {
+    /**
+     * Regression guard: setting `raster-fade-duration` back to a non-zero
+     * value reintroduces the end-of-loop disappearance because MapLibre's
+     * native fade runs alongside our JS opacity blend on the same layers.
+     */
+    const paints = getAllImageryRasterPaints();
+    expect(paints.length).toBeGreaterThan(0);
+    for (const paint of paints) {
+      expect(paint["raster-fade-duration"]).toBe(0);
+    }
   });
 });
 

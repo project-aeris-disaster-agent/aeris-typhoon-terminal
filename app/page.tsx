@@ -8,6 +8,7 @@ import { MapContainer } from "@/components/MapContainer";
 import { LiveReportsMapOverlay } from "@/components/LiveReportsMapOverlay";
 import { type SelectedLocation } from "@/components/MapSearchBar";
 import { MapTopChrome } from "@/components/MapTopChrome";
+import { LocationInfoShell } from "@/components/LocationInfoShell";
 import { LocationInfoPanel } from "@/components/panels/LocationInfoPanel";
 import { Sidebar } from "@/components/Sidebar";
 import { BottomPanel } from "@/components/BottomPanel";
@@ -20,6 +21,7 @@ import { focusAddress3DContext, initMapScene } from "@/services/map-scene";
 import { registerHazardPopup } from "@/services/hazard-popup";
 import { attachMapUrlSync } from "@/services/url-state";
 import { initLiveWeatherOverlay } from "@/services/live-weather-overlay";
+import { resolveUserLocationOnLoad } from "@/lib/resolve-user-location";
 
 export default function HomePage() {
   const [map, setMap] = useState<MLMap | null>(null);
@@ -28,6 +30,9 @@ export default function HomePage() {
   const [mobileTab, setMobileTab] = useState<MobileTab>("map");
   const [selectedLocation, setSelectedLocation] =
     useState<SelectedLocation | null>(null);
+  const selectedLocationRef = useRef<SelectedLocation | null>(null);
+  const [intelFeedsCollapsed, setIntelFeedsCollapsed] = useState(true);
+  const initialLocationResolvedRef = useRef(false);
   const liveReportsTriggerRef = useRef<HTMLDivElement>(null!);
   const liveReportsPopoverRef = useRef<HTMLDivElement>(null!);
 
@@ -59,22 +64,38 @@ export default function HomePage() {
     attachMapUrlSync(m);
     initLiveWeatherOverlay(m);
     setMap(m);
+
+    if (!initialLocationResolvedRef.current) {
+      initialLocationResolvedRef.current = true;
+      void resolveUserLocationOnLoad(
+        () => selectedLocationRef.current,
+        setSelectedLocation,
+      );
+    }
   }, []);
 
   const handleAddressSelect = useCallback(
     (target: SelectedLocation) => {
       setSelectedLocation(target);
       if (!map) return;
-      void focusAddress3DContext(map, { lat: target.lat, lon: target.lon });
+      void focusAddress3DContext(map, {
+        lat: target.lat,
+        lon: target.lon,
+        zoom: target.zoom,
+      });
     },
     [map],
   );
 
   const closeLocationInfo = useCallback(() => setSelectedLocation(null), []);
 
+  useEffect(() => {
+    selectedLocationRef.current = selectedLocation;
+  }, [selectedLocation]);
+
   return (
     <YouTubeFeedsProvider>
-    <div className="h-screen w-screen flex flex-col">
+    <div className="h-screen [@supports(height:100dvh)]:h-[100dvh] w-screen flex flex-col">
       <Header
         liveReportsOpen={liveReportsOpen}
         toggleLiveReports={toggleLiveReports}
@@ -115,13 +136,17 @@ export default function HomePage() {
                       />
                     </div>
                     {selectedLocation && (
-                      <div className="absolute bottom-3 right-3 z-20 w-[min(360px,calc(100vw-1.5rem))] max-h-[calc(100vh-9rem)] overflow-y-auto md:bottom-10 md:max-h-[calc(100vh-7rem)]">
+                      <LocationInfoShell
+                        intelFeedsCollapsed={intelFeedsCollapsed}
+                        locationKey={`${selectedLocation.lat},${selectedLocation.lon}`}
+                        onClose={closeLocationInfo}
+                      >
                         <LocationInfoPanel
                           map={map}
                           location={selectedLocation}
                           onClose={closeLocationInfo}
                         />
-                      </div>
+                      </LocationInfoShell>
                     )}
                   </>
                 }
@@ -149,7 +174,12 @@ export default function HomePage() {
       {/* Intel Feeds (webcams / livestreams / community chat) — desktop only.
           Mobile is focused on monitoring ground reports. */}
       <div className="hidden md:block">
-        <BottomPanel map={map} selectedLocation={selectedLocation} />
+        <BottomPanel
+          map={map}
+          selectedLocation={selectedLocation}
+          collapsed={intelFeedsCollapsed}
+          onCollapsedChange={setIntelFeedsCollapsed}
+        />
       </div>
       <MobileTabBar active={mobileTab} onChange={setMobileTab} />
     </div>

@@ -72,6 +72,8 @@ describe("client data services", () => {
 
     await expect(fetchActiveTyphoons()).resolves.toEqual({
       storms: [],
+      outsidePar: null,
+      outsideParGdacs: [],
       warning: "gdacs unavailable",
     });
   });
@@ -104,6 +106,8 @@ describe("client data services", () => {
       storms: expect.arrayContaining([
         expect.objectContaining({ id: "1001270", name: "SINLAKU-26" }),
       ]),
+      outsidePar: null,
+      outsideParGdacs: [],
       warning: expect.stringContaining("RSS fallback"),
     });
   });

@@ -11,6 +11,24 @@ import {
 } from "@/services/youtube-feeds";
 const SLOT_STORAGE_KEY = "aeris.liveWebcams.slotIds.v1";
 
+const isPlayableVideo = (video: YtVideo) => video.embeddable !== false;
+
+const GRID_AUTO_FILL_SLOTS = 6;
+
+/** Prefer live streams; pad with other playable feeds when fewer lives than grid slots. */
+function videosForAutoFill(
+  videos: YtVideo[],
+  minSlots = GRID_AUTO_FILL_SLOTS,
+): YtVideo[] {
+  const playable = videos.filter(isPlayableVideo);
+  const live = playable.filter((v) => v.isLikeLive);
+  if (live.length === 0) return playable;
+  if (live.length >= minSlots) return live;
+  const used = new Set(live.map((v) => v.id));
+  const rest = playable.filter((v) => !used.has(v.id));
+  return [...live, ...rest.slice(0, minSlots - live.length)];
+}
+
 /** Persisted slot assignments by id; resolved against the live video list on load. */
 type StoredSlots = (string | null)[];
 
@@ -82,14 +100,18 @@ function SlotFrame({
     >
       {video ? (
         <>
-          <iframe
-            key={video.id}
-            src={getEmbedUrl(video.id, true, true)}
-            title={video.title}
-            allow="autoplay; encrypted-media; picture-in-picture"
-            allowFullScreen
-            className="w-full h-full"
-          />
+          <div className="absolute inset-0 overflow-hidden">
+            <iframe
+              key={video.id}
+              src={getEmbedUrl(video.id, true, true, { minimalChrome: true })}
+              title={video.title}
+              allow="autoplay; encrypted-media; picture-in-picture"
+              allowFullScreen
+              className="w-full h-full pointer-events-none"
+            />
+            {/* Shield hover/clicks so YouTube in-player overlays never appear */}
+            <div className="absolute inset-0 z-[1]" aria-hidden="true" />
+          </div>
           {/* Overlay label */}
           <div className="absolute bottom-0 left-0 right-0 px-1.5 py-0.5 bg-black/60 flex items-center justify-between gap-1 pointer-events-none">
             <span className="text-[9px] font-mono text-white/80 truncate">
@@ -103,7 +125,7 @@ function SlotFrame({
             )}
           </div>
           {/* Control buttons */}
-          <div className="absolute top-1 right-1 flex gap-1 pointer-events-auto">
+          <div className="absolute top-1 right-1 z-[2] flex gap-1 pointer-events-auto">
             {hasGeocode && (
               <button
                 type="button"
@@ -168,9 +190,9 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
   useEffect(() => {
     if (loading) return;
 
-    const liveVideos = videos.filter((v) => v.isLikeLive);
+    const fillQueue = videosForAutoFill(videos);
     const stored = loadStoredSlots();
-    const liveById = new Map(liveVideos.map((v) => [v.id, v]));
+    const fillById = new Map(fillQueue.map((v) => [v.id, v]));
 
     setSlots((prev) => {
       const len = Math.max(prev.length, 6);
@@ -180,7 +202,7 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
         for (let i = 0; i < next.length && i < stored.length; i++) {
           const id = stored[i];
           if (id) {
-            const found = liveById.get(id);
+            const found = fillById.get(id);
             if (found) next[i] = found;
           }
         }
@@ -189,7 +211,7 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
       const usedIds = new Set(
         next.filter(Boolean).map((v) => (v as YtVideo).id),
       );
-      const queue = liveVideos.filter((v) => !usedIds.has(v.id));
+      const queue = fillQueue.filter((v) => !usedIds.has(v.id));
       let qi = 0;
       for (let i = 0; i < next.length; i++) {
         if (!next[i] && qi < queue.length) {
@@ -232,7 +254,7 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
       const usedIds = new Set(next.filter(Boolean).map((v) => v!.id));
       // Live-only auto-fill — same rule as `load()` above. The user can pick
       // a non-live video via the ✎ picker if they want a recording.
-      const queue = videos.filter((v) => v.isLikeLive && !usedIds.has(v.id));
+      const queue = videosForAutoFill(videos).filter((v) => !usedIds.has(v.id));
       let qi = 0;
       for (let i = 0; i < size; i++) {
         if (!next[i] && qi < queue.length) {
@@ -258,19 +280,22 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
     [map],
   );
 
-  const handleNextCamera = (slotIndex: number) => {
-    if (videos.length === 0) return;
-    setSlots((prev) => {
-      const next = [...prev];
-      const currentVideo = next[slotIndex];
-      const currentIndex = currentVideo
-        ? videos.findIndex((v) => v.id === currentVideo.id)
-        : -1;
-      const nextIndex = (currentIndex + 1) % videos.length;
-      next[slotIndex] = videos[nextIndex];
-      return next;
-    });
-  };
+  const handleNextCamera = useCallback(
+    (slotIndex: number) => {
+      if (videos.length === 0) return;
+      setSlots((prev) => {
+        const next = [...prev];
+        const currentVideo = next[slotIndex];
+        const currentIndex = currentVideo
+          ? videos.findIndex((v) => v.id === currentVideo.id)
+          : -1;
+        const nextIndex = (currentIndex + 1) % videos.length;
+        next[slotIndex] = videos[nextIndex];
+        return next;
+      });
+    },
+    [videos],
+  );
 
   useEffect(() => {
     persistSlots(slots);

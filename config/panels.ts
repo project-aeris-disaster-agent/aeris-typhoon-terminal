@@ -39,7 +39,7 @@ export const PANELS: PanelDef[] = [
     id: "alerts",
     label: "Alerts Feed",
     hotkey: "4",
-    description: "GDACS and PAGASA advisories in reverse-chronological order.",
+    description: "GDACS active cyclones and current Philippines-relevant hazards.",
     defaultOpen: true,
   },
   {

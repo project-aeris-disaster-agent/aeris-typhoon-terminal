@@ -265,11 +265,12 @@ function openPopup(
       </div>
       <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:4px;overflow:hidden">
         <iframe
-          src="${getEmbedUrl(props.videoId, true, true)}"
+          src="${getEmbedUrl(props.videoId, true, true, { minimalChrome: true })}"
           allow="autoplay; encrypted-media; picture-in-picture"
           allowfullscreen
-          style="position:absolute;inset:0;width:100%;height:100%;border:0"
+          style="position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none"
         ></iframe>
+        <div style="position:absolute;inset:0;z-index:1" aria-hidden="true"></div>
       </div>
       <div style="font-size:11px;color:#e2e8f0;line-height:1.3;max-height:34px;overflow:hidden">
         ${escapeHtml(props.title)}

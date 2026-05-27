@@ -31,8 +31,23 @@ export type Typhoon = {
   forecast: TyphoonPoint[];
 };
 
+/** PAGASA Daily Weather — TC block when the system is outside PAR. */
+export type OutsideParAdvisory = {
+  source: "pagasa";
+  name: string;
+  location: string;
+  maxWindsKmh?: string;
+  gustinessKmh?: string;
+  movement?: string;
+  issuedAt: string | null;
+  windKph: number | null;
+  position: LngLat | null;
+};
+
 export async function fetchActiveTyphoons(): Promise<{
   storms: Typhoon[];
+  outsidePar: OutsideParAdvisory | null;
+  outsideParGdacs: Typhoon[];
   warning: string | null;
 }> {
   try {
@@ -42,6 +57,8 @@ export async function fetchActiveTyphoons(): Promise<{
     });
     const data = (await res.json().catch(() => ({}))) as {
       storms?: Typhoon[];
+      outsidePar?: OutsideParAdvisory | null;
+      outsideParGdacs?: Typhoon[];
       error?: string;
       _error?: string;
       _warning?: string;
@@ -53,6 +70,13 @@ export async function fetchActiveTyphoons(): Promise<{
     }
 
     const storms = Array.isArray(data.storms) ? data.storms : [];
+    const outsidePar =
+      data.outsidePar && typeof data.outsidePar === "object"
+        ? data.outsidePar
+        : null;
+    const outsideParGdacs = Array.isArray(data.outsideParGdacs)
+      ? data.outsideParGdacs
+      : [];
     const warning =
       (typeof data._warning === "string" ? data._warning : null) ??
       (typeof data._error === "string" ? data._error : null);
@@ -61,7 +85,7 @@ export async function fetchActiveTyphoons(): Promise<{
     // that as "no systems in the tracker" for ops UX, not a thrown error.
 
     recordSuccess("typhoons");
-    return { storms, warning };
+    return { storms, outsidePar, outsideParGdacs, warning };
   } catch (error) {
     recordFailure("typhoons", (error as Error).message);
     throw error;

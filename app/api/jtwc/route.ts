@@ -1,4 +1,18 @@
 import { jsonOk } from "@/lib/api-response";
+import { parseLatLonFromText } from "@/lib/geo";
+import {
+  categoryFromGdacsProps,
+  deriveTcCategory,
+  isInParBbox,
+  pressureHpaFromGdacsProps,
+  windKphFromGdacsProps,
+  windKphFromRssSeverity,
+} from "@/lib/gdacs-tc";
+import {
+  fetchPagasaDailyWeather,
+  parseKmhFromPagasaField,
+  type PagasaDailyTc,
+} from "@/lib/pagasa-daily";
 import { fetchUpstream } from "@/lib/fetch-upstream";
 import {
   decodeEntities,
@@ -33,6 +47,24 @@ type Storm = {
   forecast: StormPoint[];
 };
 
+type OutsideParAdvisory = {
+  source: "pagasa";
+  name: string;
+  location: string;
+  maxWindsKmh?: string;
+  gustinessKmh?: string;
+  movement?: string;
+  issuedAt: string | null;
+  windKph: number | null;
+  position: [number, number] | null;
+};
+
+type JtwcPayload = {
+  storms: Storm[];
+  outsidePar: OutsideParAdvisory | null;
+  outsideParGdacs: Storm[];
+};
+
 type GdacsFeature = {
   type: "Feature";
   geometry: {
@@ -51,6 +83,7 @@ const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 export async function GET() {
+  const pagasaOutsidePar = await buildPagasaOutsideParAdvisory();
   let primaryError: string | null = null;
   try {
     const url =
@@ -69,19 +102,25 @@ export async function GET() {
       throw new Error("GDACS returned an invalid tropical cyclone payload.");
     }
     const data = payload;
-    return jsonOk({ storms: mapGeoJsonStorms(data) }, 600);
+    return jsonOk(
+      finalizeJtwcPayload(mapGeoJsonStorms(data), pagasaOutsidePar),
+      600,
+    );
   } catch (e) {
     primaryError = (e as Error).message;
   }
 
   try {
     const xml = await fetchGdacsRssXml();
-    const storms = parseRssStorms(xml);
-    return jsonOk({ storms }, 600);
+    const split = parseRssStorms(xml);
+    return jsonOk(
+      finalizeJtwcPayload(split, pagasaOutsidePar),
+      600,
+    );
   } catch (fallbackError) {
     return jsonOk(
       {
-        storms: [],
+        ...finalizeJtwcPayload({ storms: [], outsideParGdacs: [] }, pagasaOutsidePar),
         _error: `${primaryError} | RSS fallback: ${(fallbackError as Error).message}`,
       },
       30,
@@ -89,7 +128,46 @@ export async function GET() {
   }
 }
 
-function mapGeoJsonStorms(coll: GdacsCollection): Storm[] {
+async function buildPagasaOutsideParAdvisory(): Promise<OutsideParAdvisory | null> {
+  const daily = await fetchPagasaDailyWeather();
+  const tc = daily?.tcOutsidePar;
+  if (!tc) return null;
+  return pagasaTcToOutsideParAdvisory(tc, daily.issuedAt);
+}
+
+function pagasaTcToOutsideParAdvisory(
+  tc: PagasaDailyTc,
+  issuedAt: string | null,
+): OutsideParAdvisory {
+  const coords = parseLatLonFromText(tc.location);
+  return {
+    source: "pagasa",
+    name: tc.name,
+    location: tc.location,
+    maxWindsKmh: tc.maxWindsKmh,
+    gustinessKmh: tc.gustinessKmh,
+    movement: tc.movement,
+    issuedAt,
+    windKph: parseKmhFromPagasaField(tc.maxWindsKmh),
+    position: coords ? [coords.lon, coords.lat] : null,
+  };
+}
+
+function finalizeJtwcPayload(
+  split: { storms: Storm[]; outsideParGdacs: Storm[] },
+  pagasaOutsidePar: OutsideParAdvisory | null,
+): JtwcPayload {
+  return {
+    storms: split.storms,
+    outsidePar: pagasaOutsidePar,
+    outsideParGdacs: pagasaOutsidePar ? [] : split.outsideParGdacs,
+  };
+}
+
+function mapGeoJsonStorms(coll: GdacsCollection): {
+  storms: Storm[];
+  outsideParGdacs: Storm[];
+} {
   const byEvent = new Map<string, GdacsFeature[]>();
   for (const f of coll.features ?? []) {
     const id = String(f.properties["eventid"] ?? f.properties["eventid_txt"] ?? "");
@@ -100,42 +178,58 @@ function mapGeoJsonStorms(coll: GdacsCollection): Storm[] {
   }
 
   const storms: Storm[] = [];
+  const outsideParGdacs: Storm[] = [];
   for (const [id, feats] of byEvent) {
-    const point = feats.find((f) => f.geometry.type === "Point");
-    const line = feats.find((f) => f.geometry.type === "LineString");
-    if (!point) continue;
-
-    const props = point.properties;
-    const coords = point.geometry.coordinates as [number, number];
-    const bestTrack: StormPoint[] =
-      line && line.geometry.type === "LineString"
-        ? (line.geometry.coordinates as [number, number][]).map((position) => ({
-            position,
-          }))
-        : [{ position: coords }];
-
-    storms.push({
-      id,
-      name: String(props["eventname"] ?? props["name"] ?? "Unknown"),
-      localName: coerceString(props["name_local"]),
-      category: String(props["severity"] ?? "TD"),
-      position: coords,
-      windKph: Math.round(Number(props["wind_speed"] ?? 0)),
-      pressureHpa: Math.round(Number(props["pressure"] ?? 0)),
-      heading: coerceString(props["direction"]),
-      landfallEta: coerceString(props["landfall"]),
-      bestTrack,
-      forecast: [],
-    });
+    const storm = buildStormFromGdacsFeatures(id, feats);
+    if (!storm) continue;
+    if (isInParBbox(storm.position[0], storm.position[1])) {
+      storms.push(storm);
+    } else {
+      outsideParGdacs.push(storm);
+    }
   }
-  return storms;
+  return { storms, outsideParGdacs };
+}
+
+function buildStormFromGdacsFeatures(
+  id: string,
+  feats: GdacsFeature[],
+): Storm | null {
+  const point = feats.find((f) => f.geometry.type === "Point");
+  const line = feats.find((f) => f.geometry.type === "LineString");
+  if (!point) return null;
+
+  const props = point.properties;
+  const coords = point.geometry.coordinates as [number, number];
+  const windKph = windKphFromGdacsProps(props);
+  const bestTrack: StormPoint[] =
+    line && line.geometry.type === "LineString"
+      ? (line.geometry.coordinates as [number, number][]).map((position) => ({
+          position,
+        }))
+      : [{ position: coords }];
+
+  return {
+    id,
+    name: String(props["eventname"] ?? props["name"] ?? "Unknown"),
+    localName: coerceString(props["name_local"]),
+    category: categoryFromGdacsProps(props, windKph),
+    position: coords,
+    windKph,
+    pressureHpa: pressureHpaFromGdacsProps(props),
+    heading: coerceString(props["direction"]),
+    landfallEta: coerceString(props["landfall"]),
+    bestTrack,
+    forecast: [],
+  };
 }
 
 // GDACS RSS only exposes the current point + severity per event, so the
 // fallback produces a one-point best track and no forecast cone. Sufficient
 // to keep the tracker populated when the JSON API is blocked.
-function parseRssStorms(xml: string): Storm[] {
+function parseRssStorms(xml: string): { storms: Storm[]; outsideParGdacs: Storm[] } {
   const storms: Storm[] = [];
+  const outsideParGdacs: Storm[] = [];
   const blocks = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
   for (const block of blocks) {
     if (!/<gdacs:eventtype>TC<\/gdacs:eventtype>/.test(block)) continue;
@@ -149,19 +243,21 @@ function parseRssStorms(xml: string): Storm[] {
     const severityRaw = block.match(
       /<gdacs:severity[^>]*value="([^"]+)"[^>]*>([\s\S]*?)<\/gdacs:severity>/,
     );
-    const windKph = severityRaw ? Math.round(Number(severityRaw[1])) : 0;
     const severityText = severityRaw ? decodeEntities(severityRaw[2]).trim() : "";
+    const windKph = severityRaw
+      ? windKphFromRssSeverity(severityRaw[1], severityText)
+      : 0;
     const link = firstRssMatch(block, /<link>([\s\S]*?)<\/link>/);
     const pubDate = firstRssMatch(block, /<pubDate>([\s\S]*?)<\/pubDate>/);
 
     if (!id || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
     const position: [number, number] = [lng, lat];
-    storms.push({
+    const storm: Storm = {
       id,
       name: name ?? "Unknown",
       localName: null,
-      category: deriveCategory(alertLevel, severityText, windKph),
+      category: deriveTcCategory(alertLevel, severityText, windKph),
       position,
       windKph,
       pressureHpa: 0,
@@ -169,26 +265,15 @@ function parseRssStorms(xml: string): Storm[] {
       landfallEta: null,
       bestTrack: [{ position, time: pubDate, windKph }],
       forecast: [],
-    });
+    };
 
-    if (link) {
-      storms[storms.length - 1].landfallEta = null;
+    if (isInParBbox(lng, lat)) {
+      storms.push(storm);
+    } else {
+      outsideParGdacs.push(storm);
     }
   }
-  return storms;
-}
-
-function deriveCategory(
-  alertLevel: string | undefined,
-  severityText: string,
-  windKph: number,
-): string {
-  if (/super|Cat[\s-]?5/i.test(severityText) || windKph >= 252) return "Super Typhoon";
-  if (windKph >= 185) return "Typhoon";
-  if (windKph >= 118) return "Severe Tropical Storm";
-  if (windKph >= 89) return "Tropical Storm";
-  if (windKph >= 62) return "Tropical Depression";
-  return alertLevel ? `${alertLevel} alert` : "TD";
+  return { storms, outsideParGdacs };
 }
 
 function coerceString(value: unknown): string | null {

@@ -7,7 +7,13 @@ import {
   refreshFacilityPopupTheme,
 } from "@/services/facility-popup";
 import { layerBeforeBasemapLabels } from "@/config/map-layers";
-import { PH_BBOX } from "@/config/region";
+import {
+  MAP_2D_MAX_BOUNDS,
+  MAP_2D_MIN_ZOOM,
+  MIN_ZOOM,
+  PH_BBOX,
+  PH_MAX_BOUNDS,
+} from "@/config/region";
 import { FLOOD_LEVEL_COLOR_EXPR } from "@/config/flood-colors";
 import {
   DEFAULT_FLOOD_VISUALIZATION_SETTINGS,
@@ -46,6 +52,8 @@ type SceneTheme = "light" | "dark";
 export type Address3DTarget = {
   lat: number;
   lon: number;
+  /** Map zoom after 3D context loads; defaults to 15.5. */
+  zoom?: number;
 };
 
 export type FloodImpactCounts = {
@@ -180,6 +188,8 @@ type SceneState = {
   majorLoadingCount: number;
   majorLoadingMessage: string | null;
   activeScenePreset: ScenePresetId | null;
+  /** First 3D entry eases the camera once per map session; later 2D↔3D toggles keep the viewport. */
+  initial3DCameraApplied: boolean;
   contextRoads: GeoJSON.FeatureCollection;
   contextWater: GeoJSON.FeatureCollection;
   contextGeneratedAt: string;
@@ -247,11 +257,16 @@ function getSceneState(map: MLMap): SceneState {
       majorLoadingCount: 0,
       majorLoadingMessage: null,
       activeScenePreset: null,
+      initial3DCameraApplied: false,
       contextRoads: emptyFeatureCollection(),
       contextWater: emptyFeatureCollection(),
       contextGeneratedAt: new Date().toISOString(),
       contextAttribution: "OpenStreetMap contributors",
-      theme: "dark",
+      theme:
+        typeof document !== "undefined" &&
+        document.documentElement.classList.contains("dark")
+          ? "dark"
+          : "light",
     };
     sceneState.set(map, state);
   }
@@ -822,6 +837,33 @@ export function reattachSceneAfterStyleChange(map: MLMap) {
   }
 }
 
+function easeTo3DView(map: MLMap) {
+  map.easeTo({
+    pitch: 62,
+    bearing: -18,
+    zoom: Math.max(map.getZoom(), 8.2),
+    duration: 800,
+    essential: true,
+  });
+}
+
+async function applyInitial3DCamera(map: MLMap) {
+  const state = getSceneState(map);
+
+  if (state.initial3DCameraApplied) {
+    const presetId = nearestScenePreset(map);
+    if (presetId) setActiveScenePreset(map, presetId);
+    easeTo3DView(map);
+    return;
+  }
+
+  state.initial3DCameraApplied = true;
+
+  const presetId = nearestScenePreset(map);
+  if (presetId) setActiveScenePreset(map, presetId);
+  easeTo3DView(map);
+}
+
 export function initMapScene(map: MLMap) {
   ensureSceneLayers(map);
   setMapSceneTheme(map, "light");
@@ -902,6 +944,8 @@ export function applyMapViewMode(map: MLMap, mode: "2d" | "3d") {
   const is3D = mode === "3d";
 
   if (is3D) {
+    map.setMinZoom(MIN_ZOOM);
+    map.setMaxBounds(PH_MAX_BOUNDS);
     beginMajorLoading(map, "Loading 3D terrain and critical facilities...");
     map.dragRotate.enable();
     map.touchZoomRotate.enableRotation();
@@ -912,18 +956,13 @@ export function applyMapViewMode(map: MLMap, mode: "2d" | "3d") {
 
     const state = getSceneState(map);
     if (!state.activeScenePreset) {
-      setActiveScenePreset(map, DEFAULT_3D_PRESET);
-      flyToScenePreset(map, DEFAULT_3D_PRESET);
+      void applyInitial3DCamera(map);
     } else {
-      map.easeTo({
-        pitch: 62,
-        bearing: -18,
-        zoom: Math.max(map.getZoom(), 8.2),
-        duration: 800,
-        essential: true,
-      });
+      easeTo3DView(map);
     }
   } else {
+    map.setMinZoom(MAP_2D_MIN_ZOOM);
+    map.setMaxBounds(MAP_2D_MAX_BOUNDS);
     map.dragRotate.disable();
     map.touchZoomRotate.disableRotation();
     setTerrainEnabled(map, false);
@@ -1043,6 +1082,7 @@ export const SCENE_PRESETS = [
 
 export type ScenePresetId = (typeof SCENE_PRESETS)[number]["id"];
 
+/** Fallback scene pack when the viewport is not near any preset centre. */
 export const DEFAULT_3D_PRESET: ScenePresetId = "ncr";
 
 export function setActiveScenePreset(map: MLMap, presetId: ScenePresetId | null) {
@@ -1155,7 +1195,7 @@ export async function focusAddress3DContext(
     setActiveScenePreset(map, presetId);
     map.flyTo({
       center: [target.lon, target.lat],
-      zoom: 15.5,
+      zoom: target.zoom ?? 15.5,
       pitch: 62,
       bearing: -18,
       duration: 1400,

@@ -1,3 +1,4 @@
+import { YOUTUBE_WEBCAM_HANDLE } from "@/lib/youtube-feed/constants";
 import { extractCctvLocation } from "@/services/cctv-locations";
 import type { YtFeedResult, YtVideo } from "@/lib/youtube-feed/types";
 
@@ -29,6 +30,11 @@ const OEMBED_TTL = 5 * 60 * 1000;
 const livePageCache = new Map<
   string,
   { videoId: string | null; at: number }
+>();
+/** Multi-live scrape cache (/@handle/streams). */
+const livePageListCache = new Map<
+  string,
+  { videoIds: string[]; at: number }
 >();
 const LIVE_PAGE_TTL = 12_000;
 
@@ -89,7 +95,7 @@ async function readSupabaseLiveCache(channelId: string): Promise<YtVideo[] | nul
     const row = rows[0];
     if (!row) return null;
     if (new Date(row.expires_at) < new Date()) return null; // expired
-    if (!Array.isArray(row.videos)) return null;
+    if (!Array.isArray(row.videos) || row.videos.length === 0) return null;
     return row.videos as YtVideo[];
   } catch {
     return null;
@@ -103,7 +109,7 @@ async function writeSupabaseLiveCache(
   videos: YtVideo[],
 ): Promise<void> {
   const cfg = supabaseCacheConfig();
-  if (!cfg) return;
+  if (!cfg || videos.length === 0) return;
   const expiresAt = new Date(Date.now() + SUPABASE_LIVE_CACHE_TTL_MS).toISOString();
   try {
     await fetch(`${cfg.url}/rest/v1/youtube_feed_cache`, {
@@ -430,9 +436,11 @@ async function searchLiveStreamsViaApi(
     });
   }
 
-  // 3. Write through to both caches
-  liveSearchCache.set(cacheKey, { videos, at: Date.now() });
-  void writeSupabaseLiveCache(channelId, channelHandle, videos);
+  // 3. Write through to both caches (never cache empty — avoids sticky "no live" hits)
+  if (videos.length > 0) {
+    liveSearchCache.set(cacheKey, { videos, at: Date.now() });
+    void writeSupabaseLiveCache(channelId, channelHandle, videos);
+  }
   return videos;
 }
 
@@ -643,14 +651,34 @@ function badgesIndicateLive(badges: unknown): boolean {
  * Hub / browse JSON often exposes `videoRenderer` + LIVE badge without player blob.
  * Prefer badge/overlay signals over title text (titles still say "LIVE" on replays).
  */
-function findLiveVideoIdFromInitialData(obj: unknown): string | null {
-  if (!obj || typeof obj !== "object") return null;
+function collectAllVideoIdsFromInitialData(
+  obj: unknown,
+  found: Set<string> = new Set(),
+): string[] {
+  if (!obj || typeof obj !== "object") return [...found];
   if (Array.isArray(obj)) {
-    for (const item of obj) {
-      const r = findLiveVideoIdFromInitialData(item);
-      if (r) return r;
-    }
-    return null;
+    for (const item of obj) collectAllVideoIdsFromInitialData(item, found);
+    return [...found];
+  }
+  const o = obj as Record<string, unknown>;
+  const vid = o.videoId;
+  if (typeof vid === "string" && /^[\w-]{11}$/.test(vid)) {
+    found.add(vid);
+  }
+  for (const k of Object.keys(o)) {
+    collectAllVideoIdsFromInitialData(o[k], found);
+  }
+  return [...found];
+}
+
+function collectLiveVideoIdsFromInitialData(
+  obj: unknown,
+  found: Set<string> = new Set(),
+): string[] {
+  if (!obj || typeof obj !== "object") return [...found];
+  if (Array.isArray(obj)) {
+    for (const item of obj) collectLiveVideoIdsFromInitialData(item, found);
+    return [...found];
   }
   const o = obj as Record<string, unknown>;
   const vid = o.videoId;
@@ -660,13 +688,17 @@ function findLiveVideoIdFromInitialData(obj: unknown): string | null {
     (overlaysIndicateLive(o.thumbnailOverlays) ||
       badgesIndicateLive(o.badges))
   ) {
-    return vid;
+    found.add(vid);
   }
   for (const k of Object.keys(o)) {
-    const r = findLiveVideoIdFromInitialData(o[k]);
-    if (r) return r;
+    collectLiveVideoIdsFromInitialData(o[k], found);
   }
-  return null;
+  return [...found];
+}
+
+function findLiveVideoIdFromInitialData(obj: unknown): string | null {
+  const ids = collectLiveVideoIdsFromInitialData(obj);
+  return ids[0] ?? null;
 }
 
 /** Resolve live id from a single HTML document (player JSON + browse JSON). */
@@ -767,32 +799,98 @@ async function resolveLiveIdFromChannelPath(
   return liveId;
 }
 
-async function fetchCurrentlyLiveVideoId(channelHandle: string): Promise<string | null> {
-  const clean = channelHandle.replace(/^@/, "");
-  const cached = livePageCache.get(clean);
-  if (cached && Date.now() - cached.at < LIVE_PAGE_TTL) {
-    return cached.videoId;
+/**
+ * Enumerate all LIVE-badge streams from a channel tab (primarily /streams).
+ * Used when search.list is unavailable (quota) — avoids returning only the first match.
+ */
+async function resolveAllLiveIdsFromChannelPath(
+  cleanHandle: string,
+  path: "/live" | "/streams" | "/videos",
+  apiKey?: string,
+): Promise<string[]> {
+  const res = await fetch(`https://www.youtube.com/@${cleanHandle}${path}`, {
+    headers: BROWSER_HEADERS,
+    cache: "no-store",
+    redirect: "follow",
+  });
+  if (!res.ok) return [];
+
+  const html = await res.text();
+  const data = extractYtInitialData(html);
+  if (data) {
+    const fromBrowse = collectLiveVideoIdsFromInitialData(data);
+    if (fromBrowse.length > 0) return fromBrowse;
+
+    // Server HTML often omits LIVE badges; use videos.list on tab ids (~1 quota).
+    if (apiKey && path === "/streams") {
+      const candidateIds = collectAllVideoIdsFromInitialData(data).slice(0, 50);
+      if (candidateIds.length > 0) {
+        const meta = await fetchYouTubeVideoMeta(candidateIds);
+        const liveIds = candidateIds.filter(
+          (id) => meta.get(id)?.liveBroadcastContent === "live",
+        );
+        if (liveIds.length > 0) return liveIds;
+      }
+    }
   }
 
+  const single = tryResolveLiveVideoIdFromHtml(html);
+  return single.id ? [single.id] : [];
+}
+
+/** All currently-live video ids for a channel (scrape + optional videos.list fallback). */
+async function fetchAllCurrentlyLiveVideoIds(
+  channelHandle: string,
+  options?: { apiKey?: string },
+): Promise<string[]> {
+  const clean = channelHandle.replace(/^@/, "");
+  const listCached = livePageListCache.get(clean);
+  if (listCached && Date.now() - listCached.at < LIVE_PAGE_TTL) {
+    return listCached.videoIds;
+  }
+
+  const apiKey = options?.apiKey;
+
   try {
+    const fromStreams = await resolveAllLiveIdsFromChannelPath(
+      clean,
+      "/streams",
+      apiKey,
+    );
+    if (fromStreams.length > 0) {
+      livePageListCache.set(clean, { videoIds: fromStreams, at: Date.now() });
+      if (fromStreams[0]) {
+        livePageCache.set(clean, { videoId: fromStreams[0], at: Date.now() });
+      }
+      return fromStreams;
+    }
+
     const probes: Array<"/live" | "/streams" | "/videos"> = [
       "/live",
-      "/streams",
       "/videos",
     ];
     for (const probe of probes) {
       const liveId = await resolveLiveIdFromChannelPath(clean, probe);
       if (liveId) {
+        const ids = [liveId];
+        livePageListCache.set(clean, { videoIds: ids, at: Date.now() });
         livePageCache.set(clean, { videoId: liveId, at: Date.now() });
-        return liveId;
+        return ids;
       }
     }
+
+    livePageListCache.set(clean, { videoIds: [], at: Date.now() });
     livePageCache.set(clean, { videoId: null, at: Date.now() });
-    return null;
+    return [];
   } catch {
-    livePageCache.set(clean, { videoId: null, at: Date.now() });
-    return null;
+    livePageListCache.set(clean, { videoIds: [], at: Date.now() });
+    return [];
   }
+}
+
+async function fetchCurrentlyLiveVideoId(channelHandle: string): Promise<string | null> {
+  const ids = await fetchAllCurrentlyLiveVideoIds(channelHandle);
+  return ids[0] ?? null;
 }
 
 async function fetchOEmbedMeta(videoId: string): Promise<{
@@ -872,8 +970,10 @@ export async function pollYoutubeChannel(handle: string): Promise<YtFeedResult> 
   const apiKey = process.env.YOUTUBE_API_KEY;
   const useDataApi = Boolean(apiKey);
   const cleanHandles = channelList.map((h) => normalizeHandle(h));
-  const liveVideoIdByHandle = new Map<string, string>();
+  const liveVideoIdsByHandle = new Map<string, Set<string>>();
   const apiLiveVideos: YtVideo[] = [];
+  /** search.list failed (quota/rate limit) — fall back to scrape + RSS heuristics */
+  const liveSearchErrored = new Set<string>();
 
   if (useDataApi && apiKey) {
     // Discover ALL currently-live streams via search.list?eventType=live.
@@ -886,26 +986,39 @@ export async function pollYoutubeChannel(handle: string): Promise<YtFeedResult> 
         return searchLiveStreamsViaApi(apiKey, channelId, handle);
       }),
     );
-    for (const result of liveSearchResults) {
+    liveSearchResults.forEach((result, i) => {
+      const handle = cleanHandles[i];
       if (result.status === "fulfilled") {
         apiLiveVideos.push(...result.value);
       } else {
-        errors.push(`live-search: ${(result.reason as Error).message}`);
+        liveSearchErrored.add(handle);
+        errors.push(
+          `${handle}: live-search: ${(result.reason as Error).message}`,
+        );
       }
-    }
-  } else {
-    // No Data API: detect actual live streams via /@handle/live +
-    // ytInitialPlayerResponse (oEmbed cannot distinguish live vs replay; RSS
-    // titles lie). Only resolves one stream per channel.
-    const discovered = await Promise.all(
-      cleanHandles.map(async (handle) => {
-        const id = await fetchCurrentlyLiveVideoId(handle);
-        return [handle, id] as const;
-      }),
-    );
-    for (const [handle, id] of discovered) {
-      if (id) liveVideoIdByHandle.set(handle, id);
-    }
+    });
+  }
+
+  // HTML scrape when there is no API key, or search.list failed for a channel (e.g. HTTP 429).
+  const discovered = await Promise.all(
+    cleanHandles.map(async (handle) => {
+      const hasApiLive = apiLiveVideos.some((v) => v.channelHandle === handle);
+      if (hasApiLive) return [handle, [] as string[]] as const;
+      if (useDataApi && !liveSearchErrored.has(handle)) {
+        return [handle, [] as string[]] as const;
+      }
+      const streamListKey =
+        useDataApi && apiKey && liveSearchErrored.has(handle)
+          ? apiKey
+          : undefined;
+      const ids = await fetchAllCurrentlyLiveVideoIds(handle, {
+        apiKey: streamListKey,
+      });
+      return [handle, ids] as const;
+    }),
+  );
+  for (const [handle, ids] of discovered) {
+    if (ids.length > 0) liveVideoIdsByHandle.set(handle, new Set(ids));
   }
 
   // Merge API-discovered live videos into the main list, preferring the
@@ -917,8 +1030,9 @@ export async function pollYoutubeChannel(handle: string): Promise<YtFeedResult> 
     ...videos.filter((v) => !apiLiveIds.has(v.id)),
   ];
 
-  const uniqueIds = [...new Set(mergedVideos.map((v) => v.id))];
-  const scrapedLiveIds = !useDataApi ? [...liveVideoIdByHandle.values()] : [];
+  const scrapedLiveIds = [
+    ...new Set([...liveVideoIdsByHandle.values()].flatMap((s) => [...s])),
+  ];
   const idsToEnrich = [
     ...new Set([
       ...mergedVideos.filter((v) => v.isLikeLive).map((v) => v.id),
@@ -940,9 +1054,17 @@ export async function pollYoutubeChannel(handle: string): Promise<YtFeedResult> 
     //      the video flagged live.
     //   2. If videos.list didn't return data for this id (search-only entry,
     //      or quota error), fall back to the search.list signal.
+    const searchDegraded = liveSearchErrored.has(video.channelHandle);
+    const scrapedLive =
+      liveVideoIdsByHandle.get(video.channelHandle)?.has(video.id) ?? false;
     const isLikeLive = hasGroundTruth
-      ? meta!.liveBroadcastContent === "live"
-      : isLiveFromSearch;
+      ? meta!.liveBroadcastContent === "live" ||
+        (searchDegraded && scrapedLive) ||
+        (searchDegraded &&
+          video.channelHandle === YOUTUBE_WEBCAM_HANDLE &&
+          video.isLikeLive &&
+          meta!.liveBroadcastContent === "none")
+      : isLiveFromSearch || scrapedLive;
 
     if (!meta) {
       return {
@@ -959,31 +1081,29 @@ export async function pollYoutubeChannel(handle: string): Promise<YtFeedResult> 
     };
   });
 
-  if (!useDataApi) {
-    enrichedVideos = enrichedVideos.map((video) => {
-      const liveId = liveVideoIdByHandle.get(video.channelHandle);
-      if (liveId && liveId === video.id) {
-        const meta = enrichment.get(video.id);
-        return {
-          ...video,
-          embeddable: meta?.embeddable !== false,
-          liveBroadcastContent: "live",
-          isLikeLive: true,
-        };
-      }
-      return video;
-    });
+  enrichedVideos = enrichedVideos.map((video) => {
+    const scraped = liveVideoIdsByHandle.get(video.channelHandle);
+    if (!scraped?.has(video.id)) return video;
+    const meta = enrichment.get(video.id);
+    return {
+      ...video,
+      embeddable: meta?.embeddable !== false,
+      liveBroadcastContent: "live",
+      isLikeLive: true,
+    };
+  });
 
-    for (const handle of cleanHandles) {
-      const liveId = liveVideoIdByHandle.get(handle);
-      if (!liveId) continue;
+  for (const handle of cleanHandles) {
+    const liveIds = liveVideoIdsByHandle.get(handle);
+    if (!liveIds) continue;
+    const channelName =
+      videos.find((v) => v.channelHandle === handle)?.channelName ?? handle;
+    for (const liveId of liveIds) {
       const exists = enrichedVideos.some(
         (v) => v.channelHandle === handle && v.id === liveId,
       );
       if (exists) continue;
       const oembed = await fetchOEmbedMeta(liveId);
-      const channelName =
-        videos.find((v) => v.channelHandle === handle)?.channelName ?? handle;
       if (oembed) {
         enrichedVideos.push({
           id: liveId,

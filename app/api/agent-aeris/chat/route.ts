@@ -5,14 +5,27 @@ import {
   insertAssistantAgentMessage,
   insertUserAgentMessage,
 } from "@/lib/supabase-agent";
+import {
+  buildAgentLiveContext,
+  type AgentSelectedLocationHint,
+} from "@/lib/agent-context";
+import { AGENT_AERIS_PERSONA } from "@/lib/agent-system-prompt";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type ChatMessage = {
   role: "user" | "assistant" | "system";
   content: string;
 };
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function asUuid(value: unknown): string | undefined {
+  return typeof value === "string" && UUID_RE.test(value) ? value : undefined;
+}
 
 function normalizeMessages(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw)) return [];
@@ -57,6 +70,22 @@ function compactJson(value: unknown): string {
   }
 }
 
+function normalizeLocationHint(value: unknown): AgentSelectedLocationHint | null {
+  if (!value || typeof value !== "object") return null;
+  const r = value as Record<string, unknown>;
+  const name = typeof r.name === "string" ? r.name : undefined;
+  if (!name) return null;
+  return {
+    name,
+    breadcrumb: typeof r.breadcrumb === "string" ? r.breadcrumb : undefined,
+    type: typeof r.type === "string" ? r.type : undefined,
+    psgcCode: typeof r.psgcCode === "string" ? r.psgcCode : undefined,
+    lat: typeof r.lat === "number" ? r.lat : undefined,
+    lon: typeof r.lon === "number" ? r.lon : undefined,
+    population: typeof r.population === "number" ? r.population : undefined,
+  };
+}
+
 export async function POST(request: Request) {
   const limit = await rateLimit({
     key: `agent-aeris:${getClientIp(request)}`,
@@ -96,17 +125,46 @@ export async function POST(request: Request) {
     return jsonError("AERIS_CHAT_API_BASE_URL is not configured.", 500);
   }
 
-  const context = record.context ?? null;
-  const systemContext: ChatMessage = {
+  if (!apiKey) {
+    console.warn(
+      "[agent-aeris] AERIS_CHAT_API_BASE_URL is set but neither AERIS_CHAT_API_KEY nor LLM_API_KEY is configured. Requests will fail if AERIS CHAT has LLM_API_KEY set (it should).",
+    );
+  }
+
+  // Client-supplied stable ids (UUID) for optimistic-UI reconciliation.
+  const clientUserMessageId = asUuid(record.clientUserMessageId);
+  const clientAssistantMessageId = asUuid(record.clientAssistantMessageId);
+
+  const locationHint = normalizeLocationHint(
+    (record.context as Record<string, unknown> | undefined)?.selectedLocation ??
+      record.selectedLocation,
+  );
+
+  const liveContext = await buildAgentLiveContext(locationHint).catch(() => null);
+
+  const personaMessage: ChatMessage = {
+    role: "system",
+    content: AGENT_AERIS_PERSONA,
+  };
+
+  // Live context allowed a wider budget than user turns since it's structured
+  // JSON, not free text. Capped to keep total prompt manageable.
+  const liveContextMessage: ChatMessage = {
     role: "system",
     content: sanitizeText(
-      `You are AGENT AERIS inside the AERIS dashboard. Use this compact dashboard context when relevant: ${compactJson(context)}`,
-      2000,
+      `LIVE_CONTEXT (JSON, current as of ${liveContext?.generatedAt ?? "n/a"}):\n${compactJson(
+        liveContext ?? { error: "live context unavailable" },
+      )}\n\nREMINDER: national.verdictLabel is an AERIS composite, not a PAGASA wind signal. When you state the risk level, append the drivers from national.verdictReasons.`,
+      8000,
     ),
   };
 
+  const proxyTimeoutMs = Number(process.env.AGENT_CHAT_TIMEOUT_MS ?? "60000");
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    Number.isFinite(proxyTimeoutMs) && proxyTimeoutMs > 0 ? proxyTimeoutMs : 60_000,
+  );
 
   try {
     const response = await fetch(`${baseUrl}/api/llm/chat`, {
@@ -116,10 +174,12 @@ export async function POST(request: Request) {
         ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify({
-        messages: [systemContext, ...messages].map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
+        messages: [personaMessage, liveContextMessage, ...messages].map(
+          (message) => ({
+            role: message.role,
+            content: message.content,
+          }),
+        ),
       }),
       signal: controller.signal,
     });
@@ -139,10 +199,23 @@ export async function POST(request: Request) {
       extractAssistantText(data) ||
       "AGENT AERIS received an empty response from the backend.";
 
-    void insertUserAgentMessage(latestUserMessage.content);
-    void insertAssistantAgentMessage(assistantText);
+    // Await both writes so the client can safely refetch history without
+    // a race against unfinished inserts.
+    const [userRow, assistantRow] = await Promise.all([
+      insertUserAgentMessage(latestUserMessage.content, {
+        id: clientUserMessageId,
+      }),
+      insertAssistantAgentMessage(assistantText, {
+        id: clientAssistantMessageId,
+      }),
+    ]);
 
-    return jsonOkNoStore({ message: assistantText });
+    return jsonOkNoStore({
+      message: assistantText,
+      userMessageId: userRow?.id ?? clientUserMessageId ?? null,
+      assistantMessageId: assistantRow?.id ?? clientAssistantMessageId ?? null,
+      contextGeneratedAt: liveContext?.generatedAt ?? null,
+    });
   } catch (error) {
     clearTimeout(timeout);
     if (error instanceof Error && error.name === "AbortError") {

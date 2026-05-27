@@ -294,14 +294,14 @@ export function LayerLegend({
                 label="Water Levels"
                 checked={waterLevelsActive}
                 onClick={() => setWaterLevelsActive((current) => !current)}
-                swatch="#38bdf8"
+                swatch="rgb(var(--aeris-accent))"
               />
               <LayerRadio
                 label="View Buildings"
                 checked={buildingsVisible}
                 onClick={() => setBuildingsVisible((current) => !current)}
                 disabled={mode !== "3d"}
-                swatch="#a8b3c2"
+                swatch="rgb(var(--aeris-muted))"
               />
               {!hazardReadyPeriod ? (
                 <div className="px-1.5 py-1 text-[11px] text-aeris-muted italic">

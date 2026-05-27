@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, type ReactNode } from "react";
+import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { Map2D } from "./Map2D";
 import { MapModeToggle } from "./MapModeToggle";
@@ -29,7 +29,8 @@ export function MapContainer({
   mapOverlay,
   layoutActive = true,
 }: MapContainerProps) {
-  const { theme } = useTheme();
+  const { theme, setTheme } = useTheme();
+  const themeUrlSyncedRef = useRef(false);
   const [mode, setMode] = useState<MapMode>("2d");
   const [map, setMap] = useState<MLMap | null>(null);
   const [showLoadingPopup, setShowLoadingPopup] = useState(false);
@@ -47,14 +48,25 @@ export function MapContainer({
   // Read URL hash on the client after hydration so the initial SSR HTML
   // matches (server has no access to window.location.hash).
   useEffect(() => {
-    const initial = readUrlState().mode;
-    if (initial && initial !== mode) setMode(initial);
+    const initial = readUrlState();
+    if (initial.mode && initial.mode !== mode) setMode(initial.mode);
+    if (initial.theme) {
+      if (initial.theme !== theme) setTheme(initial.theme);
+    } else {
+      writeUrlState({ theme });
+    }
+    themeUrlSyncedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     writeUrlState({ mode });
   }, [mode]);
+
+  useEffect(() => {
+    if (!themeUrlSyncedRef.current) return;
+    writeUrlState({ theme });
+  }, [theme]);
 
   useEffect(() => {
     if (!map) {
@@ -123,11 +135,24 @@ export function MapContainer({
 
   useEffect(() => {
     if (!map || !layoutActive) return;
-    const id = requestAnimationFrame(() => {
+    const rafId = requestAnimationFrame(() => {
       map.resize();
       map.triggerRepaint();
     });
-    return () => cancelAnimationFrame(id);
+    // Mobile: when the tab flips back to the map slot, the visible viewport
+    // may take an extra frame or two to settle (URL bar, keyboard dismiss).
+    // A short ladder of follow-up resizes guarantees the canvas matches the
+    // final container size without depending on ResizeObserver microtiming.
+    const timeoutIds = [120, 360].map((delay) =>
+      window.setTimeout(() => {
+        map.resize();
+        map.triggerRepaint();
+      }, delay),
+    );
+    return () => {
+      cancelAnimationFrame(rafId);
+      timeoutIds.forEach((id) => window.clearTimeout(id));
+    };
   }, [map, layoutActive]);
 
   return (

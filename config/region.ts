@@ -17,14 +17,26 @@ export const PAR_BBOX: BBox = [115.0, 5.0, 135.0, 25.0];
 
 export const PH_CENTER: LngLat = [122.0, 12.5];
 
+/** Pan limits for 3D / tight PH-focused navigation. */
 export const PH_MAX_BOUNDS: [[number, number], [number, number]] = [
   [114.0, 2.5],
   [129.5, 23.5],
 ];
 
+/**
+ * Wider pan limits for 2D: full PAGASA PAR plus a monitor buffer for TCs
+ * approaching from the Pacific or South China Sea (outside PAR / nearby).
+ */
+export const MAP_2D_MAX_BOUNDS: [[number, number], [number, number]] = [
+  [108.0, 1.5],
+  [146.0, 29.0],
+];
+
 export const DEFAULT_ZOOM = 5.4;
 /** Lower = wider view; tuned so the full PH footprint fits typical desktop + mobile viewports. */
 export const MIN_ZOOM = 3.85;
+/** 2D-only: fit entire PAR + nearby WESTPAC monitor box on typical viewports. */
+export const MAP_2D_MIN_ZOOM = 2.75;
 export const MAX_ZOOM = 17;
 
 /**

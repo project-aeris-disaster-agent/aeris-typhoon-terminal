@@ -1,6 +1,5 @@
 "use client";
 
-import { filterSubstantiveAlerts } from "@/lib/alert-quality";
 import { recordFailure, recordSuccess } from "@/services/data-freshness";
 
 export type AlertSeverity = "info" | "watch" | "warning" | "emergency";
@@ -45,9 +44,9 @@ export async function fetchAlerts(): Promise<AlertsFetchResult> {
       error?: string | null;
     };
 
-    const alerts = filterSubstantiveAlerts(
-      Array.isArray(body.alerts) ? body.alerts : [],
-    ).sort((a, b) => issuedAtValue(b.issuedAt) - issuedAtValue(a.issuedAt));
+    const alerts = (Array.isArray(body.alerts) ? body.alerts : []).sort(
+      (a, b) => issuedAtValue(b.issuedAt) - issuedAtValue(a.issuedAt),
+    );
 
     const upstreamError =
       (typeof body.error === "string" && body.error.trim()) ||

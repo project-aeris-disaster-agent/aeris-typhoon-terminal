@@ -9,7 +9,9 @@ import {
   type FormEvent,
 } from "react";
 import { clsx } from "clsx";
+import { AgentSpeechControls } from "@/components/agent/AgentSpeechControls";
 import { AerisVrmAvatar } from "@/components/agent/AerisVrmAvatar";
+import { useAgentSpeech } from "@/hooks/useAgentSpeech";
 
 type AgentRole = "user" | "assistant" | "system";
 
@@ -28,7 +30,25 @@ type AgentMessage = {
   sessionId?: string;
   disasterReportId?: string;
   operatorName?: string;
+  /** ISO timestamp when known (DB rows). Local-only optimistic messages
+   *  have createdAt set to send time so ordering stays correct on merge. */
+  createdAt?: string;
+  /** True for local optimistic messages still in flight. */
+  pending?: boolean;
 };
+
+function makeId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Fallback (older browsers / tests) — RFC4122 v4-ish.
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+    (
+      Number(c) ^
+      (Math.random() * 16) >> (Number(c) / 4)
+    ).toString(16),
+  );
+}
 
 type AgentLocationContext = {
   name: string;
@@ -44,6 +64,28 @@ type AgentAerisPanelProps = {
   selectedLocation: AgentLocationContext | null;
   isActive: boolean;
 };
+
+const QUICK_ACTIONS: { label: string; prompt: string }[] = [
+  {
+    label: "Brief me",
+    prompt:
+      "Give me a Situation Brief for the currently selected location (or national if none).",
+  },
+  {
+    label: "Checklist",
+    prompt:
+      "Produce a time-boxed Checklist of preparedness actions for the next 24 hours based on current context.",
+  },
+  {
+    label: "Draft advisory",
+    prompt:
+      "Draft a Public Advisory (EN + FIL) suitable for broadcast based on current conditions.",
+  },
+  {
+    label: "Filipino",
+    prompt: "Magbigay ng maikling sitwasyon update sa Filipino.",
+  },
+];
 
 const INITIAL_MESSAGE: AgentMessage = {
   id: "assistant-initial",
@@ -94,6 +136,7 @@ function mapHistoryRow(row: {
   session_id?: string | null;
   disaster_report_id?: string | null;
   operator_name?: string | null;
+  created_at?: string | null;
 }): AgentMessage | null {
   if (row.role !== "user" && row.role !== "assistant" && row.role !== "system") {
     return null;
@@ -106,7 +149,45 @@ function mapHistoryRow(row: {
     sessionId: row.session_id ?? undefined,
     disasterReportId: row.disaster_report_id ?? undefined,
     operatorName: row.operator_name ?? undefined,
+    createdAt: row.created_at ?? undefined,
   };
+}
+
+/**
+ * Merge DB history with local optimistic state by stable id.
+ *
+ * Rules:
+ *  - DB rows always win on content (server truth).
+ *  - Local messages whose id is NOT in the DB set are preserved (still
+ *    in-flight) so the just-sent user/assistant pair never disappears.
+ *  - Ordering: by createdAt where available, otherwise insertion order.
+ */
+function mergeMessages(
+  local: AgentMessage[],
+  fromDb: AgentMessage[],
+): AgentMessage[] {
+  const dbById = new Map(fromDb.map((m) => [m.id, m]));
+  const seen = new Set<string>();
+  const merged: AgentMessage[] = [];
+
+  for (const dbMsg of fromDb) {
+    merged.push(dbMsg);
+    seen.add(dbMsg.id);
+  }
+  for (const localMsg of local) {
+    if (seen.has(localMsg.id)) continue;
+    if (dbById.has(localMsg.id)) continue;
+    merged.push(localMsg);
+    seen.add(localMsg.id);
+  }
+
+  merged.sort((a, b) => {
+    const ta = a.createdAt ? Date.parse(a.createdAt) : Number.POSITIVE_INFINITY;
+    const tb = b.createdAt ? Date.parse(b.createdAt) : Number.POSITIVE_INFINITY;
+    if (ta === tb) return 0;
+    return ta - tb;
+  });
+  return merged;
 }
 
 export function AgentAerisPanel({
@@ -115,6 +196,10 @@ export function AgentAerisPanel({
 }: AgentAerisPanelProps) {
   const [messages, setMessages] = useState<AgentMessage[]>([INITIAL_MESSAGE]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [seededMessageIds, setSeededMessageIds] = useState<Set<string> | null>(
+    null,
+  );
+  const [muted, setMuted] = useState(false);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +228,15 @@ export function AgentAerisPanel({
     [selectedLocation],
   );
 
+  const { mouthLevel, emotion, voiceStatus, voiceEngine } = useAgentSpeech({
+    messages,
+    isActive,
+    muted,
+    seededMessageIds,
+  });
+
   const loadHistory = useCallback(async () => {
+    try {
     const res = await fetch("/api/agent-aeris/messages?limit=50", {
       cache: "no-store",
     });
@@ -156,6 +249,7 @@ export function AgentAerisPanel({
         session_id?: string | null;
         disaster_report_id?: string | null;
         operator_name?: string | null;
+        created_at?: string | null;
       }>;
     };
 
@@ -164,10 +258,25 @@ export function AgentAerisPanel({
       .map(mapHistoryRow)
       .filter((m): m is AgentMessage => Boolean(m));
 
-    if (mapped.length > 0) {
-      setMessages(mapped);
+    setMessages((current) => {
+      if (mapped.length === 0) {
+        setSeededMessageIds(new Set([INITIAL_MESSAGE.id]));
+        return current;
+      }
+      // If the only local content is the initial assistant placeholder and
+      // we just learned about a real history, drop the placeholder.
+      const initialOnly =
+        current.length === 1 && current[0].id === INITIAL_MESSAGE.id;
+      const local = initialOnly ? [] : current;
+      const merged = mergeMessages(local, mapped);
+      setSeededMessageIds(new Set(merged.map((m) => m.id)));
+      return merged;
+    });
+    } catch {
+      setSeededMessageIds(new Set([INITIAL_MESSAGE.id]));
+    } finally {
+      setHistoryLoaded(true);
     }
-    setHistoryLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -178,10 +287,13 @@ export function AgentAerisPanel({
   useEffect(() => {
     if (!isActive) return;
     const interval = window.setInterval(() => {
+      // Don't refetch in the middle of a conversation; merge-by-id is safe,
+      // but pausing avoids any visual churn while the operator is typing.
+      if (isSending || input.length > 0) return;
       void loadHistory();
     }, 30_000);
     return () => window.clearInterval(interval);
-  }, [isActive, loadHistory]);
+  }, [isActive, loadHistory, isSending, input]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -193,13 +305,17 @@ export function AgentAerisPanel({
       const cleanPrompt = prompt.trim();
       if (!cleanPrompt || isSending) return;
 
+      const userMessageId = makeId();
+      const pendingAssistantId = makeId();
+      const sentAt = new Date().toISOString();
+
       const userMessage: AgentMessage = {
-        id: `user-${Date.now()}`,
+        id: userMessageId,
         role: "user",
         content: cleanPrompt,
         source: "user",
+        createdAt: sentAt,
       };
-      const pendingAssistantId = `assistant-${Date.now()}`;
       const nextMessages = [...messages, userMessage];
 
       setMessages([
@@ -208,6 +324,8 @@ export function AgentAerisPanel({
           id: pendingAssistantId,
           role: "assistant",
           content: "Analyzing dashboard context...",
+          createdAt: sentAt,
+          pending: true,
         },
       ]);
       setInput("");
@@ -223,6 +341,8 @@ export function AgentAerisPanel({
             role: message.role,
             content: message.content,
           })),
+          clientUserMessageId: userMessageId,
+          clientAssistantMessageId: pendingAssistantId,
           context,
         }),
       });
@@ -240,6 +360,7 @@ export function AgentAerisPanel({
                   ...item,
                   content:
                     "Connection failed. Check the AERIS CHAT backend configuration and try again.",
+                  pending: false,
                 }
               : item,
           ),
@@ -255,7 +376,12 @@ export function AgentAerisPanel({
       setMessages((current) =>
         current.map((message) =>
           message.id === pendingAssistantId
-            ? { ...message, content: assistantText, source: "assistant" }
+            ? {
+                ...message,
+                content: assistantText,
+                source: "assistant",
+                pending: false,
+              }
             : message,
         ),
       );
@@ -278,13 +404,14 @@ export function AgentAerisPanel({
       }
 
       setIsSending(false);
-      void loadHistory();
+      // No post-send loadHistory(): the server now awaits both DB writes
+      // with the same client-supplied ids, and the next 30s tick will
+      // reconcile via mergeMessages without clobbering local state.
     },
     [
       context,
       isSending,
       messages,
-      loadHistory,
       replyToChatSession,
       activeBackChannel,
     ],
@@ -302,7 +429,17 @@ export function AgentAerisPanel({
   return (
     <div className="relative z-10 flex flex-1 min-h-0 overflow-hidden rounded-lg border border-aeris-border/60 bg-aeris-bg/40">
       <AgentAvatarColumn>
-        <AerisVrmAvatar isActive={isActive} isSpeaking={isSending} />
+        <AgentSpeechControls
+          muted={muted}
+          onToggleMute={() => setMuted((m) => !m)}
+          voiceStatus={voiceStatus}
+          voiceEngine={voiceEngine}
+        />
+        <AerisVrmAvatar
+          isActive={isActive}
+          mouthLevel={mouthLevel}
+          emotion={emotion}
+        />
       </AgentAvatarColumn>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -397,9 +534,23 @@ export function AgentAerisPanel({
           </label>
         )}
 
+        <div className="flex flex-wrap gap-1 border-t border-aeris-border/50 px-2 pt-2">
+          {QUICK_ACTIONS.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={() => void sendPrompt(action.prompt)}
+              disabled={isSending}
+              className="rounded-full border border-aeris-border/60 bg-aeris-bg/50 px-2 py-0.5 text-[9px] font-mono uppercase tracking-widest text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+
         <form
           onSubmit={handleSubmit}
-          className="flex gap-2 border-t border-aeris-border/50 p-2"
+          className="flex gap-2 p-2"
         >
           <input
             value={input}
@@ -423,7 +574,7 @@ export function AgentAerisPanel({
 
 function AgentAvatarColumn({ children }: { children: React.ReactNode }) {
   return (
-    <div className="hidden w-[34%] min-w-[132px] max-w-[220px] border-r border-aeris-border/50 bg-aeris-bg/30 md:block">
+    <div className="relative hidden w-[34%] min-w-[132px] max-w-[220px] border-r border-aeris-border/50 bg-aeris-bg/30 md:block">
       {children}
     </div>
   );

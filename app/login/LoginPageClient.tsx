@@ -3,15 +3,34 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { normalizePhoneE164 } from "@/lib/phone-auth";
+import { useTheme } from "@/components/providers/ThemeProvider";
 
 const RESEND_COOLDOWN_SEC = 60;
 
 type Step = "phone" | "otp";
 
+function SunIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v3M12 19v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M2 12h3M19 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" />
+    </svg>
+  );
+}
+
+function MoonIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden {...props}>
+      <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
+    </svg>
+  );
+}
+
 export default function LoginPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/";
+  const { theme, toggleTheme } = useTheme();
 
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("+63");
@@ -120,10 +139,28 @@ export default function LoginPageClient() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-aeris-bg px-4">
       <div className="w-full max-w-md rounded-lg border border-aeris-border bg-aeris-surface p-6 shadow-xl">
-        <h1 className="hud-text text-lg font-semibold text-aeris-text">AERIS Dashboard</h1>
-        <p className="mt-2 text-sm text-aeris-muted">
-          Sign in with your mobile number to view live disaster intelligence.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="hud-text text-lg font-semibold text-aeris-text">AERIS Dashboard</h1>
+            <p className="mt-2 text-sm text-aeris-muted">
+              Sign in with your mobile number to view live disaster intelligence.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded border border-aeris-border bg-aeris-bg/70 px-2 text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-text"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            title="Toggle light/dark theme"
+          >
+            {theme === "dark" ? (
+              <SunIcon className="h-3.5 w-3.5" />
+            ) : (
+              <MoonIcon className="h-3.5 w-3.5" />
+            )}
+            <span className="hud-text text-[10px]">{theme === "dark" ? "Dark" : "Light"}</span>
+          </button>
+        </div>
 
         <div className="mt-6 space-y-3">
           <label className="block text-xs font-mono uppercase text-aeris-muted">

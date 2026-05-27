@@ -9,10 +9,14 @@ import {
   VRMUtils,
   type VRM,
 } from "@pixiv/three-vrm";
+import type { SpeechEmotion } from "@/lib/agent-speech/types";
+import { createBlinkState, updateBlinkWeight } from "@/lib/vrm/blink";
+import { applyAvatarFace, isAvatarSpeaking } from "@/lib/vrm/idle-face";
 
 type AerisVrmAvatarProps = {
   isActive: boolean;
-  isSpeaking: boolean;
+  mouthLevel: number;
+  emotion?: SpeechEmotion;
 };
 
 const VRM_MODEL_URL = "/models/aeris-companion.vrm";
@@ -63,7 +67,6 @@ function frameAvatar(scene: THREE.Object3D, camera: THREE.PerspectiveCamera, vrm
     focusY = _headPos.y - size.y * 0.06;
   }
 
-  // Shift subject down in the frame by a fraction of viewport height (camera + target move up in world Y).
   const visibleHeight = 2 * distance * Math.tan(halfFovY);
   const frameShiftY = 0.2 * visibleHeight;
   const aimY = focusY + frameShiftY;
@@ -73,26 +76,26 @@ function frameAvatar(scene: THREE.Object3D, camera: THREE.PerspectiveCamera, vrm
   camera.updateProjectionMatrix();
 }
 
-function setMouthOpen(vrm: VRM, value: number) {
-  const expressionManager = vrm.expressionManager;
-  if (!expressionManager) return;
-
-  expressionManager.setValue("aa", value);
-  expressionManager.setValue("ih", value * 0.35);
-  expressionManager.update();
-}
-
-export function AerisVrmAvatar({ isActive, isSpeaking }: AerisVrmAvatarProps) {
+export function AerisVrmAvatar({
+  isActive,
+  mouthLevel,
+  emotion = "assistant",
+}: AerisVrmAvatarProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const speakingRef = useRef(isSpeaking);
+  const mouthLevelRef = useRef(mouthLevel);
+  const emotionRef = useRef(emotion);
   const activeRef = useRef(isActive);
   const [status, setStatus] = useState<"loading" | "ready" | "fallback">(
     "loading",
   );
 
   useEffect(() => {
-    speakingRef.current = isSpeaking;
-  }, [isSpeaking]);
+    mouthLevelRef.current = mouthLevel;
+  }, [mouthLevel]);
+
+  useEffect(() => {
+    emotionRef.current = emotion;
+  }, [emotion]);
 
   useEffect(() => {
     activeRef.current = isActive;
@@ -125,6 +128,7 @@ export function AerisVrmAvatar({ isActive, isSpeaking }: AerisVrmAvatarProps) {
     let animationId = 0;
     let lastFrame = 0;
     const clock = new THREE.Clock();
+    const blinkState = createBlinkState(0);
 
     const resize = () => {
       const width = Math.max(1, host.clientWidth);
@@ -171,10 +175,16 @@ export function AerisVrmAvatar({ isActive, isSpeaking }: AerisVrmAvatarProps) {
       const delta = clock.getDelta();
       const elapsed = clock.elapsedTime;
       if (vrm) {
-        const mouth = speakingRef.current
-          ? 0.12 + Math.abs(Math.sin(elapsed * 18)) * 0.72
-          : 0;
-        setMouthOpen(vrm, mouth);
+        const mouth = mouthLevelRef.current;
+        const speaking = isAvatarSpeaking(mouth);
+        const blinkWeight = updateBlinkWeight(elapsed, blinkState, speaking);
+        applyAvatarFace(
+          vrm,
+          mouth,
+          emotionRef.current,
+          elapsed,
+          blinkWeight,
+        );
         vrm.scene.rotation.z = Math.sin(elapsed * 1.4) * 0.015;
         vrm.update(delta);
       }

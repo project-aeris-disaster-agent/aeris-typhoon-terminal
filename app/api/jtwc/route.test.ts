@@ -3,6 +3,16 @@ export {};
 
 const originalFetch = global.fetch;
 
+jest.mock("@/lib/pagasa-daily", () => {
+  const actual = jest.requireActual<typeof import("@/lib/pagasa-daily")>(
+    "@/lib/pagasa-daily",
+  );
+  return {
+    ...actual,
+    fetchPagasaDailyWeather: jest.fn().mockResolvedValue(null),
+  };
+});
+
 const RSS_WITH_TC = `<?xml version="1.0"?><rss><channel>
 <item>
   <title>Red notification for tropical cyclone SINLAKU-26.</title>
@@ -10,7 +20,7 @@ const RSS_WITH_TC = `<?xml version="1.0"?><rss><channel>
   <link>https://www.gdacs.org/report.aspx?eventtype=TC&amp;eventid=1001270</link>
   <pubDate>Thu, 09 Apr 2026 02:21:25 GMT</pubDate>
   <guid isPermaLink="false">TC1001270</guid>
-  <geo:Point><geo:lat>28.7</geo:lat><geo:long>156.1</geo:long></geo:Point>
+  <geo:Point><geo:lat>15.0</geo:lat><geo:long>125.0</geo:long></geo:Point>
   <gdacs:iscurrent>true</gdacs:iscurrent>
   <gdacs:eventtype>TC</gdacs:eventtype>
   <gdacs:alertlevel>Red</gdacs:alertlevel>
@@ -46,6 +56,102 @@ describe("/api/jtwc", () => {
   afterEach(() => {
     global.fetch = originalFetch;
     jest.restoreAllMocks();
+  });
+
+  it("maps current GDACS severitydata into wind and category", async () => {
+    const { GET } = await import("./route");
+    const collection = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [125.0, 14.0] },
+          properties: {
+            eventid: 1001272,
+            eventname: "JANGMI-26",
+            alertlevel: "Green",
+            severitydata: {
+              severity: 166.6656,
+              severitytext:
+                "Tropical Depression (maximum wind speed of 167 km/h)",
+              severityunit: "km/h",
+            },
+          },
+        },
+      ],
+    };
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => collection,
+    }) as typeof fetch;
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.storms).toEqual([
+      expect.objectContaining({
+        id: "1001272",
+        name: "JANGMI-26",
+        windKph: 167,
+        category: "Tropical Depression",
+        pressureHpa: 0,
+        position: [125.0, 14.0],
+      }),
+    ]);
+    expect(body.outsidePar).toBeNull();
+    expect(body.outsideParGdacs).toEqual([]);
+  });
+
+  it("returns PAGASA outside-PAR advisory alongside in-PAR GDACS storms", async () => {
+    const { fetchPagasaDailyWeather } = await import("@/lib/pagasa-daily");
+    (fetchPagasaDailyWeather as jest.Mock).mockResolvedValueOnce({
+      issuedAt: "3:00 PM, 27 May 2026",
+      tcOutsidePar: {
+        name: "TROPICAL STORM JANGMI (2606)",
+        location:
+          "1,260 KM EAST OF EASTERN VISAYAS (10.0°N, 137.2°E)",
+        maxWindsKmh: "65 KM/H NEAR THE CENTER",
+        gustinessKmh: "UP TO 80 KM/H",
+        movement: "NORTHWESTWARD AT 20 KM/H",
+      },
+    });
+
+    const { GET } = await import("./route");
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [137.5, 9.6] },
+            properties: {
+              eventid: 1001272,
+              eventname: "JANGMI-26",
+              severitydata: {
+                severity: 166.6656,
+                severitytext:
+                  "Tropical Depression (maximum wind speed of 167 km/h)",
+                severityunit: "km/h",
+              },
+            },
+          },
+        ],
+      }),
+    }) as typeof fetch;
+
+    const body = await (await GET()).json();
+
+    expect(body.storms).toEqual([]);
+    expect(body.outsideParGdacs).toEqual([]);
+    expect(body.outsidePar).toMatchObject({
+      source: "pagasa",
+      name: "TROPICAL STORM JANGMI (2606)",
+      windKph: 65,
+      position: [137.2, 10.0],
+      issuedAt: "3:00 PM, 27 May 2026",
+    });
   });
 
   it("maps GDACS storm geometry into the typhoon response shape", async () => {
@@ -88,6 +194,7 @@ describe("/api/jtwc", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(body.outsidePar).toBeNull();
     expect(body.storms).toEqual([
       {
         id: "storm-1",
@@ -134,11 +241,11 @@ describe("/api/jtwc", () => {
     expect(body.storms[0]).toMatchObject({
       id: "1001270",
       name: "SINLAKU-26",
-      position: [156.1, 28.7],
-      windKph: 287,
-      category: "Super Typhoon",
+      position: [125.0, 15.0],
+      windKph: 93,
+      category: "Tropical Storm",
     });
-    expect(body.storms[0].bestTrack[0].position).toEqual([156.1, 28.7]);
+    expect(body.storms[0].bestTrack[0].position).toEqual([125.0, 15.0]);
     expect(body._warning).toBeUndefined();
     expect(body._error).toBeUndefined();
   });

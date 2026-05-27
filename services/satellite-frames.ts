@@ -7,8 +7,6 @@ import {
   BASEMAP_MARKERS_LAYER_ID,
   layerBeforeBasemapLabels,
 } from "@/config/map-layers";
-import { WEATHER_IMAGERY_CROSSFADE_MS } from "@/config/weather-animation";
-
 export type ImageryBufferSlot = 0 | 1;
 
 /**
@@ -515,6 +513,51 @@ function baseOpacityFromPaint(paint: RasterPaintSpec): number {
   return typeof raw === "number" ? raw : 1;
 }
 
+/**
+ * Apply a warm amber tint to a buffer layer when it is showing a `nowcast`
+ * (forecast) frame. Mirrors the orange "Forecast" badge in the HUD so the
+ * observed -> nowcast transition is visible in the imagery itself.
+ *
+ * Pass `applied = false` to restore the layer's baseline paint.
+ */
+export function setImageryBufferNowcastTint(
+  map: MLMap,
+  source: LiveImagerySource,
+  slot: ImageryBufferSlot,
+  applied: boolean,
+) {
+  const layerId =
+    source === "radar"
+      ? radarBufferIds(slot).layer
+      : gibsBufferIds(slot).layer;
+  if (!map.getLayer(layerId)) return;
+  if (applied) {
+    map.setPaintProperty(layerId, "raster-hue-rotate", 18);
+    map.setPaintProperty(layerId, "raster-saturation", 0.25);
+    map.setPaintProperty(layerId, "raster-brightness-min", 0.08);
+    return;
+  }
+  // Restore baseline paint values for the source.
+  if (source === "radar") {
+    map.setPaintProperty(layerId, "raster-hue-rotate", 0);
+    map.setPaintProperty(layerId, "raster-saturation", 0.15);
+    map.setPaintProperty(layerId, "raster-brightness-min", 0.2);
+    return;
+  }
+  // For satellite presets, leave hue-rotate at 0 and let the active paint
+  // (gibs vs rainviewer-satellite) reapply its own contrast/saturation on the
+  // next frame swap; resetting the three shifted properties is enough to drop
+  // the amber cast.
+  map.setPaintProperty(layerId, "raster-hue-rotate", 0);
+  if (source === "himawari-ir") {
+    map.setPaintProperty(layerId, "raster-saturation", -0.1);
+    map.setPaintProperty(layerId, "raster-brightness-min", 0.08);
+  } else {
+    map.setPaintProperty(layerId, "raster-saturation", 0.22);
+    map.setPaintProperty(layerId, "raster-brightness-min", 0.01);
+  }
+}
+
 export function setImageryBufferOpacity(
   map: MLMap,
   source: LiveImagerySource,
@@ -573,7 +616,7 @@ function gibsRasterPaint(sourceKey: string): RasterPaintSpec {
   if (preset === "disturbance-only") {
     return {
       "raster-opacity": 0.5,
-      "raster-fade-duration": WEATHER_IMAGERY_CROSSFADE_MS,
+      "raster-fade-duration": 0,
       "raster-resampling": "linear",
       "raster-contrast": 0.4,
       "raster-saturation": -0.4,
@@ -586,7 +629,7 @@ function gibsRasterPaint(sourceKey: string): RasterPaintSpec {
   if (sourceKey === "himawari-airmass" || sourceKey === "himawari-true") {
     return {
       "raster-opacity": 0.54,
-      "raster-fade-duration": WEATHER_IMAGERY_CROSSFADE_MS,
+      "raster-fade-duration": 0,
       "raster-resampling": "linear",
       "raster-contrast": 0.36,
       "raster-saturation": 0.22,
@@ -613,7 +656,7 @@ function transparentSatelliteOverlayPaint(
   if (sourceKey === "himawari-ir") {
     return {
       "raster-opacity": 1,
-      "raster-fade-duration": WEATHER_IMAGERY_CROSSFADE_MS,
+      "raster-fade-duration": 0,
       "raster-resampling": "linear",
       "raster-contrast": 0.2,
       "raster-saturation": -0.1,
@@ -767,10 +810,35 @@ export function ensureGibsLayer(map: MLMap, sourceKey: string) {
   );
 }
 
+/**
+ * Returns the raster paint spec for a given imagery source. Exposed for
+ * regression tests that guard `raster-fade-duration: 0` (the JS ticker owns
+ * crossfades — MapLibre's native tile fade must stay disabled to avoid the
+ * end-of-loop disappearance bug).
+ */
+export function getImageryRasterPaint(source: LiveImagerySource): RasterPaintSpec {
+  if (source === "radar") return radarLayerPaint();
+  if (source === "himawari-ir") {
+    // Two paint variants depending on provider; both must keep fade-duration: 0.
+    return transparentSatelliteOverlayPaint("himawari-ir");
+  }
+  return gibsRasterPaint("himawari-airmass");
+}
+
+export function getAllImageryRasterPaints(): RasterPaintSpec[] {
+  return [
+    radarLayerPaint(),
+    gibsRasterPaint("himawari-ir"),
+    gibsRasterPaint("himawari-airmass"),
+    transparentSatelliteOverlayPaint("himawari-ir"),
+    transparentSatelliteOverlayPaint("himawari-airmass"),
+  ];
+}
+
 function radarLayerPaint(): RasterPaintSpec {
   return {
     "raster-opacity": 1,
-    "raster-fade-duration": WEATHER_IMAGERY_CROSSFADE_MS,
+    "raster-fade-duration": 0,
     "raster-contrast": 0.3,
     "raster-saturation": 0.15,
     "raster-brightness-min": 0.2,

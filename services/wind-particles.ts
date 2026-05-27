@@ -4,7 +4,7 @@ import type { Map as MLMap } from "maplibre-gl";
 import type { WindFieldPayload } from "@/services/wind-field-types";
 import type { Typhoon } from "@/services/typhoon-tracks";
 import { combinedWindMs, pointInPar } from "@/services/wind-flow-model";
-import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM } from "@/config/region";
+import { DEFAULT_ZOOM, MAP_2D_MIN_ZOOM, MAX_ZOOM } from "@/config/region";
 
 const M_PER_DEG_LAT = 111_320;
 
@@ -22,7 +22,7 @@ function clamp(n: number, lo: number, hi: number) {
  * particles drawn, lighter smear so the basemap stays readable.
  */
 function windDrawParams(zoomRaw: number) {
-  const zoom = clamp(zoomRaw, MIN_ZOOM, MAX_ZOOM);
+  const zoom = clamp(zoomRaw, MAP_2D_MIN_ZOOM, MAX_ZOOM);
   const z0 = DEFAULT_ZOOM;
   const geoShrink = clamp(Math.pow(2, z0 - zoom), 0.035, 1.06);
   const lineW = clamp(0.94 - (zoom - z0) * 0.1, 0.16, 0.98);

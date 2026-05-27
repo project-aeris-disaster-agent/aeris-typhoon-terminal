@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand",
     "test:coverage": "jest --runInBand --coverage",
+    "postinstall": "node scripts/copy-piper-vendor.mjs",
     "smoke:reports": "node scripts/smoke_supabase_reports.mjs",
     "smoke:reports:insert": "node scripts/smoke_supabase_reports.mjs --insert",
     "smoke:mint": "npx tsx scripts/mint-testnet.ts",
@@ -23,6 +24,7 @@
     "vercel:deploy:prod": "npx vercel deploy --prod --yes"
   },
   "dependencies": {
+    "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@pixiv/three-vrm": "^3.5.2",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.1",

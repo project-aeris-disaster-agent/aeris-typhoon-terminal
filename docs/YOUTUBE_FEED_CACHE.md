@@ -15,18 +15,45 @@ In `.env` / Vercel (Production):
 
 ## Database
 
-Apply migration:
+Migration file: `supabase/migrations/20260527120000_youtube_feed_channel_cache.sql`
 
-`supabase/migrations/20260527120000_youtube_feed_channel_cache.sql`
+Creates:
 
-Table: `public.youtube_feed_channel_cache` (one row per channel handle).
+- `public.youtube_feed_channel_cache` — enriched feed per channel (primary cache)
+- `public.youtube_feed_cache` — optional `search.list` live-only cache
 
-Verify:
+### Apply (pick one)
+
+**Supabase Dashboard → SQL Editor** — paste the full migration file and run.
+
+**Supabase CLI** (linked project):
+
+```bash
+supabase db push
+```
+
+**Cursor Supabase MCP** — `apply_migration` with name `youtube_feed_channel_cache` and the SQL from the file.
+
+### Verify (production)
 
 ```sql
-select channel_handle, jsonb_array_length(videos), expires_at > now() as fresh
-from public.youtube_feed_channel_cache;
+select channel_handle,
+       jsonb_array_length(videos) as n,
+       expires_at > now() as fresh,
+       errors
+from public.youtube_feed_channel_cache
+order by channel_handle;
 ```
+
+Expect four rows (`gmanews2026`, `abscbnnews`, `OneNewsPH`, `JazBazPhilippines`) after the dashboard loads once.
+
+If `live-search: search.list HTTP 429` appears in `errors`, the API daily quota is exhausted for **search.list** (100 units/call). The app then:
+
+1. Scrapes `/@handle/streams` and runs **videos.list** on tab video IDs (~1 unit) to find all concurrent live streams.
+2. Falls back to single-stream HTML scrape if that also fails.
+3. **Does not overwrite** a Supabase channel cache that had more live streams than a degraded poll returned.
+
+Until quota resets, you may still see the 429 message in `errors` even when streams load correctly.
 
 ## Channel list
 

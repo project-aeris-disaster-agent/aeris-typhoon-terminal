@@ -27,13 +27,20 @@ export function MapTopChrome({
         href="https://www.google.com/adsense"
         target="_blank"
         rel="noopener noreferrer"
-        className="block w-full rounded-lg overflow-hidden shadow-lg opacity-90 hover:opacity-100 transition-opacity duration-200"
+        className={clsx(
+          "block w-full rounded-lg overflow-hidden shadow-lg opacity-90 hover:opacity-100 transition-opacity duration-200",
+          // Reserve vertical space up-front so the map container doesn't
+          // shift down when the ad image finishes loading (which used to
+          // cause MapLibre to size its canvas against a transiently taller
+          // parent on mobile, leaving the map cropped after settle).
+          "h-[72px] md:h-auto",
+        )}
         aria-label="Advertisement"
       >
         <img
           src="/ads/ads_v1_2026.gif"
           alt="Advertisement"
-          className="w-full h-auto max-h-[72px] md:max-h-none object-cover object-center block"
+          className="w-full h-full md:h-auto md:max-h-none object-cover object-center block"
           draggable={false}
         />
       </a>

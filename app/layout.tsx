@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { SWRegister } from "@/components/SWRegister";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { RoleProvider } from "@/services/role-context";
+import { THEME_COLOR_LIGHT, THEME_INIT_SCRIPT } from "@/lib/theme-storage";
 
 export const metadata: Metadata = {
   title: "AERIS — Typhoon Resilience Terminal",
@@ -32,21 +33,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#f4f8fc",
+  themeColor: THEME_COLOR_LIGHT,
 };
-
-const themeInitScript = `
-(() => {
-  try {
-    const key = "aeris-theme";
-    const saved = window.localStorage.getItem(key);
-    const theme = saved === "dark" ? "dark" : "light";
-    const root = document.documentElement;
-    root.classList.toggle("dark", theme === "dark");
-    root.setAttribute("data-theme", theme);
-  } catch {}
-})();
-`;
 
 export default function RootLayout({
   children,
@@ -54,9 +42,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" data-theme="light" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
         <ThemeProvider>
