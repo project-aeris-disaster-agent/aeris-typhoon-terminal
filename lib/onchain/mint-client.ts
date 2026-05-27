@@ -188,16 +188,20 @@ export async function mintReport(
   // viem's WriteContract discriminated union rejects { type: "legacy" } when
   // the simulated `request` carries an `accessList: undefined` slot from the
   // EIP-2930 branch. Runtime is happy; we cast to bypass the narrowing.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const writeParams: any = {
+  const writeParams = {
     ...request,
     account: client.walletClient.account!,
     chain: client.walletClient.chain,
-    type: "legacy",
+    type: "legacy" as const,
     gasPrice,
   };
-  delete writeParams.accessList;
-  const txHash = await client.walletClient.writeContract(writeParams);
+  const { accessList: _accessList, ...legacyParams } = writeParams as typeof writeParams & {
+    accessList?: unknown;
+  };
+  void _accessList;
+  const txHash = await client.walletClient.writeContract(
+    legacyParams as Parameters<WalletClient["writeContract"]>[0],
+  );
   const receipt = await client.publicClient.waitForTransactionReceipt({ hash: txHash });
 
   if (receipt.status !== "success") {
