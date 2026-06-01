@@ -36,6 +36,13 @@ import { WindParticleCanvas } from "@/services/wind-particles";
 import type { WindPerformanceProfile } from "@/services/wind-particles";
 import type { WindFieldPayload } from "@/services/wind-field-types";
 import type { Typhoon } from "@/services/typhoon-tracks";
+import {
+  detectDeviceTier,
+  liveWeatherProfileForTier,
+  windParticleCountForTier,
+  windProfileForTier,
+  type DeviceTier,
+} from "@/lib/device-tier";
 
 export type LiveWeatherPerformanceProfile = WindPerformanceProfile;
 
@@ -100,6 +107,8 @@ type State = {
   satelliteProvider: SatelliteFrameProvider;
   satelliteRefreshTimer: ReturnType<typeof setInterval> | null;
   radarRefreshTimer: ReturnType<typeof setInterval> | null;
+  /** When false, ticker + wind are paused (mobile tab / hidden document). */
+  overlayActive: boolean;
 };
 
 const store = new WeakMap<MLMap, State>();
@@ -711,8 +720,12 @@ async function attachWind(wind: WindParticleCanvas) {
 export function initLiveWeatherOverlay(map: MLMap) {
   if (store.has(map)) return;
 
-  const wind = new WindParticleCanvas(map, { particleCount: 2940 });
-  wind.setPerformanceProfile("balanced");
+  const tier = detectDeviceTier();
+  const wind = new WindParticleCanvas(map, {
+    particleCount: windParticleCountForTier(tier),
+  });
+  wind.setDeviceTier(tier);
+  wind.setPerformanceProfile(windProfileForTier(tier));
   wind.setStormSystems([]);
   const state: State = {
     source: "radar",
@@ -735,6 +748,7 @@ export function initLiveWeatherOverlay(map: MLMap) {
     satelliteProvider: "gibs-fallback",
     satelliteRefreshTimer: null,
     radarRefreshTimer: null,
+    overlayActive: true,
   };
   store.set(map, state);
 
@@ -743,7 +757,7 @@ export function initLiveWeatherOverlay(map: MLMap) {
   };
   const onMoveEnd = () => {
     const st = store.get(map);
-    if (st?.mapMode === "2d") wind.resume();
+    if (st?.mapMode === "2d" && st.overlayActive) wind.resume();
   };
   map.on("movestart", onMoveStart);
   map.on("moveend", onMoveEnd);
@@ -852,10 +866,40 @@ export function notifyLiveWeatherMapMode(map: MLMap, mode: "2d" | "3d") {
   if (mode === "3d") {
     stopTicker(map);
     s.wind?.setVisible(false);
-  } else {
+  } else if (s.overlayActive) {
     s.wind?.setVisible(true);
     if (s.timeline.frames.length > 0) startTicker(map);
   }
+}
+
+/**
+ * Pause or resume live weather ticker + wind (e.g. mobile Reports tab, hidden tab).
+ */
+export function setLiveWeatherOverlayActive(map: MLMap | null, active: boolean) {
+  if (!map) return;
+  const s = store.get(map);
+  if (!s || s.overlayActive === active) return;
+  s.overlayActive = active;
+  if (!active) {
+    stopTicker(map);
+    s.wind?.setVisible(false);
+    return;
+  }
+  if (s.mapMode === "2d") {
+    s.wind?.setVisible(true);
+    if (s.timeline.frames.length > 0) startTicker(map);
+  }
+}
+
+export function applyLiveWeatherDeviceTier(
+  map: MLMap | null,
+  tier: DeviceTier = detectDeviceTier(),
+) {
+  if (!map) return;
+  const s = store.get(map);
+  if (!s?.wind) return;
+  s.wind.setDeviceTier(tier);
+  setLiveWeatherPerformanceProfile(map, liveWeatherProfileForTier(tier));
 }
 
 export function setLiveWeatherPerformanceProfile(

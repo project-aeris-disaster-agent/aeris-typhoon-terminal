@@ -153,6 +153,16 @@ function stopReportPingLoop(map: MLMap) {
   reportPingLoopByMap.delete(map);
 }
 
+/** Pause or resume the report ping pulse animation loop. */
+export function setReportPingLoopActive(map: MLMap | null, active: boolean) {
+  if (!map) return;
+  if (active) {
+    if (map.getLayer(REPORTS_PULSE_LAYER_ID)) startReportPingLoop(map);
+  } else {
+    stopReportPingLoop(map);
+  }
+}
+
 export function setReportPingPerformanceMode(
   map: MLMap | null,
   profile: ReportPingPerformanceProfile,
