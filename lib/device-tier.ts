@@ -1,77 +1,92 @@
 /**
  * Coarse device capability tier for map / wind / overlay quality knobs.
- * Used client-side only; defaults to mid on the server.
+ * Client-only; defaults to mid when `window` is unavailable.
  */
 
-export type PerformanceProfile = "quality" | "balanced" | "performance";
+import type { Map as MLMap } from "maplibre-gl";
 
+export type PerformanceProfile = "quality" | "balanced" | "performance";
 export type DeviceTier = "low" | "mid" | "high";
 
-export function detectDeviceTier(): DeviceTier {
-  if (typeof window === "undefined") return "mid";
-
-  const coarse = window.matchMedia("(pointer: coarse)").matches;
-  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  const cores = navigator.hardwareConcurrency ?? 4;
-  const smallViewport =
-    window.innerWidth < 768 || window.innerHeight < 640;
-
-  if (coarse && ((mem !== undefined && mem <= 4) || cores <= 4 || smallViewport)) {
-    return "low";
+const TIER = {
+  low: {
+    particles: 1470,
+    windDpr: 1.25,
+    mapDpr: 1.5,
+    profile: "performance" as const,
+  },
+  mid: {
+    particles: 2200,
+    windDpr: 1.5,
+    mapDpr: 1.75,
+    profile: "performance" as const,
+  },
+  high: {
+    particles: 2940,
+    windDpr: 2,
+    mapDpr: 2,
+    profile: "balanced" as const,
+  },
+} satisfies Record<
+  DeviceTier,
+  {
+    particles: number;
+    windDpr: number;
+    mapDpr: number;
+    profile: PerformanceProfile;
   }
-  if (!coarse && cores >= 8 && (mem === undefined || mem >= 8)) {
-    return "high";
-  }
-  return "mid";
-}
+>;
 
 export function isCoarsePointerDevice(): boolean {
   if (typeof window === "undefined") return false;
   return window.matchMedia("(pointer: coarse)").matches;
 }
 
+export function detectDeviceTier(): DeviceTier {
+  if (typeof window === "undefined") return "mid";
+
+  if (!isCoarsePointerDevice()) {
+    const cores = navigator.hardwareConcurrency ?? 4;
+    const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+    if (cores >= 8 && (mem === undefined || mem >= 8)) return "high";
+    return "mid";
+  }
+
+  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  const cores = navigator.hardwareConcurrency ?? 4;
+  const smallViewport = window.innerWidth < 768 || window.innerHeight < 640;
+  if ((mem !== undefined && mem <= 4) || cores <= 4 || smallViewport) {
+    return "low";
+  }
+  return "mid";
+}
+
+export function overlayProfileForTier(tier: DeviceTier): PerformanceProfile {
+  return TIER[tier].profile;
+}
+
 export function windParticleCountForTier(tier: DeviceTier): number {
-  if (tier === "low") return 1470;
-  if (tier === "high") return 2940;
-  return 2200;
+  return TIER[tier].particles;
 }
 
 export function windDprCapForTier(tier: DeviceTier): number {
-  if (tier === "low") return 1.25;
-  if (tier === "high") return 2;
-  return 1.5;
+  return TIER[tier].windDpr;
 }
 
 export function mapDprCapForTier(tier: DeviceTier): number {
-  if (tier === "low") return 1.5;
-  if (tier === "high") return 2;
-  return 1.75;
+  return TIER[tier].mapDpr;
 }
 
-export function liveWeatherProfileForTier(
-  tier: DeviceTier,
-): PerformanceProfile {
-  if (tier === "high") return "balanced";
-  if (tier === "low") return "performance";
-  return "performance";
-}
-
-export function reportPingProfileForTier(
-  tier: DeviceTier,
-): PerformanceProfile {
-  if (tier === "high") return "balanced";
-  if (tier === "low") return "performance";
-  return "performance";
-}
-
-export function windProfileForTier(tier: DeviceTier): PerformanceProfile {
-  return liveWeatherProfileForTier(tier);
-}
-
-export function applyDeviceTierToMap(
-  map: import("maplibre-gl").Map,
-  tier: DeviceTier,
-): void {
-  const raw = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+export function applyDeviceTierToMap(map: MLMap, tier: DeviceTier): void {
+  const raw = window.devicePixelRatio || 1;
   map.setPixelRatio(Math.min(mapDprCapForTier(tier), raw));
+}
+
+/** Apply a URL hash map mode unless touch devices must stay on 2D until opted in. */
+export function mapModeFromUrl(
+  urlMode: "2d" | "3d" | null | undefined,
+): "2d" | "3d" | undefined {
+  if (!urlMode) return undefined;
+  if (urlMode === "3d" && isCoarsePointerDevice()) return undefined;
+  return urlMode;
 }

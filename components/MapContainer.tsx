@@ -21,7 +21,6 @@ import {
 import {
   applyLiveWeatherDeviceTier,
   setLiveWeatherOverlayActive,
-  setLiveWeatherPerformanceProfile,
 } from "@/services/live-weather-overlay";
 import {
   setReportPingLoopActive,
@@ -31,8 +30,8 @@ import {
   applyDeviceTierToMap,
   detectDeviceTier,
   isCoarsePointerDevice,
-  liveWeatherProfileForTier,
-  reportPingProfileForTier,
+  mapModeFromUrl,
+  overlayProfileForTier,
 } from "@/lib/device-tier";
 import { DataLoadingPopup } from "@/components/ui/DataLoadingPopup";
 import { useTheme } from "@/components/providers/ThemeProvider";
@@ -41,16 +40,13 @@ export type MapMode = "2d" | "3d";
 
 export type MapContainerProps = {
   onMapReady?: (map: MLMap) => void;
-  /** Rendered inside the map frame (e.g. overlays anchored to the map area). */
   mapOverlay?: ReactNode;
-  /** When false (e.g. mobile Reports tab), map stays mounted but parent is hidden — resize when true again. */
   layoutActive?: boolean;
 };
 
-/**
- * Hosts a single MapLibre map that can be switched between 2D and 3D terrain
- * modes without tearing down the active map session.
- */
+const MOBILE_3D_CONFIRM =
+  "3D mode uses more GPU and battery on mobile. Enable immersive 3D view?";
+
 export const MapContainer = memo(function MapContainer({
   onMapReady,
   mapOverlay,
@@ -73,32 +69,26 @@ export const MapContainer = memo(function MapContainer({
     [onMapReady],
   );
 
-  // Read URL hash on the client after hydration so the initial SSR HTML
-  // matches (server has no access to window.location.hash).
-  const handleModeChange = useCallback((next: MapMode) => {
-    if (
-      next === "3d" &&
-      isCoarsePointerDevice() &&
-      !mobile3dUnlocked
-    ) {
-      const ok = window.confirm(
-        "3D mode uses more GPU and battery on mobile. Enable immersive 3D view?",
-      );
-      if (!ok) return;
-      setMobile3dUnlocked(true);
-    }
-    setMode(next);
-  }, [mobile3dUnlocked]);
+  const handleModeChange = useCallback(
+    (next: MapMode) => {
+      if (
+        next === "3d" &&
+        isCoarsePointerDevice() &&
+        !mobile3dUnlocked &&
+        !window.confirm(MOBILE_3D_CONFIRM)
+      ) {
+        return;
+      }
+      if (next === "3d") setMobile3dUnlocked(true);
+      setMode(next);
+    },
+    [mobile3dUnlocked],
+  );
 
   useEffect(() => {
     const initial = readUrlState();
-    if (initial.mode && initial.mode !== mode) {
-      if (initial.mode === "3d" && isCoarsePointerDevice()) {
-        /* Mobile stays 2D until the user confirms via MapModeToggle. */
-      } else {
-        setMode(initial.mode);
-      }
-    }
+    const urlMode = mapModeFromUrl(initial.mode);
+    if (urlMode && urlMode !== mode) setMode(urlMode);
     if (initial.theme) {
       if (initial.theme !== theme) setTheme(initial.theme);
     } else {
@@ -135,7 +125,6 @@ export const MapContainer = memo(function MapContainer({
           }, loadingRevealDelayMs);
           return;
         }
-
         if (revealTimer) {
           clearTimeout(revealTimer);
           revealTimer = null;
@@ -161,7 +150,6 @@ export const MapContainer = memo(function MapContainer({
       map.dragRotate.disable();
       return;
     }
-
     map.dragPan.enable();
     map.scrollZoom.enable();
     map.boxZoom.enable();
@@ -187,21 +175,20 @@ export const MapContainer = memo(function MapContainer({
     const tier = detectDeviceTier();
     applyDeviceTierToMap(map, tier);
     applyLiveWeatherDeviceTier(map, tier);
-    setLiveWeatherPerformanceProfile(map, liveWeatherProfileForTier(tier));
-    setReportPingPerformanceMode(map, reportPingProfileForTier(tier));
+    setReportPingPerformanceMode(map, overlayProfileForTier(tier));
     setSceneAnimationsEnabled(map, false);
   }, [map]);
 
   useEffect(() => {
     if (!map) return;
-    const syncOverlayLoops = () => {
+    const sync = () => {
       const active = layoutActive && !document.hidden;
       setLiveWeatherOverlayActive(map, active);
       setReportPingLoopActive(map, active);
     };
-    syncOverlayLoops();
-    document.addEventListener("visibilitychange", syncOverlayLoops);
-    return () => document.removeEventListener("visibilitychange", syncOverlayLoops);
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
   }, [map, layoutActive]);
 
   useEffect(() => {
@@ -210,10 +197,6 @@ export const MapContainer = memo(function MapContainer({
       map.resize();
       map.triggerRepaint();
     });
-    // Mobile: when the tab flips back to the map slot, the visible viewport
-    // may take an extra frame or two to settle (URL bar, keyboard dismiss).
-    // A short ladder of follow-up resizes guarantees the canvas matches the
-    // final container size without depending on ResizeObserver microtiming.
     const timeoutIds = [120, 360].map((delay) =>
       window.setTimeout(() => {
         map.resize();
@@ -235,7 +218,6 @@ export const MapContainer = memo(function MapContainer({
         blocking
         message={loadingMessage}
       />
-
       <div className="absolute z-10 flex flex-col gap-2 top-3 left-3 max-md:bottom-[4.25rem] max-md:top-auto max-md:left-3 max-md:right-auto">
         <MapModeToggle mode={mode} onChange={handleModeChange} />
         <div className="hidden md:flex flex-col gap-2">

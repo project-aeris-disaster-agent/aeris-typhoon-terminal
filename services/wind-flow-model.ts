@@ -160,6 +160,14 @@ export function findLpaSeeds(field: WindFieldPayload): LpaSeed[] {
   return picked;
 }
 
+/** Cached LPA list for a wind field; empty when pressure grid is missing. */
+export function lpaSeedsForField(
+  field: WindFieldPayload | null,
+): readonly LpaSeed[] {
+  if (!field?.p) return [];
+  return findLpaSeeds(field);
+}
+
 function lpaVmaxMs(seed: LpaSeed): number {
   return clamp(3.5 + seed.strengthHpa * 1.1, 3.5, 14);
 }

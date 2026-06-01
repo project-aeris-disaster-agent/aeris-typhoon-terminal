@@ -1,11 +1,12 @@
-/** @jest-environment node */
+/** @jest-environment jsdom */
 export {};
 
 import {
   windParticleCountForTier,
   windDprCapForTier,
   mapDprCapForTier,
-  liveWeatherProfileForTier,
+  overlayProfileForTier,
+  mapModeFromUrl,
 } from "./device-tier";
 
 describe("device-tier helpers", () => {
@@ -21,6 +22,13 @@ describe("device-tier helpers", () => {
   });
 
   it("uses performance profile on low tier", () => {
-    expect(liveWeatherProfileForTier("low")).toBe("performance");
+    expect(overlayProfileForTier("low")).toBe("performance");
+  });
+
+  it("drops 3d from URL on coarse-pointer devices", () => {
+    const matchMedia = jest.fn().mockReturnValue({ matches: true });
+    Object.defineProperty(window, "matchMedia", { value: matchMedia, configurable: true });
+    expect(mapModeFromUrl("3d")).toBeUndefined();
+    expect(mapModeFromUrl("2d")).toBe("2d");
   });
 });

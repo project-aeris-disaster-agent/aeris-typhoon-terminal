@@ -5,9 +5,8 @@ import type { WindFieldPayload } from "@/services/wind-field-types";
 import type { Typhoon } from "@/services/typhoon-tracks";
 import {
   combinedWindMs,
-  findLpaSeeds,
+  lpaSeedsForField,
   pointInPar,
-  type LpaSeed,
 } from "@/services/wind-flow-model";
 import { windDprCapForTier, type DeviceTier } from "@/lib/device-tier";
 import { DEFAULT_ZOOM, MAP_2D_MIN_ZOOM, MAX_ZOOM } from "@/config/region";
@@ -43,6 +42,18 @@ function windDrawParams(zoomRaw: number) {
 
 type Bounds = { west: number; south: number; east: number; north: number };
 export type WindPerformanceProfile = "quality" | "balanced" | "performance";
+
+const FRAME_MS: Record<WindPerformanceProfile, number> = {
+  quality: 1000 / 60,
+  balanced: 1000 / 36,
+  performance: 1000 / 24,
+};
+
+const DRAW_STRIDE: Record<WindPerformanceProfile, number> = {
+  quality: 1,
+  balanced: 2,
+  performance: 3,
+};
 
 function viewBounds(map: MLMap): Bounds {
   const b = map.getBounds();
@@ -173,13 +184,7 @@ export class WindParticleCanvas {
 
   setPerformanceProfile(profile: WindPerformanceProfile) {
     this.performanceProfile = profile;
-    if (profile === "quality") {
-      this.frameIntervalMs = 1000 / 60;
-    } else if (profile === "performance") {
-      this.frameIntervalMs = 1000 / 24;
-    } else {
-      this.frameIntervalMs = 1000 / 36;
-    }
+    this.frameIntervalMs = FRAME_MS[profile];
   }
 
   setDeviceTier(tier: DeviceTier) {
@@ -188,9 +193,10 @@ export class WindParticleCanvas {
   }
 
   private resize = () => {
-    const rawDpr =
-      typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-    const dpr = Math.min(windDprCapForTier(this.deviceTier), rawDpr);
+    const dpr = Math.min(
+      windDprCapForTier(this.deviceTier),
+      window.devicePixelRatio || 1,
+    );
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     this.canvas.width = Math.max(1, Math.floor(w * dpr));
@@ -224,21 +230,16 @@ export class WindParticleCanvas {
   start() {
     if (this.running || !this.visible || this.motionPaused) return;
     this.running = true;
-    const tick = () => {
+    const tick = (now: number) => {
       if (!this.running) return;
-      if (typeof document !== "undefined" && document.hidden) {
-        this.raf = requestAnimationFrame(tick);
-        return;
-      }
-      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      this.raf = requestAnimationFrame(tick);
+      if (document.hidden) return;
       if (this.lastFrameAt > 0 && now - this.lastFrameAt < this.frameIntervalMs) {
-        this.raf = requestAnimationFrame(tick);
         return;
       }
       this.lastFrameAt = now;
       this.step();
       this.draw();
-      this.raf = requestAnimationFrame(tick);
     };
     this.raf = requestAnimationFrame(tick);
   }
@@ -266,8 +267,7 @@ export class WindParticleCanvas {
     const focusBoost = this.typhoonFocus ? 1.12 : 1;
     const useScreenBoost = hasField || this.storms.length > 0;
     const screenBoost = useScreenBoost ? advectionScreenBoost(b, wPx, hPx) : 1;
-    const lpaSeeds: readonly LpaSeed[] =
-      this.field?.p != null ? findLpaSeeds(this.field) : [];
+    const lpaSeeds = lpaSeedsForField(this.field);
 
     for (let i = 0; i < this.n; i++) {
       let lng = this.particles[i * 2];
@@ -319,7 +319,7 @@ export class WindParticleCanvas {
     const h = this.container.clientHeight;
     const zoom = this.map.getZoom();
     const zp = windDrawParams(zoom);
-    const t = typeof performance !== "undefined" ? performance.now() * 0.001 : 0;
+    const t = performance.now() * 0.001;
 
     ctx.save();
     ctx.fillStyle = `rgba(5, 10, 16, ${zp.trailFade})`;
@@ -333,13 +333,7 @@ export class WindParticleCanvas {
     const dashPeriod = zp.dashSeg + zp.dashGap;
     ctx.setLineDash([zp.dashSeg, zp.dashGap]);
 
-    const perfStride =
-      this.performanceProfile === "quality"
-        ? 1
-        : this.performanceProfile === "performance"
-          ? 3
-          : 2;
-    const drawStep = Math.max(1, zp.drawStride * perfStride);
+    const drawStep = Math.max(1, zp.drawStride * DRAW_STRIDE[this.performanceProfile]);
     for (let i = 0; i < this.n; i++) {
       if (i % drawStep !== 0) continue;
 

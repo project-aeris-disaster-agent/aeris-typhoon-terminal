@@ -38,9 +38,8 @@ import type { WindFieldPayload } from "@/services/wind-field-types";
 import type { Typhoon } from "@/services/typhoon-tracks";
 import {
   detectDeviceTier,
-  liveWeatherProfileForTier,
+  overlayProfileForTier,
   windParticleCountForTier,
-  windProfileForTier,
   type DeviceTier,
 } from "@/lib/device-tier";
 
@@ -449,6 +448,12 @@ function stopTicker(map: MLMap) {
   s.tickId = null;
 }
 
+function resume2dOverlays(map: MLMap, s: State) {
+  if (s.mapMode !== "2d" || !s.overlayActive) return;
+  s.wind?.setVisible(true);
+  if (s.timeline.frames.length > 0) startTicker(map);
+}
+
 function isImagerySourceReady(
   map: MLMap,
   source: LiveImagerySource,
@@ -721,11 +726,12 @@ export function initLiveWeatherOverlay(map: MLMap) {
   if (store.has(map)) return;
 
   const tier = detectDeviceTier();
+  const profile = overlayProfileForTier(tier);
   const wind = new WindParticleCanvas(map, {
     particleCount: windParticleCountForTier(tier),
   });
   wind.setDeviceTier(tier);
-  wind.setPerformanceProfile(windProfileForTier(tier));
+  wind.setPerformanceProfile(profile);
   wind.setStormSystems([]);
   const state: State = {
     source: "radar",
@@ -743,7 +749,7 @@ export function initLiveWeatherOverlay(map: MLMap) {
     wind,
     mapMode: "2d",
     typhoonFocus: null,
-    performanceProfile: "balanced",
+    performanceProfile: profile,
     fallbackMessage: null,
     satelliteProvider: "gibs-fallback",
     satelliteRefreshTimer: null,
@@ -866,10 +872,9 @@ export function notifyLiveWeatherMapMode(map: MLMap, mode: "2d" | "3d") {
   if (mode === "3d") {
     stopTicker(map);
     s.wind?.setVisible(false);
-  } else if (s.overlayActive) {
-    s.wind?.setVisible(true);
-    if (s.timeline.frames.length > 0) startTicker(map);
+    return;
   }
+  resume2dOverlays(map, s);
 }
 
 /**
@@ -885,10 +890,7 @@ export function setLiveWeatherOverlayActive(map: MLMap | null, active: boolean) 
     s.wind?.setVisible(false);
     return;
   }
-  if (s.mapMode === "2d") {
-    s.wind?.setVisible(true);
-    if (s.timeline.frames.length > 0) startTicker(map);
-  }
+  resume2dOverlays(map, s);
 }
 
 export function applyLiveWeatherDeviceTier(
@@ -899,7 +901,7 @@ export function applyLiveWeatherDeviceTier(
   const s = store.get(map);
   if (!s?.wind) return;
   s.wind.setDeviceTier(tier);
-  setLiveWeatherPerformanceProfile(map, liveWeatherProfileForTier(tier));
+  setLiveWeatherPerformanceProfile(map, overlayProfileForTier(tier));
 }
 
 export function setLiveWeatherPerformanceProfile(

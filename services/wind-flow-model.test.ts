@@ -6,6 +6,7 @@ import {
   pointInPar,
   rankineWindMs,
   findLpaSeeds,
+  lpaSeedsForField,
 } from "./wind-flow-model";
 import type { WindFieldPayload } from "./wind-field-types";
 
@@ -52,6 +53,12 @@ describe("findLpaSeeds", () => {
     };
     const seeds = findLpaSeeds(field);
     expect(seeds.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("lpaSeedsForField", () => {
+  it("returns empty when field is null", () => {
+    expect(lpaSeedsForField(null)).toEqual([]);
   });
 });
 

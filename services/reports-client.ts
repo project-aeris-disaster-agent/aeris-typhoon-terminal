@@ -87,6 +87,12 @@ const reportPingLoopByMap = new WeakMap<MLMap, PingLoop>();
 export type ReportPingPerformanceProfile = "quality" | "balanced" | "performance";
 const reportPingProfileByMap = new WeakMap<MLMap, ReportPingPerformanceProfile>();
 
+const PING_TARGET_FPS: Record<ReportPingPerformanceProfile, number> = {
+  quality: 30,
+  balanced: 20,
+  performance: 12,
+};
+
 const PING_RED = "#ef4444";
 const PING_RED_CORE = "#dc2626";
 const PING_STROKE = "#fecaca";
@@ -104,14 +110,8 @@ function startReportPingLoop(map: MLMap) {
       return;
     }
     const profile = reportPingProfileByMap.get(map) ?? "balanced";
-    const targetFps =
-      profile === "quality" ? 30 : profile === "performance" ? 12 : 20;
-    const minFrameMs = 1000 / targetFps;
-    if (
-      typeof document !== "undefined" &&
-      document.hidden &&
-      now - lastPaintAt < 1000 / 6
-    ) {
+    const minFrameMs = 1000 / PING_TARGET_FPS[profile];
+    if (document.hidden && now - lastPaintAt < 1000 / 6) {
       requestAnimationFrame(tick);
       return;
     }

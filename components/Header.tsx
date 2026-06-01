@@ -73,7 +73,7 @@ export const Header = memo(function Header({
   const online = useConnectionStatus();
   const { theme, toggleTheme } = useTheme();
   const { role, authDisabled, userId } = useAerisRole();
-  const [time, setTime] = useState<string>("");
+  const [time, setTime] = useState(formatManilaClock);
   const showAuthControls = !authDisabled && Boolean(userId);
 
   const signOut = async () => {

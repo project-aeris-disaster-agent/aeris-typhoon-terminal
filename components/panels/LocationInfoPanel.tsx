@@ -780,12 +780,7 @@ export function LocationInfoPanel({
               items={nearbyFacilities}
               rowHeight={44}
               className="max-h-52 -mx-1 px-1"
-              render={(nf, i) => (
-                <FacilityRow
-                  key={`${nf.feature.properties.category}-${i}`}
-                  item={nf}
-                />
-              )}
+              render={(nf) => <FacilityRow item={nf} />}
             />
           )}
         </CollapsibleSection>
