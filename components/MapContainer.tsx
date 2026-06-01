@@ -1,12 +1,39 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import {
+  memo,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { Map2D } from "./Map2D";
 import { MapModeToggle } from "./MapModeToggle";
 import { LayerLegend, QuickViewsPanel } from "./LayerLegend";
 import { readUrlState, writeUrlState } from "@/services/url-state";
-import { setMapSceneTheme, subscribeSceneLoading } from "@/services/map-scene";
+import {
+  setMapSceneTheme,
+  setSceneAnimationsEnabled,
+  subscribeSceneLoading,
+} from "@/services/map-scene";
+import {
+  applyLiveWeatherDeviceTier,
+  setLiveWeatherOverlayActive,
+  setLiveWeatherPerformanceProfile,
+} from "@/services/live-weather-overlay";
+import {
+  setReportPingLoopActive,
+  setReportPingPerformanceMode,
+} from "@/services/reports-client";
+import {
+  applyDeviceTierToMap,
+  detectDeviceTier,
+  isCoarsePointerDevice,
+  liveWeatherProfileForTier,
+  reportPingProfileForTier,
+} from "@/lib/device-tier";
 import { DataLoadingPopup } from "@/components/ui/DataLoadingPopup";
 import { useTheme } from "@/components/providers/ThemeProvider";
 
@@ -24,7 +51,7 @@ export type MapContainerProps = {
  * Hosts a single MapLibre map that can be switched between 2D and 3D terrain
  * modes without tearing down the active map session.
  */
-export function MapContainer({
+export const MapContainer = memo(function MapContainer({
   onMapReady,
   mapOverlay,
   layoutActive = true,
@@ -32,6 +59,7 @@ export function MapContainer({
   const { theme, setTheme } = useTheme();
   const themeUrlSyncedRef = useRef(false);
   const [mode, setMode] = useState<MapMode>("2d");
+  const [mobile3dUnlocked, setMobile3dUnlocked] = useState(false);
   const [map, setMap] = useState<MLMap | null>(null);
   const [showLoadingPopup, setShowLoadingPopup] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("Loading data, please wait...");
@@ -47,9 +75,30 @@ export function MapContainer({
 
   // Read URL hash on the client after hydration so the initial SSR HTML
   // matches (server has no access to window.location.hash).
+  const handleModeChange = useCallback((next: MapMode) => {
+    if (
+      next === "3d" &&
+      isCoarsePointerDevice() &&
+      !mobile3dUnlocked
+    ) {
+      const ok = window.confirm(
+        "3D mode uses more GPU and battery on mobile. Enable immersive 3D view?",
+      );
+      if (!ok) return;
+      setMobile3dUnlocked(true);
+    }
+    setMode(next);
+  }, [mobile3dUnlocked]);
+
   useEffect(() => {
     const initial = readUrlState();
-    if (initial.mode && initial.mode !== mode) setMode(initial.mode);
+    if (initial.mode && initial.mode !== mode) {
+      if (initial.mode === "3d" && isCoarsePointerDevice()) {
+        /* Mobile stays 2D until the user confirms via MapModeToggle. */
+      } else {
+        setMode(initial.mode);
+      }
+    }
     if (initial.theme) {
       if (initial.theme !== theme) setTheme(initial.theme);
     } else {
@@ -134,6 +183,28 @@ export function MapContainer({
   }, [map, theme]);
 
   useEffect(() => {
+    if (!map) return;
+    const tier = detectDeviceTier();
+    applyDeviceTierToMap(map, tier);
+    applyLiveWeatherDeviceTier(map, tier);
+    setLiveWeatherPerformanceProfile(map, liveWeatherProfileForTier(tier));
+    setReportPingPerformanceMode(map, reportPingProfileForTier(tier));
+    setSceneAnimationsEnabled(map, false);
+  }, [map]);
+
+  useEffect(() => {
+    if (!map) return;
+    const syncOverlayLoops = () => {
+      const active = layoutActive && !document.hidden;
+      setLiveWeatherOverlayActive(map, active);
+      setReportPingLoopActive(map, active);
+    };
+    syncOverlayLoops();
+    document.addEventListener("visibilitychange", syncOverlayLoops);
+    return () => document.removeEventListener("visibilitychange", syncOverlayLoops);
+  }, [map, layoutActive]);
+
+  useEffect(() => {
     if (!map || !layoutActive) return;
     const rafId = requestAnimationFrame(() => {
       map.resize();
@@ -166,7 +237,7 @@ export function MapContainer({
       />
 
       <div className="absolute z-10 flex flex-col gap-2 top-3 left-3 max-md:bottom-[4.25rem] max-md:top-auto max-md:left-3 max-md:right-auto">
-        <MapModeToggle mode={mode} onChange={setMode} />
+        <MapModeToggle mode={mode} onChange={handleModeChange} />
         <div className="hidden md:flex flex-col gap-2">
           <QuickViewsPanel map={map} mode={mode} />
           <LayerLegend map={map} mode={mode} />
@@ -174,4 +245,4 @@ export function MapContainer({
       </div>
     </div>
   );
-}
+});

@@ -26,7 +26,6 @@ import {
   setActiveScenePreset,
   setFloodImpactHighlight,
   setFloodVisualizationSettings,
-  setSceneAnimationsEnabled,
   setSceneLayerVisibility,
   setTerrainExaggeration,
   type ScenePresetId,
@@ -38,9 +37,6 @@ import {
   renderWaterLevelsOnMap,
   setWaterLevelsVisibility,
 } from "@/services/water-levels";
-
-import { setLiveWeatherPerformanceProfile } from "@/services/live-weather-overlay";
-import { setReportPingPerformanceMode } from "@/services/reports-client";
 
 export function LayerLegend({
   map,
@@ -232,17 +228,6 @@ export function LayerLegend({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, floodVizSettings]);
-
-  useEffect(() => {
-    if (!map) return;
-    setSceneAnimationsEnabled(map, false);
-  }, [map]);
-
-  useEffect(() => {
-    if (!map) return;
-    setLiveWeatherPerformanceProfile(map, "performance");
-    setReportPingPerformanceMode(map, "performance");
-  }, [map]);
 
   useEffect(() => {
     const onSummary = (event: Event) => {
