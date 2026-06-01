@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { productionAuthMisconfigured } from "@/lib/auth-config";
 
 const PUBLIC_PATHS = [
   "/login",
@@ -15,6 +16,19 @@ function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
+}
+
+function misconfiguredResponse(pathname: string) {
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      { error: "Dashboard auth is not configured for production." },
+      { status: 503 },
+    );
+  }
+  return new NextResponse("Dashboard auth is not configured for production.", {
+    status: 503,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
 }
 
 export async function middleware(request: NextRequest) {
@@ -38,11 +52,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
-    return NextResponse.next();
+  if (productionAuthMisconfigured()) {
+    return misconfiguredResponse(pathname);
   }
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
   let response = NextResponse.next({
     request: { headers: request.headers },

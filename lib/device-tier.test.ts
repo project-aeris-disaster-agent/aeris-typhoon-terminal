@@ -4,12 +4,9 @@ export {};
 import {
   applyDeviceTierToMap,
   detectDeviceTier,
+  DEVICE_TIER,
   isCoarsePointerDevice,
-  mapDprCapForTier,
   mapModeFromUrl,
-  overlayProfileForTier,
-  windDprCapForTier,
-  windParticleCountForTier,
 } from "./device-tier";
 import { installDeviceSignals } from "@/test/helpers/device-env";
 import { createMapStub } from "@/test/helpers/map-stub";
@@ -19,7 +16,7 @@ describe("device-tier", () => {
     jest.restoreAllMocks();
   });
 
-  describe("tier table accessors", () => {
+  describe("DEVICE_TIER", () => {
     it.each([
       ["low", 1470, 1.25, 1.5, "performance"],
       ["mid", 2200, 1.5, 1.75, "performance"],
@@ -27,10 +24,10 @@ describe("device-tier", () => {
     ] as const)(
       "%s tier exposes expected particles, DPR caps, and profile",
       (tier, particles, windDpr, mapDpr, profile) => {
-        expect(windParticleCountForTier(tier)).toBe(particles);
-        expect(windDprCapForTier(tier)).toBe(windDpr);
-        expect(mapDprCapForTier(tier)).toBe(mapDpr);
-        expect(overlayProfileForTier(tier)).toBe(profile);
+        expect(DEVICE_TIER[tier].particles).toBe(particles);
+        expect(DEVICE_TIER[tier].windDpr).toBe(windDpr);
+        expect(DEVICE_TIER[tier].mapDpr).toBe(mapDpr);
+        expect(DEVICE_TIER[tier].profile).toBe(profile);
       },
     );
   });
@@ -81,6 +78,16 @@ describe("device-tier", () => {
     it("treats missing deviceMemory on fine-pointer as high when cores are 8+", () => {
       installDeviceSignals({ coarse: false, cores: 8 });
       expect(detectDeviceTier()).toBe("high");
+    });
+
+    it("returns low when reduced motion is requested", () => {
+      installDeviceSignals({
+        coarse: false,
+        reducedMotion: true,
+        cores: 16,
+        deviceMemory: 16,
+      });
+      expect(detectDeviceTier()).toBe("low");
     });
   });
 

@@ -1,14 +1,9 @@
-/**
- * Coarse device capability tier for map / wind / overlay quality knobs.
- * Client-only; defaults to mid when `window` is unavailable.
- */
-
 import type { Map as MLMap } from "maplibre-gl";
 
 export type PerformanceProfile = "quality" | "balanced" | "performance";
 export type DeviceTier = "low" | "mid" | "high";
 
-const TIER = {
+export const DEVICE_TIER = {
   low: {
     particles: 1470,
     windDpr: 1.25,
@@ -44,6 +39,7 @@ export function isCoarsePointerDevice(): boolean {
 
 export function detectDeviceTier(): DeviceTier {
   if (typeof window === "undefined") return "mid";
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return "low";
 
   if (!isCoarsePointerDevice()) {
     const cores = navigator.hardwareConcurrency ?? 4;
@@ -61,28 +57,11 @@ export function detectDeviceTier(): DeviceTier {
   return "mid";
 }
 
-export function overlayProfileForTier(tier: DeviceTier): PerformanceProfile {
-  return TIER[tier].profile;
-}
-
-export function windParticleCountForTier(tier: DeviceTier): number {
-  return TIER[tier].particles;
-}
-
-export function windDprCapForTier(tier: DeviceTier): number {
-  return TIER[tier].windDpr;
-}
-
-export function mapDprCapForTier(tier: DeviceTier): number {
-  return TIER[tier].mapDpr;
-}
-
 export function applyDeviceTierToMap(map: MLMap, tier: DeviceTier): void {
   const raw = window.devicePixelRatio || 1;
-  map.setPixelRatio(Math.min(mapDprCapForTier(tier), raw));
+  map.setPixelRatio(Math.min(DEVICE_TIER[tier].mapDpr, raw));
 }
 
-/** Apply a URL hash map mode unless touch devices must stay on 2D until opted in. */
 export function mapModeFromUrl(
   urlMode: "2d" | "3d" | null | undefined,
 ): "2d" | "3d" | undefined {

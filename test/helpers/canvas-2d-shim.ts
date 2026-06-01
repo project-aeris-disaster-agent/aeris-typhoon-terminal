@@ -1,12 +1,35 @@
 type PixelBuffer = { data: Uint8ClampedArray; width: number; height: number };
 
-/**
- * jsdom does not implement Canvas 2D. This installs a minimal 2D context so
- * real overlay code can run in unit tests (browser API shim, not a mock of app code).
- */
+export type Canvas2dShimContext = {
+  __strokeCount: number;
+  setTransform: jest.Mock;
+  save: jest.Mock;
+  restore: jest.Mock;
+  fillRect: jest.Mock;
+  stroke: jest.Mock;
+  beginPath: jest.Mock;
+  moveTo: jest.Mock;
+  lineTo: jest.Mock;
+  setLineDash: jest.Mock;
+  lineDashOffset: number;
+  globalCompositeOperation: string;
+  fillStyle: string;
+  strokeStyle: string;
+  lineWidth: number;
+  lineCap: string;
+  lineJoin: string;
+  getImageData: (
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) => { data: Uint8ClampedArray; width: number; height: number };
+};
+
+// jsdom has no Canvas 2D API.
 export function installCanvas2dShim() {
   const backing = new Map<HTMLCanvasElement, PixelBuffer>();
-  const contexts = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D>();
+  const contexts = new WeakMap<HTMLCanvasElement, Canvas2dShimContext>();
 
   function bufferFor(canvas: HTMLCanvasElement): PixelBuffer {
     let image = backing.get(canvas);
@@ -19,22 +42,28 @@ export function installCanvas2dShim() {
     return image;
   }
 
-  HTMLCanvasElement.prototype.getContext = function getContext(type: string) {
-    if (type !== "2d") return null;
+  const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+
+  HTMLCanvasElement.prototype.getContext = function getContext(
+    type: string,
+    ..._args: unknown[]
+  ) {
+    if (type !== "2d") {
+      return nativeGetContext.call(this, type);
+    }
     const canvas = this as HTMLCanvasElement;
     const cached = contexts.get(canvas);
-    if (cached) return cached;
+    if (cached) return cached as unknown as CanvasRenderingContext2D;
     const image = bufferFor(canvas);
-    const ctx = {
+    const ctx: Canvas2dShimContext = {
+      __strokeCount: 0,
       setTransform: jest.fn(),
       save: jest.fn(),
       restore: jest.fn(),
-      fillRect: jest.fn(() => {
-        for (let i = 3; i < image.data.length; i += 4) {
-          image.data[i] = 40;
-        }
+      fillRect: jest.fn(),
+      stroke: jest.fn(function stroke(this: Canvas2dShimContext) {
+        this.__strokeCount += 1;
       }),
-      stroke: jest.fn(),
       beginPath: jest.fn(),
       moveTo: jest.fn(),
       lineTo: jest.fn(),
@@ -52,8 +81,7 @@ export function installCanvas2dShim() {
         height: h,
       }),
     };
-    const typed = ctx as unknown as CanvasRenderingContext2D;
-    contexts.set(canvas, typed);
-    return typed;
+    contexts.set(canvas, ctx);
+    return ctx as unknown as CanvasRenderingContext2D;
   };
 }

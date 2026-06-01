@@ -113,7 +113,7 @@ export const Header = memo(function Header({
       <div className="flex items-center gap-3">
         <div className="relative z-10 flex items-center gap-2 min-w-0">
           <Image
-            src="/assets/AERIS Glyph@5x.png"
+            src="/assets/aeris-glyph.png"
             alt="AERIS"
             className="h-7 w-auto shrink-0 object-contain object-left"
             width={1065}

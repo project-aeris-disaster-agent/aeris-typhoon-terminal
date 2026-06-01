@@ -14,7 +14,7 @@ import { ensureBasemapOverlays } from "@/services/map-basemap";
 import { reattachMapOverlaysAfterStyleChange } from "@/services/map-style-reattach";
 import type { MapMode } from "./MapContainer";
 import { applyMapViewMode } from "@/services/map-scene";
-import { detectDeviceTier, mapDprCapForTier } from "@/lib/device-tier";
+import { DEVICE_TIER, detectDeviceTier } from "@/lib/device-tier";
 
 export type Map2DProps = {
   mode: MapMode;
@@ -117,7 +117,7 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
 
     const tier = detectDeviceTier();
     map.setPixelRatio(
-      Math.min(window.devicePixelRatio || 1, mapDprCapForTier(tier)),
+      Math.min(window.devicePixelRatio || 1, DEVICE_TIER[tier].mapDpr),
     );
 
     map.addControl(

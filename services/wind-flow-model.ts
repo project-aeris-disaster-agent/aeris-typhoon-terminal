@@ -160,7 +160,6 @@ export function findLpaSeeds(field: WindFieldPayload): LpaSeed[] {
   return picked;
 }
 
-/** Cached LPA list for a wind field; empty when pressure grid is missing. */
 export function lpaSeedsForField(
   field: WindFieldPayload | null,
 ): readonly LpaSeed[] {
@@ -184,10 +183,6 @@ function nearAnyStorm(lng: number, lat: number, storms: readonly Typhoon[]): boo
   return false;
 }
 
-/**
- * Large-scale wind (m/s) from the forecast grid, plus storm + LPA vortices.
- * Storms use JTWC position + reported wind; LPAs from MSL pressure minima.
- */
 export function combinedWindMs(
   lng: number,
   lat: number,

@@ -1,5 +1,6 @@
 export type DeviceSignals = {
   coarse?: boolean;
+  reducedMotion?: boolean;
   cores?: number;
   deviceMemory?: number;
   innerWidth?: number;
@@ -9,9 +10,14 @@ export type DeviceSignals = {
 
 export function installDeviceSignals(signals: DeviceSignals) {
   const coarse = signals.coarse ?? false;
+  const reducedMotion = signals.reducedMotion ?? false;
   Object.defineProperty(window, "matchMedia", {
     value: jest.fn((query: string) => ({
-      matches: query.includes("coarse") ? coarse : false,
+      matches: query.includes("coarse")
+        ? coarse
+        : query.includes("prefers-reduced-motion")
+          ? reducedMotion
+          : false,
       media: query,
     })),
     configurable: true,

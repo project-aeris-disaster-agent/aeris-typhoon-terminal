@@ -13,20 +13,14 @@ export type PanelDef = {
   defaultOpen: boolean;
 };
 
-export const PANELS: PanelDef[] = [
+/** Ops sidebar panels (live weather is anchored on the map HUD). */
+export const SIDEBAR_PANELS: PanelDef[] = [
   {
     id: "typhoon",
     label: "Typhoon Tracker",
     hotkey: "1",
     description: "Active storm track, forecast cone, PAR, landfall ETA.",
     defaultOpen: true,
-  },
-  {
-    id: "satellite",
-    label: "Live weather",
-    hotkey: "2",
-    description: "Always-on radar and Himawari loops plus wind-field motion.",
-    defaultOpen: false,
   },
   {
     id: "forecast",
@@ -49,4 +43,19 @@ export const PANELS: PanelDef[] = [
     description: "Philippine news RSS aggregation.",
     defaultOpen: false,
   },
+];
+
+export const LIVE_WEATHER_PANEL: PanelDef = {
+  id: "satellite",
+  label: "Live weather",
+  hotkey: "2",
+  description: "Always-on radar and Himawari loops plus wind-field motion.",
+  defaultOpen: false,
+};
+
+/** All panel definitions (sidebar + map HUD), in display order. */
+export const PANELS: PanelDef[] = [
+  SIDEBAR_PANELS[0],
+  LIVE_WEATHER_PANEL,
+  ...SIDEBAR_PANELS.slice(1),
 ];

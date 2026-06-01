@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import type { Map as MLMap } from "maplibre-gl";
 import { clsx } from "clsx";
-import { PANELS, type PanelId } from "@/config/panels";
+import { PANELS, SIDEBAR_PANELS, type PanelId } from "@/config/panels";
 import { LiveWeatherFrameIndicator } from "@/components/LiveWeatherFrameHud";
 
 // On mobile, the sidebar becomes the "Reports" tab. We curate it down to the
@@ -29,13 +29,6 @@ const TyphoonTrackerPanel = dynamic(
   () =>
     import("./panels/TyphoonTrackerPanel").then((m) => ({
       default: m.TyphoonTrackerPanel,
-    })),
-  { ssr: false, loading: PanelSkeleton },
-);
-const SatelliteRadarPanel = dynamic(
-  () =>
-    import("./panels/SatelliteRadarPanel").then((m) => ({
-      default: m.SatelliteRadarPanel,
     })),
   { ssr: false, loading: PanelSkeleton },
 );
@@ -83,7 +76,7 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
   const [open, setOpen] = useState<Record<PanelId, boolean>>(
     () =>
       Object.fromEntries(
-        PANELS.map((p) => [p.id, p.defaultOpen]),
+        SIDEBAR_PANELS.map((p) => [p.id, p.defaultOpen]),
       ) as Record<PanelId, boolean>,
   );
   const [collapsed, setCollapsed] = useState(false);
@@ -95,7 +88,7 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const panel = PANELS.find((p) => p.hotkey === e.key);
+      const panel = SIDEBAR_PANELS.find((p) => p.hotkey === e.key);
       if (panel) {
         e.preventDefault();
         togglePanel(panel.id);
@@ -184,7 +177,7 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
       */}
       {collapsed && (
         <div className="flex flex-col items-center py-2 gap-1">
-          {PANELS.map((p) => (
+          {SIDEBAR_PANELS.map((p) => (
             <button
               key={p.id}
               type="button"
@@ -220,7 +213,7 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
         )}
         aria-hidden={collapsed}
       >
-        {PANELS.map((p) => (
+        {SIDEBAR_PANELS.map((p) => (
           <PanelWrapper
             key={p.id}
             id={p.id}
@@ -267,9 +260,6 @@ function PanelWrapper({
           </span>
           <span>{label}</span>
         </span>
-        {id === "satellite" && (
-          <LiveWeatherFrameIndicator variant="panel" />
-        )}
         <span className="ml-auto shrink-0 text-[10px]">{open ? "−" : "+"}</span>
       </button>
       {open && (
@@ -285,8 +275,6 @@ function PanelBody({ id, map }: { id: PanelId; map: MLMap | null }) {
   switch (id) {
     case "typhoon":
       return <TyphoonTrackerPanel map={map} />;
-    case "satellite":
-      return <SatelliteRadarPanel map={map} />;
     case "forecast":
       return <ForecastPanel />;
     case "alerts":

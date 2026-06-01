@@ -36,33 +36,18 @@ import { WindParticleCanvas } from "@/services/wind-particles";
 import type { WindPerformanceProfile } from "@/services/wind-particles";
 import type { WindFieldPayload } from "@/services/wind-field-types";
 import type { Typhoon } from "@/services/typhoon-tracks";
-import {
-  detectDeviceTier,
-  overlayProfileForTier,
-  windParticleCountForTier,
-  type DeviceTier,
-} from "@/lib/device-tier";
+import { DEVICE_TIER, detectDeviceTier, type DeviceTier } from "@/lib/device-tier";
 
 export type LiveWeatherPerformanceProfile = WindPerformanceProfile;
 
-/** Dispatched when the user focuses a storm card (or clears focus). */
 export const TYPHOON_FOCUS_EVENT = "aeris:typhoon-focus" as const;
 export type TyphoonFocusDetail = { storm: Typhoon | null };
 
-/** Active PAR storms from the typhoon panel — drives vortex wind overlay. */
 export const PAR_STORMS_EVENT = "aeris:par-storms" as const;
 export type ParStormsDetail = { storms: Typhoon[] };
 
-/**
- * RainViewer publishes a new satellite frame every ~10 minutes. We refresh the
- * catalog on a fixed cadence (60s) instead of waiting for the animation loop
- * to wrap so users staring at the map see new scans promptly. The 60s value
- * keeps us comfortably below RainViewer's edge cache TTL.
- */
 const SATELLITE_REFRESH_INTERVAL_MS = 60_000;
-/** Same idea for radar — pull a fresh catalog every minute. */
 const RADAR_REFRESH_INTERVAL_MS = 60_000;
-/** Imagery loop speed-up while a storm card is focused (typhoon broadcast feel). */
 const TYPHOON_FRAME_FACTOR = 0.58;
 const WIND_REFRESH_MS = 900_000;
 
@@ -71,14 +56,11 @@ type CrossfadePhase = {
   toSlot: ImageryBufferSlot;
   startedAtMs: number;
   durationMs: number;
-  /** `true` when this crossfade is the loop wrap (newest -> oldest). */
   isWrap: boolean;
 };
 
 type PreloadState = {
-  /** Timeline index whose tiles are currently being warmed in the inactive slot. */
   index: number;
-  /** Slot the preload was applied to (always the inactive slot at preload time). */
   slot: ImageryBufferSlot;
   startedAtMs: number;
 };
@@ -92,10 +74,8 @@ type State = {
   activeSlot: ImageryBufferSlot;
   crossfade: CrossfadePhase | null;
   preload: PreloadState | null;
-  /** Tint applied to the active slot for the current `nowcast` frame, if any. */
   activeNowcastTint: boolean;
   nextAdvanceAtMs: number;
-  /** `requestAnimationFrame` id, or null when stopped. */
   tickId: number | null;
   windTimer: ReturnType<typeof setInterval> | null;
   wind: WindParticleCanvas | null;
@@ -106,7 +86,6 @@ type State = {
   satelliteProvider: SatelliteFrameProvider;
   satelliteRefreshTimer: ReturnType<typeof setInterval> | null;
   radarRefreshTimer: ReturnType<typeof setInterval> | null;
-  /** When false, ticker + wind are paused (mobile tab / hidden document). */
   overlayActive: boolean;
 };
 
@@ -117,9 +96,7 @@ export type LiveWeatherFrameDetail = {
   count: number;
   time: string;
   source: LiveImagerySource;
-  /** `"observed"` for past scans, `"nowcast"` for model forecast frames. */
   kind: FrameKind;
-  /** Provider attribution for the active frame (e.g. `"RainViewer Infrared"`). */
   attribution: string;
 };
 
@@ -137,10 +114,6 @@ function currentFrame(st: State): RadarFrame | null {
   return st.timeline.frames[st.timeline.index] ?? null;
 }
 
-/**
- * Dev-only structured log for the live weather animation. Useful for verifying
- * that preloads land before crossfades start and that wrap waits are short.
- */
 function devLog(tag: string, payload: Record<string, unknown>) {
   if (process.env.NODE_ENV === "production") return;
   // eslint-disable-next-line no-console
@@ -192,12 +165,6 @@ function crossfadeDurationMs(st: State, isWrap = false): number {
   );
 }
 
-/**
- * Hold duration after the frame at `index` settles. The newest observed frame
- * (the one immediately before the wrap back to index 0) gets a longer hold so
- * the loop end reads as broadcast-style "pause on latest scan" instead of an
- * abrupt cut.
- */
 function holdAfterIndexMs(st: State, index: number): number {
   const len = st.timeline.frames.length;
   const isLastBeforeWrap = len > 1 && index === len - 1;
@@ -218,11 +185,6 @@ function holdAfterIndexMs(st: State, index: number): number {
 
 type SatelliteRefreshOptions = {
   restartTicker?: boolean;
-  /**
-   * When `true`, only refresh the in-memory frame catalog; do not rebuild the
-   * MapLibre source/layer. Used for the periodic background refresh so we
-   * don't restart the animation every minute.
-   */
   preserveAnimation?: boolean;
 };
 
@@ -246,7 +208,7 @@ async function refreshSatelliteFrames(
     cur.fallbackMessage =
       "Primary satellite feed unavailable; showing last-known-good satellite frame cache.";
     emitStatus(cur, cur.fallbackMessage);
-    if (options?.restartTicker && cur.mapMode === "2d") {
+    if (options?.restartTicker) {
       startTicker(map);
     }
     return;
@@ -255,11 +217,6 @@ async function refreshSatelliteFrames(
   cur.satelliteProvider = result.provider;
 
   if (options?.preserveAnimation && hadFrames && !providerChanged) {
-    /**
-     * Background refresh path: extend the existing timeline with any new
-     * frames RainViewer published, but keep the user's current playback
-     * position so the animation does not visibly stutter.
-     */
     const playheadTime = currentFrame(cur)?.time ?? null;
     const existingTimes = new Set(cur.timeline.frames.map((f) => f.time));
     const additions = result.frames.filter((f) => !existingTimes.has(f.time));
@@ -291,7 +248,7 @@ async function refreshSatelliteFrames(
         : "Primary satellite feed unavailable; started with GIBS fallback."
       : null;
   emitStatus(cur, cur.fallbackMessage);
-  if (options?.restartTicker && cur.mapMode === "2d") {
+  if (options?.restartTicker) {
     startTicker(map);
   }
 }
@@ -340,7 +297,7 @@ async function refreshRadarFrames(
   cur.activeNowcastTint = false;
   cur.nextAdvanceAtMs = performance.now() + frameHoldMs(cur);
   emitStatus(cur, null);
-  if (cur.mapMode === "2d") startTicker(map);
+  startTicker(map);
 }
 
 function startSatelliteRefreshTimer(
@@ -376,6 +333,22 @@ function stopRadarRefreshTimer(map: MLMap) {
   if (!st || !st.radarRefreshTimer) return;
   clearInterval(st.radarRefreshTimer);
   st.radarRefreshTimer = null;
+}
+
+function syncImageryRefreshTimers(map: MLMap) {
+  const st = store.get(map);
+  if (!st || !st.overlayActive) {
+    stopSatelliteRefreshTimer(map);
+    stopRadarRefreshTimer(map);
+    return;
+  }
+  if (st.source === "radar") {
+    stopSatelliteRefreshTimer(map);
+    startRadarRefreshTimer(map);
+    return;
+  }
+  stopRadarRefreshTimer(map);
+  startSatelliteRefreshTimer(map, st.source);
 }
 
 function frameAttribution(st: State): string {
@@ -448,10 +421,12 @@ function stopTicker(map: MLMap) {
   s.tickId = null;
 }
 
-function resume2dOverlays(map: MLMap, s: State) {
-  if (s.mapMode !== "2d" || !s.overlayActive) return;
-  s.wind?.setVisible(true);
-  if (s.timeline.frames.length > 0) startTicker(map);
+function shouldRunWeatherTicker(s: State): boolean {
+  return (
+    s.mapMode === "2d" &&
+    s.overlayActive &&
+    s.timeline.frames.length > 0
+  );
 }
 
 function isImagerySourceReady(
@@ -466,7 +441,7 @@ function isImagerySourceReady(
   try {
     return typed.isSourceLoaded(sourceId);
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -520,11 +495,6 @@ function updateCrossfadeOpacities(map: MLMap, st: State, t: number) {
   setImageryBufferOpacity(map, st.source, st.crossfade.toSlot, eased);
 }
 
-/**
- * Eagerly load the next frame's tiles into the inactive buffer slot during
- * the hold so the upcoming crossfade does not stall on `waitForImagerySlot`.
- * Called once per upcoming advance (idempotent via `st.preload`).
- */
 function preloadNextFrame(map: MLMap, st: State) {
   if (st.timeline.frames.length === 0) return;
   const nextIdx = advanceTimelineIndex(st);
@@ -533,7 +503,6 @@ function preloadNextFrame(map: MLMap, st: State) {
   const nextFrame = st.timeline.frames[nextIdx];
   if (!nextFrame) return;
   applyFrameToSlot(map, st, inactiveSlot, nextFrame);
-  // Inactive slot must remain invisible until the crossfade begins.
   setImageryBufferOpacity(map, st.source, inactiveSlot, 0);
   st.preload = {
     index: nextIdx,
@@ -565,7 +534,6 @@ async function beginCrossfade(
   const cur = store.get(map);
   if (!cur || cur.mapMode !== "2d") return;
   raiseImageryBufferSlot(map, cur.source, inactiveSlot);
-  // Apply / clear tint on the incoming slot to match the next frame's kind.
   const nextIsNowcast = nextFrame.kind === "nowcast";
   setImageryBufferNowcastTint(map, cur.source, inactiveSlot, nextIsNowcast);
   const durationMs = crossfadeDurationMs(cur, isWrap);
@@ -595,7 +563,7 @@ function advanceTimelineIndex(st: State): number {
 
 function startTicker(map: MLMap) {
   const s = store.get(map);
-  if (!s || s.mapMode !== "2d" || s.timeline.frames.length === 0) return;
+  if (!s || !shouldRunWeatherTicker(s)) return;
   stopTicker(map);
 
   emitFrame(map, s);
@@ -603,7 +571,6 @@ function startTicker(map: MLMap) {
   s.preload = null;
   s.nextAdvanceAtMs = performance.now() + holdAfterIndexMs(s, s.timeline.index);
   resetImageryBufferOpacities(map, s.source, s.activeSlot);
-  // Sync nowcast tint to the initial active frame.
   const initialFrame = currentFrame(s);
   const initialIsNowcast = initialFrame?.kind === "nowcast";
   setImageryBufferNowcastTint(map, s.source, s.activeSlot, initialIsNowcast);
@@ -611,8 +578,13 @@ function startTicker(map: MLMap) {
 
   const loop = () => {
     const st = store.get(map);
-    if (!st || st.mapMode !== "2d" || st.timeline.frames.length === 0) {
+    if (!st || !shouldRunWeatherTicker(st)) {
       if (st) st.tickId = null;
+      return;
+    }
+
+    if (typeof document !== "undefined" && document.hidden) {
+      st.tickId = requestAnimationFrame(loop);
       return;
     }
 
@@ -623,8 +595,6 @@ function startTicker(map: MLMap) {
       const t = Math.min(1, elapsed / st.crossfade.durationMs);
       updateCrossfadeOpacities(map, st, t);
       if (t >= 1) {
-        // Drop tint from the slot we just faded away from so it does not
-        // bleed onto the next frame that lands there.
         setImageryBufferNowcastTint(
           map,
           st.source,
@@ -653,7 +623,6 @@ function startTicker(map: MLMap) {
         }
       }
     } else {
-      // Mid-hold preload: warm tiles for the next frame before the advance.
       if (!st.preload && now >= st.nextAdvanceAtMs - WEATHER_FRAME_PRELOAD_LEAD_MS) {
         try {
           preloadNextFrame(map, st);
@@ -667,12 +636,6 @@ function startTicker(map: MLMap) {
         const nextIdx = advanceTimelineIndex(st);
         const isWrap = nextIdx === 0 && prevIdx !== 0;
         if (isWrap && st.source !== "radar" && st.satelliteProvider === "gibs-fallback") {
-          /**
-           * Regenerate the synthetic GIBS timeline on each loop wrap so the
-           * animation stays anchored to the rolling publish-lag window even
-           * if the user keeps the panel open for hours. The preload may now
-           * point at a stale index — invalidate it so beginCrossfade reloads.
-           */
           st.timeline.frames = gibsAnimationFrames();
           st.preload = null;
         }
@@ -687,7 +650,7 @@ function startTicker(map: MLMap) {
     }
 
     const tail = store.get(map);
-    if (!tail || tail.mapMode !== "2d" || tail.timeline.frames.length === 0) {
+    if (!tail || !shouldRunWeatherTicker(tail)) {
       if (tail) tail.tickId = null;
       return;
     }
@@ -702,36 +665,42 @@ function startTicker(map: MLMap) {
 async function attachWind(wind: WindParticleCanvas) {
   try {
     const res = await fetch("/api/wind-field", { cache: "no-store" });
-    if (!res.ok) return;
+    if (!res.ok) {
+      console.warn("[live-weather] wind-field HTTP", res.status);
+      return;
+    }
     const data = (await res.json()) as WindFieldPayload & { error?: string };
-    if (
-      data &&
+    const cells = data.width * data.height;
+    const ok =
       !data.error &&
+      data.width > 0 &&
+      data.height > 0 &&
       Array.isArray(data.u) &&
       Array.isArray(data.v) &&
+      data.u.length === cells &&
+      data.v.length === cells &&
       Array.isArray(data.p) &&
-      data.p.length === data.u.length
-    ) {
+      data.p.length === cells;
+    if (ok) {
       wind.setField(data);
+    } else {
+      console.warn("[live-weather] wind-field payload rejected", data?.error ?? "shape");
     }
-  } catch {
-    /* non-fatal */
+  } catch (err) {
+    console.warn("[live-weather] wind-field fetch failed", err);
   }
 }
 
-/**
- * Starts always-on radar/GIBS loop + wind particles. Safe to call once per map.
- */
 export function initLiveWeatherOverlay(map: MLMap) {
   if (store.has(map)) return;
 
   const tier = detectDeviceTier();
-  const profile = overlayProfileForTier(tier);
+  const caps = DEVICE_TIER[tier];
   const wind = new WindParticleCanvas(map, {
-    particleCount: windParticleCountForTier(tier),
+    particleCount: caps.particles,
   });
   wind.setDeviceTier(tier);
-  wind.setPerformanceProfile(profile);
+  wind.setPerformanceProfile(caps.profile);
   wind.setStormSystems([]);
   const state: State = {
     source: "radar",
@@ -749,7 +718,7 @@ export function initLiveWeatherOverlay(map: MLMap) {
     wind,
     mapMode: "2d",
     typhoonFocus: null,
-    performanceProfile: profile,
+    performanceProfile: caps.profile,
     fallbackMessage: null,
     satelliteProvider: "gibs-fallback",
     satelliteRefreshTimer: null,
@@ -774,7 +743,7 @@ export function initLiveWeatherOverlay(map: MLMap) {
     if (!st) return;
     st.typhoonFocus = ce.detail?.storm ?? null;
     st.wind?.setTyphoonFocus(st.typhoonFocus);
-    if (st.mapMode === "2d" && st.timeline.frames.length > 0) startTicker(map);
+    startTicker(map);
   };
   window.addEventListener(TYPHOON_FOCUS_EVENT, onTyphoonFocus);
 
@@ -803,19 +772,20 @@ export function initLiveWeatherOverlay(map: MLMap) {
         st.activeNowcastTint = false;
         st.nextAdvanceAtMs = performance.now() + frameHoldMs(st);
         emitStatus(st, null);
-        if (st.mapMode === "2d") startTicker(map);
+        startTicker(map);
       }
     })
     .catch((error) => {
       const st = store.get(map);
       if (!st || st.source !== "radar") return;
+      console.warn("[live-weather] radar init failed", error);
       st.fallbackMessage =
         st.timeline.frames.length > 0
           ? `Radar feed unavailable; using last-known-good frame (${(error as Error).message}).`
           : `Radar feed unavailable (${(error as Error).message}).`;
       emitStatus(st, st.fallbackMessage);
     });
-  startRadarRefreshTimer(map);
+  syncImageryRefreshTimers(map);
 
   void attachWind(wind);
   state.windTimer = setInterval(() => {
@@ -874,12 +844,22 @@ export function notifyLiveWeatherMapMode(map: MLMap, mode: "2d" | "3d") {
     s.wind?.setVisible(false);
     return;
   }
-  resume2dOverlays(map, s);
+  if (shouldRunWeatherTicker(s)) {
+    s.wind?.setVisible(true);
+    startTicker(map);
+  }
 }
 
-/**
- * Pause or resume live weather ticker + wind (e.g. mobile Reports tab, hidden tab).
- */
+export function isLiveWeatherTickerRunning(map: MLMap): boolean {
+  const s = store.get(map);
+  return s != null && s.tickId != null;
+}
+
+export function isImageryRefreshTimerRunning(map: MLMap): boolean {
+  const s = store.get(map);
+  return s != null && (s.radarRefreshTimer != null || s.satelliteRefreshTimer != null);
+}
+
 export function setLiveWeatherOverlayActive(map: MLMap | null, active: boolean) {
   if (!map) return;
   const s = store.get(map);
@@ -887,10 +867,16 @@ export function setLiveWeatherOverlayActive(map: MLMap | null, active: boolean) 
   s.overlayActive = active;
   if (!active) {
     stopTicker(map);
+    stopSatelliteRefreshTimer(map);
+    stopRadarRefreshTimer(map);
     s.wind?.setVisible(false);
     return;
   }
-  resume2dOverlays(map, s);
+  syncImageryRefreshTimers(map);
+  if (shouldRunWeatherTicker(s)) {
+    s.wind?.setVisible(true);
+    startTicker(map);
+  }
 }
 
 export function applyLiveWeatherDeviceTier(
@@ -901,7 +887,7 @@ export function applyLiveWeatherDeviceTier(
   const s = store.get(map);
   if (!s?.wind) return;
   s.wind.setDeviceTier(tier);
-  setLiveWeatherPerformanceProfile(map, overlayProfileForTier(tier));
+  setLiveWeatherPerformanceProfile(map, DEVICE_TIER[tier].profile);
 }
 
 export function setLiveWeatherPerformanceProfile(
@@ -914,9 +900,7 @@ export function setLiveWeatherPerformanceProfile(
   if (s.performanceProfile === profile) return;
   s.performanceProfile = profile;
   s.wind?.setPerformanceProfile(profile);
-  if (s.mapMode === "2d" && s.timeline.frames.length > 0) {
-    startTicker(map);
-  }
+  startTicker(map);
 }
 
 export function setLiveWeatherImagerySource(
@@ -937,14 +921,11 @@ export function setLiveWeatherImagerySource(
   stopTicker(map);
 
   if (source === "radar") {
-    stopSatelliteRefreshTimer(map);
     void refreshRadarFrames(map);
-    startRadarRefreshTimer(map);
   } else {
-    stopRadarRefreshTimer(map);
     s.timeline.frames = [];
     s.timeline.index = 0;
     void refreshSatelliteFrames(map, source, { restartTicker: true });
-    startSatelliteRefreshTimer(map, source);
   }
+  syncImageryRefreshTimers(map);
 }

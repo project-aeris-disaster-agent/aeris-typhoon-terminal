@@ -8,12 +8,11 @@ import {
   lpaSeedsForField,
   pointInPar,
 } from "@/services/wind-flow-model";
-import { windDprCapForTier, type DeviceTier } from "@/lib/device-tier";
+import { DEVICE_TIER, type DeviceTier } from "@/lib/device-tier";
 import { DEFAULT_ZOOM, MAP_2D_MIN_ZOOM, MAX_ZOOM } from "@/config/region";
 
 const M_PER_DEG_LAT = 111_320;
 
-/** Shorter geographic streaks than earlier builds (meters along-wind). */
 const STREAK_MIN_M = 4_200;
 const STREAK_MAX_M = 26_000;
 const STREAK_WIND_COEFF = 520;
@@ -22,10 +21,6 @@ function clamp(n: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, n));
 }
 
-/**
- * Zoom-aware drawing: high zoom → shorter geo streaks, thinner dashes, fewer
- * particles drawn, lighter smear so the basemap stays readable.
- */
 function windDrawParams(zoomRaw: number) {
   const zoom = clamp(zoomRaw, MAP_2D_MIN_ZOOM, MAX_ZOOM);
   const z0 = DEFAULT_ZOOM;
@@ -33,7 +28,6 @@ function windDrawParams(zoomRaw: number) {
   const lineW = clamp(0.94 - (zoom - z0) * 0.1, 0.16, 0.98);
   const dashSeg = clamp(3.1 - (zoom - z0) * 0.32, 1.15, 4.2);
   const dashGap = dashSeg * 0.78;
-  /** Slightly stronger frame clear so particle jumps read as motion, not smear. */
   const trailFade = clamp(0.33 - (zoom - z0) * 0.022, 0.09, 0.34);
   const drawStride = zoom >= 13.2 ? 3 : zoom >= 10 ? 2 : 1;
   const alphaScale = clamp(0.55 + (12.5 - zoom) * 0.045, 0.42, 1);
@@ -69,10 +63,6 @@ function mPerDegLng(lat: number): number {
   return M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
 }
 
-/**
- * Realistic m/s → geo step is sub-pixel at dashboard zooms; scale advection so
- * particles visibly drift with the same (u, v) direction as the wind grid.
- */
 function advectionScreenBoost(b: Bounds, wPx: number, hPx: number): number {
   const w = Math.max(1, wPx);
   const h = Math.max(1, hPx);
@@ -83,18 +73,12 @@ function advectionScreenBoost(b: Bounds, wPx: number, hPx: number): number {
   const dt = 0.13;
   const scaleRef = 1.12;
   const uRef = 4.5;
-  /** Target horizontal drift (px/frame) when |wind| ≈ uRef. */
   const targetPx = 2.85;
   const boostLng = (targetPx * mLngMid * degW) / (uRef * dt * scaleRef * w);
   const boostLat = (targetPx * M_PER_DEG_LAT * degH) / (uRef * dt * scaleRef * h);
   return clamp((boostLng + boostLat) / 2, 35, 14_000);
 }
 
-/**
- * Wind / rain streak canvas: velocity from Open-Meteo synoptic flow plus
- * Rankine vortices for all PAR storms and pressure-minima LPAs. Streaks align
- * with the combined wind vector; PAR outside is subdued.
- */
 export class WindParticleCanvas {
   private readonly map: MLMap;
   private readonly canvas: HTMLCanvasElement;
@@ -103,7 +87,6 @@ export class WindParticleCanvas {
   private typhoonFocus: Typhoon | null = null;
   private particles: Float64Array;
   private ages: Float32Array;
-  /** Last velocity sample (m/s east, north) per particle — for streak direction. */
   private vel: Float32Array;
   private raf = 0;
   private running = false;
@@ -114,7 +97,7 @@ export class WindParticleCanvas {
   private readonly container: HTMLElement;
   private ctx: CanvasRenderingContext2D | null = null;
   private frameIntervalMs = 1000 / 60;
-  private lastFrameAt = 0;
+  private lastFrameAt = -1;
   private performanceProfile: WindPerformanceProfile = "balanced";
   private deviceTier: DeviceTier = "mid";
 
@@ -149,12 +132,10 @@ export class WindParticleCanvas {
     /* Do not reseed: keeps trajectories continuous when the grid refreshes. */
   }
 
-  /** All active PAR storms (JTWC); each contributes cyclonic flow by position + wind. */
   setStormSystems(storms: Typhoon[]) {
     this.storms = storms;
   }
 
-  /** Visual emphasis when a storm card is focused (does not remove other vortices). */
   setTyphoonFocus(storm: Typhoon | null) {
     this.typhoonFocus = storm;
   }
@@ -170,13 +151,11 @@ export class WindParticleCanvas {
     this.start();
   }
 
-  /** Pause animation during map camera motion without hiding the overlay. */
   pause() {
     this.motionPaused = true;
     this.stop();
   }
 
-  /** Resume animation after camera motion if the overlay should be visible. */
   resume() {
     this.motionPaused = false;
     if (this.visible) this.start();
@@ -194,7 +173,7 @@ export class WindParticleCanvas {
 
   private resize = () => {
     const dpr = Math.min(
-      windDprCapForTier(this.deviceTier),
+      DEVICE_TIER[this.deviceTier].windDpr,
       window.devicePixelRatio || 1,
     );
     const w = this.container.clientWidth;
@@ -234,7 +213,7 @@ export class WindParticleCanvas {
       if (!this.running) return;
       this.raf = requestAnimationFrame(tick);
       if (document.hidden) return;
-      if (this.lastFrameAt > 0 && now - this.lastFrameAt < this.frameIntervalMs) {
+      if (this.lastFrameAt >= 0 && now - this.lastFrameAt < this.frameIntervalMs) {
         return;
       }
       this.lastFrameAt = now;
@@ -246,7 +225,7 @@ export class WindParticleCanvas {
 
   stop() {
     this.running = false;
-    this.lastFrameAt = 0;
+    this.lastFrameAt = -1;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
   }
@@ -261,7 +240,6 @@ export class WindParticleCanvas {
     const b = viewBounds(this.map);
     const wPx = this.container.clientWidth;
     const hPx = this.container.clientHeight;
-    /** Physics timestep; screen boost makes motion visible at map zoom. */
     const dt = 0.13;
     const hasField = Boolean(this.field);
     const focusBoost = this.typhoonFocus ? 1.12 : 1;

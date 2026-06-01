@@ -333,19 +333,41 @@ export function AgentAerisPanel({
       setIsSending(true);
       lastPromptRef.current = cleanPrompt;
 
-      const response = await fetch("/api/agent-aeris/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          messages: nextMessages.map((message) => ({
-            role: message.role,
-            content: message.content,
-          })),
-          clientUserMessageId: userMessageId,
-          clientAssistantMessageId: pendingAssistantId,
-          context,
-        }),
-      });
+      let response: Response;
+      try {
+        response = await fetch("/api/agent-aeris/chat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            messages: nextMessages.map((message) => ({
+              role: message.role,
+              content: message.content,
+            })),
+            clientUserMessageId: userMessageId,
+            clientAssistantMessageId: pendingAssistantId,
+            context,
+          }),
+        });
+      } catch {
+        // Network-level failure (e.g. "Failed to fetch" when the dev server
+        // restarts or the connection drops). Surface it instead of letting the
+        // rejection escape this fire-and-forget call as an unhandled error.
+        setError("AGENT AERIS is unreachable. Check your connection and retry.");
+        setMessages((current) =>
+          current.map((item) =>
+            item.id === pendingAssistantId
+              ? {
+                  ...item,
+                  content:
+                    "Connection failed. Check the AERIS CHAT backend configuration and try again.",
+                  pending: false,
+                }
+              : item,
+          ),
+        );
+        setIsSending(false);
+        return;
+      }
 
       const data = (await response.json().catch(() => ({}))) as unknown;
 

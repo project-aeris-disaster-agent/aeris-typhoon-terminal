@@ -13,6 +13,9 @@
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand",
     "test:coverage": "jest --runInBand --coverage",
+    "predeploy": "npm run typecheck && npm test && npm run build && npm run test:e2e",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
     "postinstall": "node scripts/copy-piper-vendor.mjs",
     "smoke:reports": "node scripts/smoke_supabase_reports.mjs",
     "smoke:reports:insert": "node scripts/smoke_supabase_reports.mjs --insert",
@@ -35,7 +38,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
     "maplibre-gl": "^4.7.1",
-    "next": "14.2.15",
+    "next": "^15.5.18",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "three": "^0.169.0",
@@ -43,6 +46,7 @@
   },
   "devDependencies": {
     "@openzeppelin/contracts": "^5.6.1",
+    "@playwright/test": "^1.51.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -53,15 +57,20 @@
     "@types/three": "^0.169.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
-    "eslint-config-next": "14.2.15",
+    "eslint-config-next": "^15.5.18",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
-    "postcss": "^8.4.47",
+    "postcss": "^8.5.10",
     "solc": "^0.8.24",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.3"
   },
   "engines": {
     "node": "20.x"
+  },
+  "overrides": {
+    "glob": "^10.5.0",
+    "tmp": "^0.2.7",
+    "postcss": "^8.5.10"
   }
 }

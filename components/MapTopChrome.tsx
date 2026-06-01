@@ -6,6 +6,7 @@ import {
   MapSearchBar,
   type SelectedLocation,
 } from "@/components/MapSearchBar";
+import { MapAdBanner } from "@/components/MapAdBanner";
 
 export function MapTopChrome({
   map,
@@ -23,27 +24,7 @@ export function MapTopChrome({
         className,
       )}
     >
-      <a
-        href="https://www.google.com/adsense"
-        target="_blank"
-        rel="noopener noreferrer"
-        className={clsx(
-          "block w-full rounded-lg overflow-hidden shadow-lg opacity-90 hover:opacity-100 transition-opacity duration-200",
-          // Reserve vertical space up-front so the map container doesn't
-          // shift down when the ad image finishes loading (which used to
-          // cause MapLibre to size its canvas against a transiently taller
-          // parent on mobile, leaving the map cropped after settle).
-          "h-[72px] md:h-auto",
-        )}
-        aria-label="Advertisement"
-      >
-        <img
-          src="/ads/ads_v1_2026.gif"
-          alt="Advertisement"
-          className="w-full h-full md:h-auto md:max-h-none object-cover object-center block"
-          draggable={false}
-        />
-      </a>
+      <MapAdBanner />
       <MapSearchBar map={map} onAddressSelect={onAddressSelect} />
     </div>
   );

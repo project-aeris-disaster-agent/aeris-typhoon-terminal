@@ -23,7 +23,7 @@ incident reporting in one live terminal.
 
 | Layer | Choice |
 |---|---|
-| Framework | Next.js 14 (App Router) |
+| Framework | Next.js 15 (App Router) |
 | Language | TypeScript 5 |
 | 2D Map | MapLibre GL + CARTO vector basemap |
 | 3D Terrain | Three.js + SRTM heightmap |
@@ -76,6 +76,8 @@ npm start
 2. Import the repo in Vercel
 3. Provision Vercel KV from the Storage tab — environment variables auto-populate
 4. Deploy — edge functions, PWA service worker, and Redis all wire up automatically
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the production checklist, health probe, rollback, and audit notes.
 
 ## Configuration
 

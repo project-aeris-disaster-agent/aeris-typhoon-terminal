@@ -11,9 +11,9 @@ export function jsonOk<T>(data: T, cacheSeconds = 60): NextResponse {
 }
 
 /** JSON for endpoints where intermediaries must not cache (live feeds, etc.). */
-export function jsonOkNoStore<T>(data: T): NextResponse {
+export function jsonOkNoStore<T>(data: T, status = 200): NextResponse {
   return NextResponse.json(data, {
-    status: 200,
+    status,
     headers: {
       "cache-control": "no-store",
       "content-type": "application/json; charset=utf-8",

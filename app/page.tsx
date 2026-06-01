@@ -129,7 +129,7 @@ export default function HomePage() {
                       map={map}
                       popoverRef={liveReportsPopoverRef}
                     />
-                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 hidden md:block w-[min(480px,80%)] pointer-events-none [&>*]:pointer-events-auto">
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 hidden md:block w-[min(480px,80%)] pointer-events-none [&>*]:pointer-events-auto">
                       <MapTopChrome
                         map={map}
                         onAddressSelect={handleAddressSelect}

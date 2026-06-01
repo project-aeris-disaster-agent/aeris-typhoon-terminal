@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { Map2D } from "./Map2D";
+import { LiveWeatherMapPanel } from "./LiveWeatherMapPanel";
 import { MapModeToggle } from "./MapModeToggle";
 import { LayerLegend, QuickViewsPanel } from "./LayerLegend";
 import { readUrlState, writeUrlState } from "@/services/url-state";
@@ -31,7 +32,7 @@ import {
   detectDeviceTier,
   isCoarsePointerDevice,
   mapModeFromUrl,
-  overlayProfileForTier,
+  DEVICE_TIER,
 } from "@/lib/device-tier";
 import { DataLoadingPopup } from "@/components/ui/DataLoadingPopup";
 import { useTheme } from "@/components/providers/ThemeProvider";
@@ -175,7 +176,7 @@ export const MapContainer = memo(function MapContainer({
     const tier = detectDeviceTier();
     applyDeviceTierToMap(map, tier);
     applyLiveWeatherDeviceTier(map, tier);
-    setReportPingPerformanceMode(map, overlayProfileForTier(tier));
+    setReportPingPerformanceMode(map, DEVICE_TIER[tier].profile);
     setSceneAnimationsEnabled(map, false);
   }, [map]);
 
@@ -219,6 +220,7 @@ export const MapContainer = memo(function MapContainer({
         message={loadingMessage}
       />
       <div className="absolute z-10 flex flex-col gap-2 top-3 left-3 max-md:bottom-[4.25rem] max-md:top-auto max-md:left-3 max-md:right-auto">
+        <LiveWeatherMapPanel map={map} />
         <MapModeToggle mode={mode} onChange={handleModeChange} />
         <div className="hidden md:flex flex-col gap-2">
           <QuickViewsPanel map={map} mode={mode} />

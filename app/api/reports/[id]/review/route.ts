@@ -27,8 +27,9 @@ const ACTOR_TYPES = new Set(["human_operator", "ai_agent", "system"]);
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
+  const { id: reportId } = await context.params;
   if (!supabaseReportsEnabled()) {
     return jsonError("Shared Supabase reports are not configured.", 503);
   }
@@ -54,7 +55,7 @@ export async function POST(
 
   try {
     const report = await reviewSupabaseReport({
-      reportId: params.id,
+      reportId,
       ...validated.data,
       actorId: validated.data.actorId ?? auth.actorId,
       metadata: {

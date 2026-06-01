@@ -81,4 +81,41 @@ describe("buildAlertsFromGdacsRss", () => {
       url: "https://gdacs.example/current",
     });
   });
+
+  it("uses the latest advisory (datemodified) for an active TC, not the original pubDate", async () => {
+    const { buildAlertsFromGdacsRss } = await import("./gdacs-alerts");
+    const created = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toUTCString();
+    const lastAdvisory = new Date(Date.now() - 2 * 60 * 60 * 1000).toUTCString();
+
+    const xml = `
+      <rss><channel>
+        ${rssItem(`
+          <title><![CDATA[JANGMI-26]]></title>
+          <link>https://gdacs.example/tc</link>
+          <pubDate>${created}</pubDate>
+          <gdacs:datemodified>${lastAdvisory}</gdacs:datemodified>
+          <gdacs:eventid>1000</gdacs:eventid>
+          <gdacs:eventname>JANGMI-26</gdacs:eventname>
+          <gdacs:eventtype>TC</gdacs:eventtype>
+          <gdacs:iscurrent>true</gdacs:iscurrent>
+          <gdacs:alertlevel>Red</gdacs:alertlevel>
+          <gdacs:severity value="139">Severe tropical storm (maximum wind speed of 139 km/h)</gdacs:severity>
+          <geo:lat>14.5</geo:lat>
+          <geo:long>125.0</geo:long>
+        `)}
+      </channel></rss>
+    `;
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => xml,
+    }) as typeof fetch;
+
+    const alerts = await buildAlertsFromGdacsRss();
+    const tc = alerts.find((a) => a.id === "tc-1000");
+
+    expect(tc).toBeDefined();
+    expect(tc?.issuedAt).toBe(lastAdvisory);
+    expect(tc?.issuedAt).not.toBe(created);
+  });
 });

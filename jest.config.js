@@ -11,7 +11,11 @@ const customJestConfig = {
     "^@/(.*)$": "<rootDir>/$1",
     "^@vercel/kv$": "<rootDir>/test/mocks/vercel-kv.ts",
   },
-  testPathIgnorePatterns: ["<rootDir>/.next/", "<rootDir>/node_modules/"],
+  testPathIgnorePatterns: [
+    "<rootDir>/.next/",
+    "<rootDir>/node_modules/",
+    "<rootDir>/e2e/",
+  ],
   collectCoverageFrom: [
     "app/**/*.{ts,tsx}",
     "components/**/*.{ts,tsx}",

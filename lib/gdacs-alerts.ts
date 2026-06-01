@@ -80,6 +80,12 @@ function parseTcBlock(
   const windKph = severityRaw ? Math.round(Number(severityRaw[1])) : 0;
   const severityText = severityRaw ? stripHtml(severityRaw[2]) : "";
   const link = firstRssMatch(block, /<link>([\s\S]*?)<\/link>/);
+  // GDACS keeps pubDate fixed at event creation; datemodified tracks each new
+  // advisory. Prefer the latest advisory so long-lived storms don't look stale.
+  const dateModified = firstRssMatch(
+    block,
+    /<gdacs:datemodified>([\s\S]*?)<\/gdacs:datemodified>/,
+  );
   const pubDate = firstRssMatch(block, /<pubDate>([\s\S]*?)<\/pubDate>/);
   const category = deriveCategory(alertLevel, severityText, windKph);
   const label = name ?? "Unknown";
@@ -90,7 +96,7 @@ function parseTcBlock(
     severity: severityFromWind(windKph, category),
     title: `${label} — ${category}`,
     summary: `${windKph > 0 ? `${windKph} km/h` : "Intensity n/a"} · Active in PAR · ${severityText || "GDACS track"}`,
-    issuedAt: pubDate ?? null,
+    issuedAt: dateModified ?? pubDate ?? null,
     url: link ?? `https://www.gdacs.org/report.aspx?eventtype=TC&eventid=${id}`,
   };
 }

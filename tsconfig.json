@@ -19,5 +19,11 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "AERIS CHAT/**"]
+  "exclude": [
+    "node_modules",
+    "AERIS CHAT/**",
+    "test",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
 }

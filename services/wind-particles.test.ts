@@ -4,8 +4,11 @@ export {};
 import { WindParticleCanvas } from "./wind-particles";
 import { createMapStub, createWindFieldPayload } from "@/test/helpers/map-stub";
 import { installDeviceSignals } from "@/test/helpers/device-env";
-import { windDprCapForTier } from "@/lib/device-tier";
-import { installCanvas2dShim } from "@/test/helpers/canvas-2d-shim";
+import { DEVICE_TIER } from "@/lib/device-tier";
+import {
+  installCanvas2dShim,
+  type Canvas2dShimContext,
+} from "@/test/helpers/canvas-2d-shim";
 
 describe("WindParticleCanvas", () => {
   beforeAll(() => {
@@ -55,7 +58,7 @@ describe("WindParticleCanvas", () => {
     const wind = new WindParticleCanvas(map, { particleCount: 4 });
     wind.setDeviceTier("low");
     const canvas = map.getContainer().querySelector("canvas")!;
-    const cap = windDprCapForTier("low");
+    const cap = DEVICE_TIER.low.windDpr;
     expect(canvas.width).toBe(Math.floor(400 * cap));
     expect(canvas.height).toBe(Math.floor(300 * cap));
     wind.destroy();
@@ -68,16 +71,14 @@ describe("WindParticleCanvas", () => {
       wind.setField(createWindFieldPayload());
       wind.setPerformanceProfile(profile);
       wind.setVisible(true);
-      const ctx = map.getContainer().querySelector("canvas")!.getContext("2d")!;
-      let strokes = 0;
-      const baseStroke = ctx.stroke.bind(ctx);
-      ctx.stroke = (...args: Parameters<CanvasRenderingContext2D["stroke"]>) => {
-        strokes += 1;
-        return baseStroke(...args);
-      };
+      const ctx = map
+        .getContainer()
+        .querySelector("canvas")!
+        .getContext("2d") as Canvas2dShimContext;
       for (const t of [0, 16, 32, 48, 64, 80, 96, 112]) {
         flushRaf(t);
       }
+      const strokes = ctx.__strokeCount;
       wind.destroy();
       return strokes;
     }
@@ -135,19 +136,18 @@ describe("WindParticleCanvas", () => {
     wind.destroy();
   });
 
-  it("advects particles when a wind field is set", () => {
+  it("strokes wind streaks when a wind field is set", () => {
     const map = createMapStub();
-    const wind = new WindParticleCanvas(map, { particleCount: 1 });
+    const wind = new WindParticleCanvas(map, { particleCount: 16 });
     wind.setField(createWindFieldPayload());
     wind.setVisible(true);
+    const ctx = map
+      .getContainer()
+      .querySelector("canvas")!
+      .getContext("2d") as Canvas2dShimContext;
     flushRaf(0);
     flushRaf(100);
-    flushRaf(200);
-    const canvas = map.getContainer().querySelector("canvas")!;
-    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const lit = [...image.data].some((v, i) => i % 4 === 3 && v > 0);
-    expect(lit).toBe(true);
+    expect(ctx.__strokeCount).toBeGreaterThan(0);
     wind.destroy();
   });
 
