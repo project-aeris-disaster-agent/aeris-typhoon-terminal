@@ -3,7 +3,13 @@
 import type { Map as MLMap } from "maplibre-gl";
 import type { WindFieldPayload } from "@/services/wind-field-types";
 import type { Typhoon } from "@/services/typhoon-tracks";
-import { combinedWindMs, pointInPar } from "@/services/wind-flow-model";
+import {
+  combinedWindMs,
+  findLpaSeeds,
+  pointInPar,
+  type LpaSeed,
+} from "@/services/wind-flow-model";
+import { windDprCapForTier, type DeviceTier } from "@/lib/device-tier";
 import { DEFAULT_ZOOM, MAP_2D_MIN_ZOOM, MAX_ZOOM } from "@/config/region";
 
 const M_PER_DEG_LAT = 111_320;
@@ -99,6 +105,7 @@ export class WindParticleCanvas {
   private frameIntervalMs = 1000 / 60;
   private lastFrameAt = 0;
   private performanceProfile: WindPerformanceProfile = "balanced";
+  private deviceTier: DeviceTier = "mid";
 
   constructor(map: MLMap, options?: { particleCount?: number }) {
     this.map = map;
@@ -175,8 +182,15 @@ export class WindParticleCanvas {
     }
   }
 
+  setDeviceTier(tier: DeviceTier) {
+    this.deviceTier = tier;
+    this.resize();
+  }
+
   private resize = () => {
-    const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
+    const rawDpr =
+      typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const dpr = Math.min(windDprCapForTier(this.deviceTier), rawDpr);
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     this.canvas.width = Math.max(1, Math.floor(w * dpr));
@@ -212,6 +226,10 @@ export class WindParticleCanvas {
     this.running = true;
     const tick = () => {
       if (!this.running) return;
+      if (typeof document !== "undefined" && document.hidden) {
+        this.raf = requestAnimationFrame(tick);
+        return;
+      }
       const now = typeof performance !== "undefined" ? performance.now() : Date.now();
       if (this.lastFrameAt > 0 && now - this.lastFrameAt < this.frameIntervalMs) {
         this.raf = requestAnimationFrame(tick);
@@ -248,13 +266,21 @@ export class WindParticleCanvas {
     const focusBoost = this.typhoonFocus ? 1.12 : 1;
     const useScreenBoost = hasField || this.storms.length > 0;
     const screenBoost = useScreenBoost ? advectionScreenBoost(b, wPx, hPx) : 1;
+    const lpaSeeds: readonly LpaSeed[] =
+      this.field?.p != null ? findLpaSeeds(this.field) : [];
 
     for (let i = 0; i < this.n; i++) {
       let lng = this.particles[i * 2];
       let lat = this.particles[i * 2 + 1];
       this.ages[i] += 1;
 
-      let { u, v } = combinedWindMs(lng, lat, this.field, this.storms);
+      let { u, v } = combinedWindMs(
+        lng,
+        lat,
+        this.field,
+        this.storms,
+        lpaSeeds,
+      );
       if (!hasField) {
         u += (Math.random() - 0.5) * 0.22;
         v += (Math.random() - 0.5) * 0.22;
@@ -305,6 +331,7 @@ export class WindParticleCanvas {
 
     const focus = this.typhoonFocus;
     const dashPeriod = zp.dashSeg + zp.dashGap;
+    ctx.setLineDash([zp.dashSeg, zp.dashGap]);
 
     const perfStride =
       this.performanceProfile === "quality"
@@ -369,7 +396,6 @@ export class WindParticleCanvas {
       ctx.strokeStyle = `rgba(${r}, ${gCol}, ${bCol}, ${Math.min(0.88, alpha)})`;
       ctx.lineWidth =
         zp.lineW * (focus && inPar ? 1.08 : 1) * (hi ? 1.05 : 1);
-      ctx.setLineDash([zp.dashSeg, zp.dashGap]);
       /* Faster dash travel along segment reads clearly as “wind running”. */
       ctx.lineDashOffset = -((i * 23 + t * 86) % dashPeriod);
 

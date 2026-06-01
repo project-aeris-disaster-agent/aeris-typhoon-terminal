@@ -102,7 +102,7 @@ function stormInfluenceAlpha(rM: number, outerM: number): number {
   return t * t * t;
 }
 
-type LpaSeed = { lng: number; lat: number; strengthHpa: number };
+export type LpaSeed = { lng: number; lat: number; strengthHpa: number };
 
 /**
  * Grid local pressure minima as weak LPA proxies (monsoon trough / shear LPA).
@@ -185,6 +185,7 @@ export function combinedWindMs(
   lat: number,
   field: WindFieldPayload | null,
   storms: readonly Typhoon[],
+  lpaSeeds?: readonly LpaSeed[],
 ): { u: number; v: number } {
   let ub = 0;
   let vb = 0;
@@ -214,7 +215,7 @@ export function combinedWindMs(
   }
 
   if (field?.p) {
-    const lpas = findLpaSeeds(field);
+    const lpas = lpaSeeds ?? findLpaSeeds(field);
     for (const seed of lpas) {
       if (nearAnyStorm(seed.lng, seed.lat, storms)) continue;
       const eastM = (lng - seed.lng) * mPerDegLng(lat);
