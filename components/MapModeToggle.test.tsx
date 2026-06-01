@@ -21,4 +21,21 @@ describe("MapModeToggle", () => {
     expect(onChange).toHaveBeenNthCalledWith(1, "3d");
     expect(onChange).toHaveBeenNthCalledWith(2, "2d");
   });
+
+  it("updates pressed state when mode prop changes externally", () => {
+    const { rerender } = render(<MapModeToggle mode="2d" onChange={jest.fn()} />);
+    expect(screen.getByRole("button", { name: "2D Analytical" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    rerender(<MapModeToggle mode="3d" onChange={jest.fn()} />);
+    expect(screen.getByRole("button", { name: "3D Immersive" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "2D Analytical" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
 });
