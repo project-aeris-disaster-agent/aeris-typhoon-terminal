@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { Pill } from "../ui/Card";
 import { AlertCard } from "../ui/AlertCard";
+import { VirtualList } from "../ui/VirtualList";
 import type { SelectedLocation } from "../MapSearchBar";
 import {
   computeForecastAlert,
@@ -775,16 +776,22 @@ export function LocationInfoPanel({
           {!osmLoading && nearbyFacilities.length === 0 ? (
             <Hint>No facilities tagged in OpenStreetMap within ~1.5 km.</Hint>
           ) : (
-            <ul className="space-y-1">
-              {nearbyFacilities.map((nf, i) => (
-                <FacilityRow key={`${nf.feature.properties.category}-${i}`} item={nf} />
-              ))}
-            </ul>
+            <VirtualList
+              items={nearbyFacilities}
+              rowHeight={44}
+              className="max-h-52 -mx-1 px-1"
+              render={(nf, i) => (
+                <FacilityRow
+                  key={`${nf.feature.properties.category}-${i}`}
+                  item={nf}
+                />
+              )}
+            />
           )}
         </CollapsibleSection>
       </div>
 
-      <div className="shrink-0 px-3 py-2 border-t border-aeris-border/40 bg-aeris-surface/80 backdrop-blur-sm flex flex-wrap gap-1.5">
+      <div className="shrink-0 px-3 py-2 border-t border-aeris-border/40 bg-aeris-surface/95 max-md:backdrop-blur-none md:bg-aeris-surface/80 md:backdrop-blur-sm flex flex-wrap gap-1.5">
         <ActionButton onClick={onRecenter}>Recenter</ActionButton>
         <ActionButton onClick={onOpen3D}>Open in 3D</ActionButton>
         <ActionButton onClick={onShare} Icon={Share2}>
@@ -905,7 +912,7 @@ function FacilityRow({ item }: { item: NearbyFacility }) {
   const meta = FACILITY_META[p.category] ?? FACILITY_FALLBACK;
   const Icon = meta.Icon;
   return (
-    <li className="flex items-center justify-between gap-2 text-[11px] py-0.5">
+    <div className="flex items-center justify-between gap-2 text-[11px] py-0.5">
       <div className="min-w-0 flex items-center gap-1.5">
         <Icon size={14} className={clsx("shrink-0", meta.tone)} />
         <div className="min-w-0">
@@ -920,7 +927,7 @@ function FacilityRow({ item }: { item: NearbyFacility }) {
       <span className="shrink-0 font-mono text-[10px] text-aeris-muted">
         {formatDistance(item.distanceMeters)} {item.bearing}
       </span>
-    </li>
+    </div>
   );
 }
 

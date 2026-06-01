@@ -117,7 +117,7 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
   // untouched and panel state stays isolated to the active layout.
   if (mobileMode) {
     return (
-      <aside className="md:hidden flex flex-col w-full h-full bg-aeris-surface/95 backdrop-blur-md">
+      <aside className="md:hidden flex flex-col w-full h-full bg-aeris-surface/98">
         <div className="flex items-center justify-between px-3 py-2 border-b border-aeris-border bg-aeris-elev/35 shrink-0">
           <span className="hud-text text-aeris-muted text-[11px] font-mono uppercase tracking-wider">
             Ground Reports

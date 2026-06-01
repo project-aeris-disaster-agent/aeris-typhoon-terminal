@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { useYouTubeFeeds } from "@/components/YouTubeFeedsProvider";
 import type { YtVideo } from "@/services/youtube-feeds";
@@ -13,7 +13,11 @@ import {
  * Keeps CCTV pings rendered on the map regardless of panel state. Shares the
  * same YouTube feed poll as LiveWebcamsPanel via YouTubeFeedsProvider.
  */
-export function WebcamPingsSync({ map }: { map: MLMap | null }) {
+export const WebcamPingsSync = memo(function WebcamPingsSync({
+  map,
+}: {
+  map: MLMap | null;
+}) {
   const { videosForJazbaz } = useYouTubeFeeds();
   const latestRef = useRef<YtVideo[]>([]);
 
@@ -40,4 +44,4 @@ export function WebcamPingsSync({ map }: { map: MLMap | null }) {
   }, [map, videosForJazbaz]);
 
   return null;
-}
+});

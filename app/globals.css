@@ -88,8 +88,15 @@ body > div {
 }
 
 .panel-glass {
-  @apply backdrop-blur-md border border-aeris-border shadow-sm;
-  background-color: rgb(var(--aeris-surface) / 0.92);
+  @apply border border-aeris-border shadow-sm;
+  background-color: rgb(var(--aeris-surface) / 0.98);
+}
+
+@media (min-width: 768px) {
+  .panel-glass {
+    @apply backdrop-blur-md;
+    background-color: rgb(var(--aeris-surface) / 0.92);
+  }
 }
 
 .hud-text {

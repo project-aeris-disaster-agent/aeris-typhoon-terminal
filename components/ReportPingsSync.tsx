@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import {
   clearReportsFromMap,
@@ -16,7 +16,11 @@ const REFRESH_MS = 30 * 1000;
  * This must stay mounted at the page level so closing popovers never clears
  * the report source/layers.
  */
-export function ReportPingsSync({ map }: { map: MLMap | null }) {
+export const ReportPingsSync = memo(function ReportPingsSync({
+  map,
+}: {
+  map: MLMap | null;
+}) {
   const latestReportsRef = useRef<IncidentReport[]>([]);
 
   useEffect(() => {
@@ -56,4 +60,4 @@ export function ReportPingsSync({ map }: { map: MLMap | null }) {
   }, [map]);
 
   return null;
-}
+});

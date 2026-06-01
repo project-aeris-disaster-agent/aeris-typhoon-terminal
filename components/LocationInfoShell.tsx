@@ -69,7 +69,7 @@ export function LocationInfoShell({
       <button
         type="button"
         aria-label="Close location info"
-        className="md:hidden fixed inset-x-0 top-0 z-[18] bg-black/40 backdrop-blur-[1px]"
+        className="md:hidden fixed inset-x-0 top-0 z-[18] bg-black/40"
         style={{ bottom: AERIS_MOBILE_TABBAR_H }}
         onClick={onClose}
       />

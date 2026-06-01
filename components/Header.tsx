@@ -1,7 +1,7 @@
 "use client";
 
 import type { RefObject } from "react";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import Image from "next/image";
 import { clsx } from "clsx";
 import { Pill } from "./ui/Card";
@@ -53,7 +53,18 @@ export type HeaderProps = {
   liveReportsTriggerRef: RefObject<HTMLDivElement>;
 };
 
-export function Header({
+function formatManilaClock(now = new Date()): string {
+  return (
+    now.toLocaleTimeString("en-PH", {
+      hour12: false,
+      timeZone: "Asia/Manila",
+      hour: "2-digit",
+      minute: "2-digit",
+    }) + " PHT"
+  );
+}
+
+export const Header = memo(function Header({
   liveReportsOpen,
   toggleLiveReports,
   closeLiveReports,
@@ -73,17 +84,9 @@ export function Header({
   };
 
   useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      setTime(
-        now.toLocaleTimeString("en-PH", {
-          hour12: false,
-          timeZone: "Asia/Manila",
-        }) + " PHT",
-      );
-    };
+    const tick = () => setTime(formatManilaClock());
     tick();
-    const id = window.setInterval(tick, 1000);
+    const id = window.setInterval(tick, 60_000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -106,7 +109,7 @@ export function Header({
   }, [liveReportsOpen, toggleLiveReports, closeLiveReports]);
 
   return (
-    <header className="relative z-40 h-12 px-3 flex items-center justify-between border-b border-aeris-border bg-aeris-surface/95 backdrop-blur-md shrink-0 shadow-sm">
+    <header className="relative z-40 h-12 px-3 flex items-center justify-between border-b border-aeris-border bg-aeris-surface/98 max-md:backdrop-blur-none md:bg-aeris-surface/95 md:backdrop-blur-md shrink-0 shadow-sm">
       <div className="flex items-center gap-3">
         <div className="relative z-10 flex items-center gap-2 min-w-0">
           <Image
@@ -183,4 +186,4 @@ export function Header({
       </div>
     </header>
   );
-}
+});
