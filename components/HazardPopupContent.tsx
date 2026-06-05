@@ -6,10 +6,11 @@ export type HazardPopupReport = {
   verificationStatus: string;
   confidenceLabel: string;
   onchainStatus: string;
+  onchainTxHash?: string | null;
+  onchainTxHref?: string | null;
   messageId: string | null;
   sourceLine: string;
   reportedAt: string | null;
-  basescanTxHref: string | null;
   photoHref: string | null;
 };
 
@@ -30,6 +31,11 @@ function formatLabel(value: string) {
 function shortId(id: string) {
   if (id.length <= 16) return id;
   return `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
+
+function shortTxHash(tx: string) {
+  if (tx.length <= 18) return tx;
+  return `${tx.slice(0, 10)}…${tx.slice(-6)}`;
 }
 
 export function HazardPopupContent({
@@ -115,16 +121,24 @@ export function HazardPopupContent({
         </p>
       ) : null}
 
-      {report.basescanTxHref ? (
-        <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px]">
-          <a
-            href={report.basescanTxHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-aeris-accent hover:underline"
-          >
-            Transaction
-          </a>
+      {report.onchainStatus === "minted" && report.onchainTxHash ? (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-[10px]">
+          <span className="text-aeris-muted">TXN</span>
+          {report.onchainTxHref ? (
+            <a
+              href={report.onchainTxHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-aeris-accent hover:underline"
+              title={report.onchainTxHash}
+            >
+              {shortTxHash(report.onchainTxHash)}
+            </a>
+          ) : (
+            <span className="text-aeris-text" title={report.onchainTxHash}>
+              {shortTxHash(report.onchainTxHash)}
+            </span>
+          )}
         </div>
       ) : null}
 

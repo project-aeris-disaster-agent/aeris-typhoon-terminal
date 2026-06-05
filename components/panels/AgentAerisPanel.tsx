@@ -12,6 +12,7 @@ import { clsx } from "clsx";
 import { AgentSpeechControls } from "@/components/agent/AgentSpeechControls";
 import { AerisVrmAvatar } from "@/components/agent/AerisVrmAvatar";
 import { useAgentSpeech } from "@/hooks/useAgentSpeech";
+import type { AgentExplainRequest } from "@/lib/help/agent-explain";
 
 type AgentRole = "user" | "assistant" | "system";
 
@@ -63,6 +64,8 @@ type AgentLocationContext = {
 type AgentAerisPanelProps = {
   selectedLocation: AgentLocationContext | null;
   isActive: boolean;
+  /** When this changes, AERIS is asked to explain a dashboard feature. */
+  explainRequest?: AgentExplainRequest | null;
 };
 
 const QUICK_ACTIONS: { label: string; prompt: string }[] = [
@@ -193,6 +196,7 @@ function mergeMessages(
 export function AgentAerisPanel({
   selectedLocation,
   isActive,
+  explainRequest,
 }: AgentAerisPanelProps) {
   const [messages, setMessages] = useState<AgentMessage[]>([INITIAL_MESSAGE]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -438,6 +442,17 @@ export function AgentAerisPanel({
       activeBackChannel,
     ],
   );
+
+  // Long-press / contextmenu on a help affordance dispatches an explain
+  // request that flows down to here. Fire it once per request id; the reply
+  // is rendered in chat and spoken aloud by useAgentSpeech (unless muted).
+  const lastExplainId = useRef<number | null>(null);
+  useEffect(() => {
+    if (!explainRequest) return;
+    if (lastExplainId.current === explainRequest.id) return;
+    lastExplainId.current = explainRequest.id;
+    void sendPrompt(explainRequest.prompt);
+  }, [explainRequest, sendPrompt]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -2,6 +2,7 @@ import maplibregl, { Map as MLMap, Popup } from "maplibre-gl";
 import { createRoot, type Root } from "react-dom/client";
 import { HazardPopupContent } from "@/components/HazardPopupContent";
 import type { HazardPopupContentProps, HazardPopupReport } from "@/components/HazardPopupContent";
+import { mintExplorerTxUrl } from "@/lib/onchain/explorer-links";
 import { REPORTS_MAP_LAYER_IDS } from "@/services/reports-client";
 
 type PopupEntry = {
@@ -97,10 +98,8 @@ function buildReportPayload(
   const photoHref = safeHttpUrl(report.photoUrl);
   const messageId = String(report.messageId ?? report.id ?? "");
   const onchainTxHash = String(report.onchainTxHash ?? "");
-  const basescanTxHref =
-    onchainTxHash && /^0x[a-fA-F0-9]{64}$/.test(onchainTxHash)
-      ? `https://basescan.org/tx/${onchainTxHash}`
-      : null;
+  const onchainNetwork = String(report.onchainNetwork ?? "");
+  const onchainTxHref = mintExplorerTxUrl(onchainNetwork, onchainTxHash);
 
   return {
     category: String(report.category ?? "report"),
@@ -108,10 +107,11 @@ function buildReportPayload(
     verificationStatus,
     confidenceLabel,
     onchainStatus: String(report.onchainMintStatus ?? "not_started"),
+    onchainTxHash: onchainTxHash || null,
+    onchainTxHref,
     messageId: messageId || null,
     sourceLine,
     reportedAt: createdAt,
-    basescanTxHref,
     photoHref,
   };
 }

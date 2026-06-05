@@ -7,7 +7,7 @@ export default function Page() {
     <Suspense
       fallback={
         <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-aeris-bg text-aeris-muted">
-          <AerisLoadingLogo size="lg" variant="splash" pulse />
+          <AerisLoadingLogo size="lg" variant="splash" />
           <span className="text-[11px] font-mono uppercase tracking-wider">
             Loading…
           </span>

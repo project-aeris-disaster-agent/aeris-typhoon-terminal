@@ -7,6 +7,11 @@ import { clsx } from "clsx";
 import { PANELS, SIDEBAR_PANELS, type PanelId } from "@/config/panels";
 import { LiveWeatherFrameIndicator } from "@/components/LiveWeatherFrameHud";
 import { PanelSkeleton } from "@/components/ui/PanelSkeleton";
+import { HelpHint } from "@/components/ui/HelpTooltip";
+import type { HelpId } from "@/config/help-content";
+import {
+  usePanelBadge,
+} from "@/components/panel-header-badge";
 
 // On mobile, the sidebar becomes the "Reports" tab. We curate it down to the
 // panels that actually help an operator monitor incoming ground reports:
@@ -121,16 +126,15 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
             const def = PANELS.find((p) => p.id === id);
             if (!def) return null;
             return (
-              <PanelWrapper
+              <PanelSection
                 key={def.id}
                 id={def.id}
                 label={def.label}
                 hotkey={def.hotkey}
                 open={open[def.id]}
                 onToggle={() => togglePanel(def.id)}
-              >
-                <PanelBody id={def.id} map={map} />
-              </PanelWrapper>
+                map={map}
+              />
             );
           })}
         </div>
@@ -170,25 +174,19 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
         cycles.
       */}
       {collapsed && (
-        <div className="flex flex-col items-center py-2 gap-1">
+        <div className="flex flex-col items-center py-2 gap-1.5">
           {SIDEBAR_PANELS.map((p) => (
-            <button
+            <CollapsedPanelRailButton
               key={p.id}
-              type="button"
+              id={p.id}
+              hotkey={p.hotkey}
+              label={p.label}
+              active={open[p.id]}
               onClick={() => {
                 setCollapsed(false);
                 if (!open[p.id]) togglePanel(p.id);
               }}
-              className={clsx(
-                "w-7 h-7 rounded flex items-center justify-center font-mono text-[10px] border",
-                open[p.id]
-                  ? "bg-aeris-accent/10 text-aeris-accent border-aeris-accent/30"
-                  : "border-aeris-border text-aeris-muted hover:text-aeris-text",
-              )}
-              title={p.label}
-            >
-              {p.hotkey}
-            </button>
+            />
           ))}
         </div>
       )}
@@ -208,19 +206,83 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
         aria-hidden={collapsed}
       >
         {SIDEBAR_PANELS.map((p) => (
-          <PanelWrapper
+          <PanelSection
             key={p.id}
             id={p.id}
             label={p.label}
             hotkey={p.hotkey}
             open={open[p.id]}
             onToggle={() => togglePanel(p.id)}
-          >
-            <PanelBody id={p.id} map={map} />
-          </PanelWrapper>
+            map={map}
+          />
         ))}
       </div>
     </aside>
+  );
+}
+
+function PanelSection({
+  id,
+  label,
+  hotkey,
+  open,
+  onToggle,
+  map,
+}: {
+  id: PanelId;
+  label: string;
+  hotkey: string;
+  open: boolean;
+  onToggle: () => void;
+  map: MLMap | null;
+}) {
+  return (
+    <PanelWrapper
+      id={id}
+      label={label}
+      hotkey={hotkey}
+      open={open}
+      onToggle={onToggle}
+    >
+      <PanelBody id={id} map={map} />
+    </PanelWrapper>
+  );
+}
+
+function CollapsedPanelRailButton({
+  id,
+  hotkey,
+  label,
+  active,
+  onClick,
+}: {
+  id: PanelId;
+  hotkey: string;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const badge = usePanelBadge(id);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        "w-8 rounded flex flex-col items-center justify-center gap-0.5 py-1 font-mono text-[10px] border",
+        active
+          ? "bg-aeris-accent/10 text-aeris-accent border-aeris-accent/30"
+          : "border-aeris-border text-aeris-muted hover:text-aeris-text",
+      )}
+      title={label}
+      aria-label={label}
+    >
+      <span>{hotkey}</span>
+      {badge ? (
+        <span className="max-w-full scale-[0.85] origin-center [&_span]:!px-1 [&_span]:!py-0 [&_span]:!text-[8px] [&_span]:truncate [&_span]:max-w-[30px] [&_span]:block">
+          {badge}
+        </span>
+      ) : null}
+    </button>
   );
 }
 
@@ -239,28 +301,46 @@ function PanelWrapper({
   onToggle: () => void;
   children: React.ReactNode;
 }) {
+  const badge = usePanelBadge(id);
+
   return (
     <section className="border border-aeris-border rounded-lg bg-aeris-bg/35 shadow-sm">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-2 px-2 py-1.5 hud-text text-aeris-muted hover:bg-aeris-elev/40 hover:text-aeris-text transition-colors"
-        aria-expanded={open}
-        aria-controls={`panel-${id}`}
-      >
-        <span className="flex shrink-0 items-center gap-2">
-          <span className="text-[10px] font-mono text-aeris-accent/70 w-3">
-            {hotkey}
+      <div className="flex items-center hud-text text-aeris-muted">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex flex-1 items-center gap-2 min-w-0 px-2 py-1.5 hover:bg-aeris-elev/40 hover:text-aeris-text transition-colors rounded-l-lg"
+          aria-expanded={open}
+          aria-controls={`panel-${id}`}
+        >
+          <span className="flex shrink-0 items-center gap-2 min-w-0">
+            <span className="text-[10px] font-mono text-aeris-accent/70 w-3">
+              {hotkey}
+            </span>
+            <span className="truncate">{label}</span>
           </span>
-          <span>{label}</span>
+          {!open && badge ? (
+            <span className="ml-auto shrink-0">{badge}</span>
+          ) : null}
+          <span className={clsx("shrink-0 text-[10px]", !open && badge && "ml-1")}>
+            {open ? "−" : "+"}
+          </span>
+        </button>
+        <span className="px-2">
+          <HelpHint helpId={`panel.${id}` as HelpId} side="left" />
         </span>
-        <span className="ml-auto shrink-0 text-[10px]">{open ? "−" : "+"}</span>
-      </button>
-      {open && (
-        <div id={`panel-${id}`} className="px-2 pb-2">
-          {children}
-        </div>
-      )}
+      </div>
+      {/*
+        Keep panel bodies mounted while collapsed so data polling continues
+        and header badges stay current (same pattern as sidebar collapse).
+      */}
+      <div
+        id={`panel-${id}`}
+        className={clsx("px-2 pb-2", !open && "hidden")}
+        aria-hidden={!open}
+      >
+        {children}
+      </div>
     </section>
   );
 }

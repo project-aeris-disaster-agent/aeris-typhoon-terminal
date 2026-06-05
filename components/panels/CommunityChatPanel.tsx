@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import dynamic from "next/dynamic";
 import type { SelectedLocation } from "@/components/MapSearchBar";
+import { HelpHint } from "@/components/ui/HelpTooltip";
+import type { AgentExplainRequest } from "@/lib/help/agent-explain";
 
 const AgentAerisPanel = dynamic(
   () =>
@@ -26,15 +28,23 @@ function toAgentLocation(location: SelectedLocation | null) {
 
 export function CommunityChatPanel({
   selectedLocation,
+  explainRequest,
 }: {
   selectedLocation: SelectedLocation | null;
+  explainRequest?: AgentExplainRequest | null;
 }) {
   const [activeTab, setActiveTab] = useState<"chat" | "agent">("agent");
+
+  // An incoming explain request always targets the live Agent AERIS tab.
+  useEffect(() => {
+    if (explainRequest) setActiveTab("agent");
+  }, [explainRequest]);
 
   return (
     <div className="relative flex flex-col h-full min-h-0">
       {/* Tab switcher */}
-      <div className="relative z-20 mb-2 flex rounded-lg border border-aeris-border/60 bg-aeris-bg/40 p-1">
+      <div className="relative z-20 mb-2 flex items-center gap-1">
+        <div className="flex flex-1 rounded-lg border border-aeris-border/60 bg-aeris-bg/40 p-1">
         <button
           type="button"
           onClick={() => setActiveTab("chat")}
@@ -61,6 +71,11 @@ export function CommunityChatPanel({
         >
           Agent AERIS
         </button>
+        </div>
+        <HelpHint
+          helpId={activeTab === "agent" ? "panel.agent" : "feeds.community"}
+          side="bottom"
+        />
       </div>
 
       {/* Community Chat tab */}
@@ -146,6 +161,7 @@ export function CommunityChatPanel({
         <AgentAerisPanel
           selectedLocation={toAgentLocation(selectedLocation)}
           isActive={activeTab === "agent"}
+          explainRequest={explainRequest}
         />
       )}
     </div>

@@ -320,6 +320,7 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
     <div className="flex flex-col h-full min-h-0 space-y-2">
       <CardHeader
         title="Live Webcams"
+        helpId="feeds.webcams"
         subtitle="JazBaz Philippines • CCTV Grid"
         trailing={
           <div className="flex items-center gap-1.5">

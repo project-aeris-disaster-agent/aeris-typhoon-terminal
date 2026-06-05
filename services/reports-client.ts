@@ -218,6 +218,33 @@ export async function submitReport(
   return data.report;
 }
 
+export type MintVerifiedReportsSummary = {
+  pendingBefore: number;
+  newlyQueued: number;
+  attempted: number;
+  minted: number;
+  failed: number;
+  pendingAfter: number;
+  reachedDeadline: boolean;
+};
+
+export async function mintVerifiedReports(opts?: {
+  limit?: number;
+}): Promise<MintVerifiedReportsSummary> {
+  const res = await fetch("/api/reports/mint", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(opts ?? {}),
+  });
+  const data = (await res.json().catch(() => ({}))) as MintVerifiedReportsSummary & {
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(data.error ?? `Mint failed (${res.status})`);
+  }
+  return data;
+}
+
 export async function reviewReport(opts: {
   reportId: string;
   action: ReportReviewAction;
@@ -270,6 +297,7 @@ function toFeatureCollection(
         verificationStatus: r.verificationStatus ?? "unverified",
         phoneVerificationStatus: r.phoneVerificationStatus ?? "unverified",
         onchainMintStatus: r.onchain?.mint.status ?? "not_started",
+        onchainNetwork: r.onchain?.mint.network ?? "",
         onchainTxHash: r.onchain?.mint.txHash ?? "",
         photoUrl: r.photoUrl ?? "",
       },

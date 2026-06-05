@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { clsx } from "clsx";
 import type { MapMode } from "./MapContainer";
+import { HelpHint } from "@/components/ui/HelpTooltip";
 import {
   DEFAULT_FLOOD_VISUALIZATION_SETTINGS,
   type FloodVisualizationSettings,
@@ -248,14 +249,19 @@ export function LayerLegend({
 
   return (
     <div className="panel-glass rounded-md overflow-hidden w-64">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between px-2.5 py-1.5 hud-text text-aeris-muted hover:text-aeris-text"
-      >
-        <span>Layers</span>
-        <span className="text-[10px]">{expanded ? "▾" : "▸"}</span>
-      </button>
+      <div className="flex items-center hud-text text-aeris-muted">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex flex-1 items-center justify-between px-2.5 py-1.5 hover:text-aeris-text"
+        >
+          <span>Layers</span>
+          <span className="text-[10px]">{expanded ? "▾" : "▸"}</span>
+        </button>
+        <span className="pr-2.5">
+          <HelpHint helpId="control.layers" side="left" />
+        </span>
+      </div>
 
       {expanded && (
         <div className="px-2.5 pb-2 space-y-2 border-t border-aeris-border">
@@ -339,8 +345,9 @@ export function QuickViewsPanel({
   return (
     <div className="panel-glass rounded-md overflow-hidden w-64">
       <div className="px-2.5 py-1.5 border-b border-aeris-border">
-        <div className="text-[10px] text-aeris-muted uppercase tracking-wider">
-          Quick Views
+        <div className="flex items-center gap-1 text-[10px] text-aeris-muted uppercase tracking-wider">
+          <span>Quick Views</span>
+          <HelpHint helpId="control.quickViews" side="right" />
         </div>
       </div>
       <div className="px-2.5 py-2">

@@ -3,6 +3,7 @@
 import { clsx } from "clsx";
 import { useEffect, useMemo, useState } from "react";
 import { CardHeader, Pill } from "../ui/Card";
+import { usePanelHeaderBadge } from "@/components/panel-header-badge";
 import { PH_REGIONS } from "@/config/region";
 import {
   computeForecastAlert,
@@ -58,12 +59,18 @@ export function ForecastPanel() {
   const data = byRegion?.[regionIdx] ?? null;
   const selectedAlert = data ? computeForecastAlert(data) : null;
 
+  const headerBadge = useMemo(
+    () => <Pill tone="accent">Open-Meteo</Pill>,
+    [],
+  );
+  usePanelHeaderBadge("forecast", headerBadge);
+
   return (
     <div className="space-y-2">
       <CardHeader
         title="7-Day Forecast"
         subtitle="Regions ranked by outlook severity (heat, rain, wind, pressure)."
-        trailing={<Pill tone="accent">Open-Meteo</Pill>}
+        trailing={headerBadge}
       />
 
       {loading && (

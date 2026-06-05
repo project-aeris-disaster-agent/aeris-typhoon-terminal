@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { CardHeader, Pill } from "../ui/Card";
+import { usePanelHeaderBadge } from "@/components/panel-header-badge";
 import { FreshnessTag } from "../ui/FreshnessTag";
 import {
   fetchActiveTyphoons,
@@ -31,6 +32,23 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
   const hasOutsidePar = Boolean(outsidePar) || outsideParGdacs.length > 0;
   const hasAnyTc = storms.length > 0 || hasOutsidePar;
   const monitorCount = (outsidePar ? 1 : 0) + outsideParGdacs.length;
+
+  const statusBadge = useMemo(() => {
+    if (loading) return <Pill>loading</Pill>;
+    if (error) return <Pill tone="danger">err</Pill>;
+    if (storms.length > 0 && hasOutsidePar) {
+      return (
+        <Pill tone="warn">
+          {storms.length} in PAR · {monitorCount} monitor
+        </Pill>
+      );
+    }
+    if (storms.length > 0) return <Pill tone="warn">{storms.length} in PAR</Pill>;
+    if (hasOutsidePar) return <Pill tone="warn">{monitorCount} monitor</Pill>;
+    return <Pill tone="ok">clear</Pill>;
+  }, [loading, error, storms.length, hasOutsidePar, monitorCount]);
+
+  usePanelHeaderBadge("typhoon", statusBadge);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,23 +133,7 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
     <div className="space-y-2">
       <CardHeader
         title="Active Storms"
-        trailing={
-          loading ? (
-            <Pill>loading</Pill>
-          ) : error ? (
-            <Pill tone="danger">err</Pill>
-          ) : storms.length > 0 && hasOutsidePar ? (
-            <Pill tone="warn">
-              {storms.length} in PAR · {monitorCount} monitor
-            </Pill>
-          ) : storms.length > 0 ? (
-            <Pill tone="warn">{storms.length} in PAR</Pill>
-          ) : hasOutsidePar ? (
-            <Pill tone="warn">{monitorCount} monitor</Pill>
-          ) : (
-            <Pill tone="ok">clear</Pill>
-          )
-        }
+        trailing={statusBadge}
       />
 
       {!hasAnyTc && !loading && !error && (
@@ -360,24 +362,22 @@ function StormHero({
             </div>
           )}
         </div>
-        {status && <Pill tone={tone}>{status}</Pill>}
+        <div className="flex items-center gap-1 shrink-0">
+          {status && <Pill tone={tone}>{status}</Pill>}
+          <Pill tone={threat.tone}>{threat.label} threat</Pill>
+        </div>
       </div>
 
-      <div className="flex items-end justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-[9px] uppercase tracking-wider text-aeris-muted">
-            Sustained wind
-          </div>
-          <div className="font-mono leading-none">
-            <span className="text-xl font-semibold text-aeris-text">
-              {windKph > 0 ? windKph : "—"}
-            </span>
-            <span className="text-[11px] text-aeris-muted ml-1">km/h</span>
-          </div>
+      <div className="min-w-0">
+        <div className="text-[9px] uppercase tracking-wider text-aeris-muted">
+          Sustained wind
         </div>
-        <Pill tone={threat.tone} className="shrink-0">
-          {threat.label} threat
-        </Pill>
+        <div className="font-mono leading-none">
+          <span className="text-xl font-semibold text-aeris-text">
+            {windKph > 0 ? windKph : "—"}
+          </span>
+          <span className="text-[11px] text-aeris-muted ml-1">km/h</span>
+        </div>
       </div>
 
       <div

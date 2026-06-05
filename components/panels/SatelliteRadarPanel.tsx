@@ -14,6 +14,7 @@ import {
   type LiveWeatherStatusDetail,
 } from "@/services/live-weather-overlay";
 import { FreshnessTag } from "../ui/FreshnessTag";
+import { HelpHint } from "@/components/ui/HelpTooltip";
 
 const SOURCES: Record<
   LiveImagerySource,
@@ -138,6 +139,11 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
           {status.message}
         </p>
       )}
+
+      <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-aeris-muted">
+        <span>Imagery Source</span>
+        <HelpHint helpId="control.satelliteSource" side="top" />
+      </div>
 
       <div className="flex gap-0.5 rounded-md border border-aeris-border/80 bg-aeris-bg/30 p-0.5">
         {(Object.keys(SOURCES) as LiveImagerySource[]).map((k) => (

@@ -23,6 +23,11 @@ import { registerHazardPopup } from "@/services/hazard-popup";
 import { attachMapUrlSync } from "@/services/url-state";
 import { initLiveWeatherOverlay } from "@/services/live-weather-overlay";
 import { resolveUserLocationOnLoad } from "@/lib/resolve-user-location";
+import {
+  AGENT_EXPLAIN_EVENT,
+  type AgentExplainDetail,
+  type AgentExplainRequest,
+} from "@/lib/help/agent-explain";
 
 export default function HomePage() {
   const [map, setMap] = useState<MLMap | null>(null);
@@ -33,6 +38,8 @@ export default function HomePage() {
     useState<SelectedLocation | null>(null);
   const selectedLocationRef = useRef<SelectedLocation | null>(null);
   const [intelFeedsCollapsed, setIntelFeedsCollapsed] = useState(true);
+  const [explainRequest, setExplainRequest] =
+    useState<AgentExplainRequest | null>(null);
   const initialLocationResolvedRef = useRef(false);
   const liveReportsTriggerRef = useRef<HTMLDivElement>(null!);
   const liveReportsPopoverRef = useRef<HTMLDivElement>(null!);
@@ -101,6 +108,20 @@ export default function HomePage() {
   useEffect(() => {
     selectedLocationRef.current = selectedLocation;
   }, [selectedLocation]);
+
+  // Long-press / right-click on a help affordance asks Agent AERIS to explain
+  // a dashboard feature. Reveal the Intel Feeds bar (which hosts the agent)
+  // and forward the prompt; the reply appears in chat and is spoken aloud.
+  useEffect(() => {
+    const onExplain = (event: Event) => {
+      const detail = (event as CustomEvent<AgentExplainDetail>).detail;
+      if (!detail?.prompt) return;
+      setIntelFeedsCollapsed(false);
+      setExplainRequest({ id: Date.now(), prompt: detail.prompt });
+    };
+    window.addEventListener(AGENT_EXPLAIN_EVENT, onExplain);
+    return () => window.removeEventListener(AGENT_EXPLAIN_EVENT, onExplain);
+  }, []);
 
   return (
     <YouTubeFeedsProvider>
@@ -189,6 +210,7 @@ export default function HomePage() {
           selectedLocation={selectedLocation}
           collapsed={intelFeedsCollapsed}
           onCollapsedChange={setIntelFeedsCollapsed}
+          explainRequest={explainRequest}
         />
       </div>
       <MobileTabBar active={mobileTab} onChange={setMobileTab} />

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 import { Pill } from "../ui/Card";
+import { usePanelHeaderBadge } from "@/components/panel-header-badge";
 import { AlertCard } from "../ui/AlertCard";
 import { FreshnessTag } from "../ui/FreshnessTag";
 import {
@@ -67,6 +68,13 @@ export function AlertsFeedPanel() {
       hazardCount: rest.length,
     };
   }, [alerts]);
+
+  const headerBadge = useMemo(() => {
+    if (loading) return <Pill>loading</Pill>;
+    return <Pill tone="accent">{alerts.length}</Pill>;
+  }, [loading, alerts.length]);
+
+  usePanelHeaderBadge("alerts", headerBadge);
 
   return (
     <div className="space-y-2.5">

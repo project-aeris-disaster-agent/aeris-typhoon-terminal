@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import type { Map as MLMap } from "maplibre-gl";
 import type { SelectedLocation } from "@/components/MapSearchBar";
 import { PanelSkeleton } from "@/components/ui/PanelSkeleton";
+import type { AgentExplainRequest } from "@/lib/help/agent-explain";
 
 const LiveWebcamsPanel = dynamic(
   () =>
@@ -48,12 +49,15 @@ export function BottomPanel({
   selectedLocation,
   collapsed: collapsedProp,
   onCollapsedChange,
+  explainRequest,
 }: {
   map?: MLMap | null;
   selectedLocation: SelectedLocation | null;
   /** Controlled Intel Feeds collapse (lifted to page for layout sync). */
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
+  /** When set, opens the Community Chat subpanel and asks AERIS to explain. */
+  explainRequest?: AgentExplainRequest | null;
 }) {
   const [collapsedInternal, setCollapsedInternal] = useState(true);
   const collapsed = collapsedProp ?? collapsedInternal;
@@ -64,6 +68,14 @@ export function BottomPanel({
     news: true,
     location: true,
   });
+
+  // An incoming explain request must reveal the Community Chat subpanel so the
+  // Agent AERIS reply is visible (page un-collapses the bar separately).
+  useEffect(() => {
+    if (explainRequest) {
+      setOpenPanels((prev) => ({ ...prev, location: true }));
+    }
+  }, [explainRequest]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -162,7 +174,10 @@ export function BottomPanel({
                   {sp.id === "webcams" && <LiveWebcamsPanel map={map ?? null} />}
                   {sp.id === "news" && <NewsLivestreamsPanel />}
                   {sp.id === "location" && (
-                    <CommunityChatPanel selectedLocation={selectedLocation} />
+                    <CommunityChatPanel
+                      selectedLocation={selectedLocation}
+                      explainRequest={explainRequest}
+                    />
                   )}
                 </div>
               )}

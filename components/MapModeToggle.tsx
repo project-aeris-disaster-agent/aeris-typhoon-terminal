@@ -2,6 +2,7 @@
 
 import { clsx } from "clsx";
 import type { MapMode } from "./MapContainer";
+import { HelpHint } from "@/components/ui/HelpTooltip";
 
 export function MapModeToggle({
   mode,
@@ -21,8 +22,12 @@ export function MapModeToggle({
 
   return (
     <div className="panel-glass rounded-md p-0.5 font-mono text-[11px]">
-      <div className="mb-0.5 px-1.5 text-[9px] uppercase tracking-wider text-aeris-muted">
-        View Mode
+      <div className="mb-0.5 flex items-center gap-1 px-1.5 text-[9px] uppercase tracking-wider text-aeris-muted">
+        <span>View Mode</span>
+        <HelpHint helpId="control.viewMode" side="right" />
+        {(onOpenPanahon || onOpenNoah) && (
+          <HelpHint helpId="control.externalMaps" side="right" />
+        )}
       </div>
       <div className="flex items-stretch">
         {(["2d", "3d"] as const).map((m) => (

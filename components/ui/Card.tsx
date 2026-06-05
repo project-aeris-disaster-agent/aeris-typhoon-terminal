@@ -2,6 +2,8 @@
 
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
+import type { HelpId } from "@/config/help-content";
+import { HelpHint } from "@/components/ui/HelpTooltip";
 
 export function Card({
   children,
@@ -29,22 +31,26 @@ export function CardHeader({
   title,
   subtitle,
   trailing,
+  helpId,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   trailing?: ReactNode;
+  /** When set, renders a help affordance next to the title. */
+  helpId?: HelpId;
 }) {
   return (
-    <div className="flex items-start justify-between gap-2 mb-2">
-      <div className="min-w-0">
-        <div className="hud-text text-aeris-muted">{title}</div>
-        {subtitle ? (
-          <div className="text-xs text-aeris-muted/80 mt-0.5 truncate">
-            {subtitle}
-          </div>
-        ) : null}
+    <div className="mb-2 min-w-0">
+      <div className="hud-text flex flex-wrap items-center gap-1.5 text-aeris-muted">
+        <span>{title}</span>
+        {helpId ? <HelpHint helpId={helpId} side="bottom" /> : null}
+        {trailing ? <div className="shrink-0">{trailing}</div> : null}
       </div>
-      {trailing ? <div className="shrink-0">{trailing}</div> : null}
+      {subtitle ? (
+        <div className="text-xs text-aeris-muted/80 mt-0.5 truncate">
+          {subtitle}
+        </div>
+      ) : null}
     </div>
   );
 }

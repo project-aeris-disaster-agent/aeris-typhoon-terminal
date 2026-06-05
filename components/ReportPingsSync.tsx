@@ -8,6 +8,7 @@ import {
   renderReportsOnMap,
   type IncidentReport,
 } from "@/services/reports-client";
+import { markOverlayReady } from "@/lib/overlay-ready";
 
 const REFRESH_MS = 30 * 1000;
 
@@ -23,6 +24,7 @@ export const ReportPingsSync = memo(function ReportPingsSync({
 }) {
   const latestReportsRef = useRef<IncidentReport[]>([]);
   const emptyStreakRef = useRef(0);
+  const bootSignaledRef = useRef(false);
 
   useEffect(() => {
     if (!map) return;
@@ -53,9 +55,23 @@ export const ReportPingsSync = memo(function ReportPingsSync({
 
         latestReportsRef.current = reports;
         renderReportsOnMap(map, reports);
+
+        // Confirm to the boot screen that the report-pings overlay is wired up
+        // (feed reachable + layer rendered) before the terminal is revealed.
+        if (!bootSignaledRef.current) {
+          bootSignaledRef.current = true;
+          markOverlayReady("reports", {
+            status: "ok",
+            detail: reports.length === 0 ? "no active pings" : undefined,
+          });
+        }
       } catch {
         // Keep the last known report pings rendered when the feed is degraded.
         emptyStreakRef.current = 0;
+        if (!bootSignaledRef.current) {
+          bootSignaledRef.current = true;
+          markOverlayReady("reports", { status: "fail", detail: "feed down" });
+        }
       }
     };
 

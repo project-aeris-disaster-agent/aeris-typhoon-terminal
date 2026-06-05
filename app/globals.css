@@ -255,9 +255,6 @@ body > div {
 }
 
 @keyframes aeris-glyph-spin {
-  from {
-    transform: rotate(0deg);
-  }
   to {
     transform: rotate(360deg);
   }
@@ -274,15 +271,26 @@ body > div {
 }
 
 .aeris-loading-glyph-spin {
-  animation: aeris-glyph-spin 2.4s linear infinite;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  will-change: transform;
+  backface-visibility: hidden;
+  animation: aeris-glyph-spin 2s linear infinite;
+  animation-play-state: running;
 }
 
 .aeris-loading-pulse {
   animation: aeris-logo-pulse 2s ease-in-out infinite;
 }
 
+/*
+ * The boot/loading glyph is a deliberate progress indicator: it must keep
+ * spinning the whole time the dashboard is loading, even when the OS has
+ * "reduce motion" enabled. Only the decorative pulse honors reduced motion.
+ */
 @media (prefers-reduced-motion: reduce) {
-  .aeris-loading-glyph-spin,
   .aeris-loading-pulse {
     animation: none !important;
   }

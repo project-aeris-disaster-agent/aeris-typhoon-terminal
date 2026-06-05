@@ -37,6 +37,7 @@ import type { WindPerformanceProfile } from "@/services/wind-particles";
 import type { WindFieldPayload } from "@/services/wind-field-types";
 import type { Typhoon } from "@/services/typhoon-tracks";
 import { DEVICE_TIER, detectDeviceTier, type DeviceTier } from "@/lib/device-tier";
+import { markOverlayReady } from "@/lib/overlay-ready";
 
 export type LiveWeatherPerformanceProfile = WindPerformanceProfile;
 
@@ -790,6 +791,15 @@ export function initLiveWeatherOverlay(map: MLMap) {
         st.nextAdvanceAtMs = performance.now() + frameHoldMs(st);
         emitStatus(st, null);
         startTicker(map);
+
+        // Confirm to the boot screen that radar imagery has actually appeared
+        // (layer added + first frame's tiles loaded) before revealing the
+        // terminal — not just that the RainViewer index responded.
+        void waitForImagerySlot(map, "radar", st.activeSlot).then(() => {
+          markOverlayReady("radar", { status: "ok" });
+        });
+      } else {
+        markOverlayReady("radar", { status: "warn", detail: "no frames" });
       }
     })
     .catch((error) => {
@@ -801,8 +811,24 @@ export function initLiveWeatherOverlay(map: MLMap) {
           ? `Radar feed unavailable; using last-known-good frame (${(error as Error).message}).`
           : `Radar feed unavailable (${(error as Error).message}).`;
       emitStatus(st, st.fallbackMessage);
+      markOverlayReady("radar", { status: "fail", detail: "feed down" });
     });
   syncImageryRefreshTimers(map);
+
+  // Force-verify the satellite feed at boot so the loading screen can gate on
+  // it. Radar stays the visible default (radar/satellite are mutually exclusive
+  // imagery layers), so we confirm satellite frames are *available* rather than
+  // painting a hidden layer.
+  void fetchSatelliteFrames("himawari-ir")
+    .then((result) => {
+      markOverlayReady("satellite", {
+        status: result.frames.length ? "ok" : "warn",
+        detail: result.frames.length ? undefined : "no frames",
+      });
+    })
+    .catch(() => {
+      markOverlayReady("satellite", { status: "fail", detail: "feed down" });
+    });
 
   void attachWind(wind);
   state.windTimer = setInterval(() => {

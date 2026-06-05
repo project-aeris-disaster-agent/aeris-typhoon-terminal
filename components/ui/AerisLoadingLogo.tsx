@@ -1,13 +1,14 @@
 "use client";
 
-import Image from "next/image";
 import { clsx } from "clsx";
-import { AERIS_BRAND, AERIS_GLYPH_DIM } from "@/lib/aeris-brand-assets";
+import { AERIS_BRAND, AERIS_CHAR_VIEWBOX, AERIS_CHAR_VISIBLE_W } from "@/lib/aeris-brand-assets";
 
 type AerisLoadingLogoProps = {
   size?: "sm" | "md" | "lg";
-  /** glyph = spinner mark, logo = wordmark, char = mascot, splash = all three (boot screens). */
+  /** glyph = spinner mark, logo = wordmark, char = mascot, splash = glyph (boot screens). */
   variant?: "glyph" | "logo" | "char" | "splash";
+  /** Multiplier for char variant height (e.g. 3 = 300% of default). */
+  scale?: number;
   pulse?: boolean;
   spin?: boolean;
   className?: string;
@@ -22,43 +23,110 @@ function AerisGlyph({
   spin,
   pulse,
   className,
-  priority,
 }: {
   size: keyof typeof GLYPH_PX;
   spin: boolean;
   pulse: boolean;
   className?: string;
-  priority?: boolean;
 }) {
-  return (
-    <Image
+  const px = GLYPH_PX[size];
+  const img = (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
       src={AERIS_BRAND.glyph}
       alt=""
       aria-hidden
-      width={AERIS_GLYPH_DIM.width}
-      height={AERIS_GLYPH_DIM.height}
-      priority={priority}
+      decoding="async"
+      fetchPriority={size === "lg" ? "high" : "auto"}
+      className={clsx(
+        "block h-full w-auto max-w-full object-contain",
+        pulse && !spin && "aeris-loading-pulse",
+      )}
+    />
+  );
+
+  if (spin) {
+    return (
+      <div
+        className={clsx("aeris-loading-glyph-spin shrink-0", className)}
+        style={{ width: px, height: px }}
+        aria-hidden
+      >
+        {img}
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={AERIS_BRAND.glyph}
+      alt=""
+      aria-hidden
+      decoding="async"
       className={clsx(
         "h-auto w-auto shrink-0 object-contain",
-        spin && "aeris-loading-glyph-spin",
-        pulse && !spin && "aeris-loading-pulse",
+        pulse && "aeris-loading-pulse",
         className,
       )}
-      style={{ height: GLYPH_PX[size], width: "auto" }}
+      style={{ height: px, width: "auto" }}
     />
+  );
+}
+
+const SPLASH_TITLE = {
+  sm: "text-[10px] tracking-[0.18em]",
+  md: "text-[11px] tracking-[0.2em]",
+  lg: "text-xs sm:text-sm tracking-[0.22em]",
+} as const;
+
+/** Crops empty left padding baked into AERIS_char.svg so the figure centers visually. */
+export function AerisCharIllustration({
+  size,
+  scale = 1,
+  className,
+}: {
+  size: keyof typeof CHAR_H;
+  /** Multiplier applied to the base height (e.g. 3 = 300% of default). */
+  scale?: number;
+  className?: string;
+}) {
+  const heightPx = Math.round(CHAR_H[size] * scale);
+  const widthPx = Math.round(
+    (heightPx * AERIS_CHAR_VISIBLE_W) / AERIS_CHAR_VIEWBOX.height,
+  );
+  const offsetPx = Math.round(
+    (heightPx * AERIS_CHAR_VIEWBOX.cropX) / AERIS_CHAR_VIEWBOX.height,
+  );
+
+  return (
+    <div
+      className={clsx("relative mx-auto shrink-0 overflow-hidden", className)}
+      style={{ height: heightPx, width: widthPx }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={AERIS_BRAND.char}
+        alt=""
+        aria-hidden
+        className="absolute top-0 block h-full w-auto max-w-none"
+        style={{ left: -offsetPx }}
+      />
+    </div>
   );
 }
 
 export function AerisLoadingLogo({
   size = "md",
   variant,
+  scale = 1,
   pulse = false,
   spin,
   className,
 }: AerisLoadingLogoProps) {
   const resolvedVariant = variant ?? (size === "lg" ? "splash" : "glyph");
   const shouldSpin = spin ?? (resolvedVariant === "glyph" || resolvedVariant === "splash");
-  const shouldPulse = pulse || resolvedVariant === "splash";
+  const shouldPulse = pulse && resolvedVariant !== "splash";
 
   if (resolvedVariant === "logo") {
     return (
@@ -78,18 +146,7 @@ export function AerisLoadingLogo({
 
   if (resolvedVariant === "char") {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={AERIS_BRAND.char}
-        alt=""
-        aria-hidden
-        className={clsx(
-          "h-auto w-auto object-contain",
-          shouldPulse && "aeris-loading-pulse",
-          className,
-        )}
-        style={{ maxHeight: CHAR_H[size] }}
-      />
+      <AerisCharIllustration size={size} scale={scale} className={className} />
     );
   }
 
@@ -100,30 +157,28 @@ export function AerisLoadingLogo({
         spin={shouldSpin}
         pulse={shouldPulse}
         className={className}
-        priority={size === "lg"}
       />
     );
   }
 
   return (
-    <div className={clsx("flex flex-col items-center gap-3", className)}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={AERIS_BRAND.logo}
-        alt="AERIS"
-        className={clsx("h-auto object-contain", shouldPulse && "aeris-loading-pulse")}
-        style={{ maxWidth: LOGO_W[size] }}
-      />
-      <div className="flex items-end justify-center gap-3 sm:gap-4">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={AERIS_BRAND.char}
-          alt=""
-          aria-hidden
-          className="h-auto object-contain object-bottom"
-          style={{ maxHeight: CHAR_H[size] }}
-        />
-        <AerisGlyph size={size} spin={shouldSpin} pulse={false} priority />
+    <div
+      className={clsx(
+        "mx-auto flex w-full max-w-sm flex-col items-center gap-3 sm:max-w-md sm:gap-4",
+        className,
+      )}
+    >
+      <p
+        className={clsx(
+          "w-full text-center font-mono font-semibold uppercase text-aeris-text",
+          SPLASH_TITLE[size],
+        )}
+      >
+        <span className="text-aeris-accent">A.E.R.I.S.</span> Disaster Reporting
+        Terminal
+      </p>
+      <div className="flex w-full flex-col items-center justify-center gap-3">
+        <AerisGlyph size={size} spin={shouldSpin} pulse={false} className="mx-auto" />
       </div>
     </div>
   );

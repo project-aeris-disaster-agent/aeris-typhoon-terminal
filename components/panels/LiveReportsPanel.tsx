@@ -9,16 +9,19 @@ import {
   MapPin,
   RefreshCw,
   Siren,
+  Stamp,
 } from "lucide-react";
 import { CardHeader, Pill } from "../ui/Card";
 import {
   reviewReport,
+  mintVerifiedReports,
   type ReportReviewAction,
   fetchReports,
   type IncidentReport,
 } from "@/services/reports-client";
 import { FreshnessTag } from "../ui/FreshnessTag";
 import { useAerisRole } from "@/services/role-context";
+import { mintExplorerTxUrl, shortTxHash } from "@/lib/onchain/explorer-links";
 
 const AI_PRIORITY_ORDER: Record<string, number> = {
   urgent: 0,
@@ -27,7 +30,24 @@ const AI_PRIORITY_ORDER: Record<string, number> = {
   rejected: 3,
 };
 
-type ReportFilter = "all" | "urgent" | "unverified";
+type ReportFilter = "all" | "urgent" | "unverified" | "verified" | "minted";
+
+function isVerifiedReport(report: IncidentReport) {
+  return report.verificationStatus === "verified";
+}
+
+function isMintedReport(report: IncidentReport) {
+  return report.onchain?.mint?.status === "minted";
+}
+
+function isPendingMintReport(report: IncidentReport) {
+  const status = report.onchain?.mint?.status ?? "not_started";
+  return (
+    isVerifiedReport(report) &&
+    status !== "minted" &&
+    status !== "minting"
+  );
+}
 
 function sortReports(reports: IncidentReport[]) {
   return [...reports].sort((a, b) => {
@@ -137,6 +157,13 @@ function ReportCard({
     typeof report.confidence === "number"
       ? Math.round(report.confidence * 100)
       : null;
+  const mintTxHash =
+    report.onchain?.mint?.status === "minted"
+      ? report.onchain.mint.txHash
+      : undefined;
+  const mintTxHref = mintTxHash
+    ? mintExplorerTxUrl(report.onchain?.mint.network, mintTxHash)
+    : null;
 
   return (
     <article
@@ -227,6 +254,27 @@ function ReportCard({
         {report.confirmations > 0 && (
           <span>{report.confirmations} confirmation{report.confirmations === 1 ? "" : "s"}</span>
         )}
+        {mintTxHash ? (
+          <span className="inline-flex items-center gap-1 font-mono">
+            <span>TXN</span>
+            {mintTxHref ? (
+              <a
+                href={mintTxHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-aeris-accent hover:underline"
+                title={mintTxHash}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {shortTxHash(mintTxHash)}
+              </a>
+            ) : (
+              <span className="text-aeris-text" title={mintTxHash}>
+                {shortTxHash(mintTxHash)}
+              </span>
+            )}
+          </span>
+        ) : null}
         <span className="inline-flex items-center gap-0.5 text-aeris-accent/80">
           <MapPin size={10} aria-hidden />
           Tap to locate on map
@@ -248,36 +296,20 @@ function ReportCard({
         <div className="mt-1 space-y-0.5 border-t border-aeris-border/40 pt-1 text-[10px] font-mono text-aeris-muted">
           <div>msg: {report.messageId ?? report.id}</div>
           <div>mint: {report.onchain?.mint.status ?? "not_started"}</div>
-          {report.onchain?.mint.txHash && (
+          {mintTxHash && (
             <div className="flex items-center gap-1">
-              <span>tx: {report.onchain.mint.txHash.slice(0, 18)}…</span>
-              {(() => {
-                const network = report.onchain?.mint.network ?? "";
-                const tx = report.onchain?.mint.txHash;
-                if (!tx) return null;
-                const explorerBase =
-                  network === "skale-base-mainnet"
-                    ? "https://skale-base-explorer.skalenodes.com"
-                    : network === "skale-base-testnet"
-                      ? "https://base-sepolia-testnet-explorer.skalenodes.com"
-                      : network === "base-mainnet"
-                        ? "https://basescan.org"
-                        : network === "base-sepolia"
-                          ? "https://sepolia.basescan.org"
-                          : null;
-                if (!explorerBase) return null;
-                return (
-                  <a
-                    href={`${explorerBase}/tx/${tx}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-aeris-accent underline"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    explorer ↗
-                  </a>
-                );
-              })()}
+              <span>tx: {shortTxHash(mintTxHash, 18, 8)}</span>
+              {mintTxHref ? (
+                <a
+                  href={mintTxHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-aeris-accent underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  explorer ↗
+                </a>
+              ) : null}
             </div>
           )}
           {report.onchain?.mint.tokenId && (
@@ -340,6 +372,7 @@ export function LiveReportsPanel({
   const [filter, setFilter] = useState<ReportFilter>("all");
   const [listExpanded, setListExpanded] = useState(false);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [mintingAll, setMintingAll] = useState(false);
   const [status, setStatus] = useState<{
     tone: "ok" | "warn" | "danger";
     msg: string;
@@ -361,6 +394,18 @@ export function LiveReportsPanel({
       reports.filter(
         (report) => (report.verificationStatus ?? "unverified") !== "verified",
       ),
+    [reports],
+  );
+  const verifiedReports = useMemo(
+    () => reports.filter(isVerifiedReport),
+    [reports],
+  );
+  const mintedReports = useMemo(
+    () => reports.filter(isMintedReport),
+    [reports],
+  );
+  const pendingMintReports = useMemo(
+    () => reports.filter(isPendingMintReport),
     [reports],
   );
 
@@ -407,6 +452,12 @@ export function LiveReportsPanel({
         (report) => (report.verificationStatus ?? "unverified") !== "verified",
       );
     }
+    if (filter === "verified") {
+      return sorted.filter(isVerifiedReport);
+    }
+    if (filter === "minted") {
+      return sorted.filter(isMintedReport);
+    }
     return sorted;
   }, [reports, filter]);
 
@@ -418,6 +469,34 @@ export function LiveReportsPanel({
       duration: 900,
       essential: true,
     });
+  };
+
+  const onMintAllVerified = async () => {
+    setMintingAll(true);
+    try {
+      const summary = await mintVerifiedReports({ limit: 20 });
+      const msg =
+        summary.minted > 0
+          ? `Minted ${summary.minted} report${summary.minted === 1 ? "" : "s"}.`
+          : summary.newlyQueued > 0
+            ? `Queued ${summary.newlyQueued} report${summary.newlyQueued === 1 ? "" : "s"} for mint.`
+            : "No verified reports pending mint.";
+      setStatus({
+        tone: summary.failed > 0 ? "warn" : "ok",
+        msg:
+          summary.failed > 0
+            ? `${msg} ${summary.failed} failed.`
+            : summary.reachedDeadline && summary.pendingAfter > 0
+              ? `${msg} ${summary.pendingAfter} still pending — run again.`
+              : msg,
+      });
+      refresh.current();
+      window.dispatchEvent(new CustomEvent("aeris:reports-refresh"));
+    } catch (error) {
+      setStatus({ tone: "danger", msg: (error as Error).message });
+    } finally {
+      setMintingAll(false);
+    }
   };
 
   const onReview = async (
@@ -452,7 +531,7 @@ export function LiveReportsPanel({
   return (
     <div className="space-y-2.5">
       {!embedded && (
-        <CardHeader title="Live Reports" />
+        <CardHeader title="Live Reports" helpId="panel.reports" />
       )}
 
       <div className="flex items-center justify-between gap-2">
@@ -490,32 +569,88 @@ export function LiveReportsPanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5">
-        <StatChip
-          label="Urgent"
-          count={urgentReports.length}
-          tone="danger"
-          active={filter === "urgent"}
-          onClick={() =>
-            setFilter((current) => (current === "urgent" ? "all" : "urgent"))
-          }
-        />
-        <StatChip
-          label="Chat"
-          count={chatReports.length}
-          active={false}
-        />
-        <StatChip
-          label="Needs Review"
-          count={unverifiedReports.length}
-          tone="warn"
-          active={filter === "unverified"}
-          onClick={() =>
-            setFilter((current) =>
-              current === "unverified" ? "all" : "unverified",
-            )
-          }
-        />
+      <div className="space-y-1.5">
+        <div className="grid grid-cols-3 gap-1.5">
+          <StatChip
+            label="Urgent"
+            count={urgentReports.length}
+            tone="danger"
+            active={filter === "urgent"}
+            onClick={() =>
+              setFilter((current) => (current === "urgent" ? "all" : "urgent"))
+            }
+          />
+          <StatChip
+            label="Chat"
+            count={chatReports.length}
+            active={false}
+          />
+          <StatChip
+            label="Needs Review"
+            count={unverifiedReports.length}
+            tone="warn"
+            active={filter === "unverified"}
+            onClick={() =>
+              setFilter((current) =>
+                current === "unverified" ? "all" : "unverified",
+              )
+            }
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          <StatChip
+            label="Verified"
+            count={verifiedReports.length}
+            tone="ok"
+            active={filter === "verified"}
+            onClick={() =>
+              setFilter((current) =>
+                current === "verified" ? "all" : "verified",
+              )
+            }
+          />
+          <StatChip
+            label="Minted"
+            count={mintedReports.length}
+            tone="ok"
+            active={filter === "minted"}
+            onClick={() =>
+              setFilter((current) => (current === "minted" ? "all" : "minted"))
+            }
+          />
+          {canReview ? (
+            <button
+              type="button"
+              onClick={() => void onMintAllVerified()}
+              disabled={mintingAll || pendingMintReports.length === 0}
+              className={clsx(
+                "rounded border px-2 py-1 text-left transition-colors",
+                "border-aeris-accent/35 text-aeris-accent",
+                "hover:bg-aeris-accent/10 disabled:cursor-not-allowed disabled:opacity-40",
+              )}
+              title={
+                pendingMintReports.length === 0
+                  ? "All verified reports are minted or in progress"
+                  : `Queue and mint ${pendingMintReports.length} verified report${pendingMintReports.length === 1 ? "" : "s"}`
+              }
+            >
+              <div className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider opacity-80">
+                <Stamp size={10} aria-hidden />
+                Mint all
+              </div>
+              <div className="text-sm font-mono tabular-nums leading-tight">
+                {mintingAll ? "…" : pendingMintReports.length}
+              </div>
+            </button>
+          ) : (
+            <StatChip
+              label="Pending Mint"
+              count={pendingMintReports.length}
+              tone="warn"
+              active={false}
+            />
+          )}
+        </div>
       </div>
 
       <p className="text-[10px] leading-snug text-aeris-muted">

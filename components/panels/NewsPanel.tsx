@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CardHeader, Pill } from "../ui/Card";
+import { usePanelHeaderBadge } from "@/components/panel-header-badge";
 import { VirtualList } from "../ui/VirtualList";
 import { FreshnessTag } from "../ui/FreshnessTag";
 import { fetchNews, type NewsFetchResult, type NewsItem } from "@/services/news";
@@ -38,11 +39,18 @@ export function NewsPanel() {
     };
   }, []);
 
+  const headerBadge = useMemo(() => {
+    if (loading) return <Pill>loading</Pill>;
+    return <Pill tone="accent">{items.length}</Pill>;
+  }, [loading, items.length]);
+
+  usePanelHeaderBadge("news", headerBadge);
+
   return (
     <div className="space-y-2">
       <CardHeader
         title="News Watch"
-        trailing={<Pill tone="accent">{items.length}</Pill>}
+        trailing={headerBadge}
       />
       <p className="text-[10px] text-aeris-muted leading-snug">
         Regional headlines and situational updates related to active weather.

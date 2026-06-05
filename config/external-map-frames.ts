@@ -21,5 +21,7 @@ export const EXTERNAL_MAP_FRAMES: Record<
     loadingLabel: "Loading NOAH…",
     ariaLabel: "UP NOAH rainfall contour map",
     iframeTitle: "UP NOAH Rainfall Contour",
+    // noah.up.edu.ph responds with X-Frame-Options: SAMEORIGIN — browsers show a blank iframe.
+    embeddable: false,
   },
 };

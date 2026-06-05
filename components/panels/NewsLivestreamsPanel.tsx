@@ -166,6 +166,7 @@ export function NewsLivestreamsPanel() {
     <div className="flex flex-col h-full min-h-0 space-y-2">
       <CardHeader
         title="News Livestreams"
+        helpId="feeds.livestreams"
         subtitle={channelInfo.label}
         trailing={
           liveChannels.length > 0 ? (

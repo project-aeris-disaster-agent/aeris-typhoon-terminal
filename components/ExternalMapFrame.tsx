@@ -10,6 +10,8 @@ export type ExternalMapFrameConfig = {
   loadingLabel: string;
   ariaLabel: string;
   iframeTitle: string;
+  /** When false, show an in-app message instead of an iframe (remote site blocks embedding). */
+  embeddable?: boolean;
 };
 
 export function ExternalMapFrame({
@@ -83,22 +85,42 @@ export function ExternalMapFrame({
         </div>
 
         <div className="relative flex-1 bg-black">
-          {!loaded && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-aeris-bg/60">
-              <AerisLoadingLogo size="md" variant="splash" pulse />
-              <div className="text-[11px] font-mono uppercase tracking-wider text-aeris-muted">
-                {config.loadingLabel}
-              </div>
+          {config.embeddable === false ? (
+            <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+              <p className="max-w-md text-[12px] leading-relaxed text-aeris-muted">
+                {config.title} cannot be embedded here. The site only allows
+                framing on its own domain, so the browser blocks the map inside
+                this popup.
+              </p>
+              <a
+                href={config.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded border border-aeris-accent/40 bg-aeris-accent/10 px-4 py-2 text-[11px] font-mono uppercase tracking-wider text-aeris-accent transition-colors hover:bg-aeris-accent/20"
+              >
+                Open {config.title} in new tab ↗
+              </a>
             </div>
+          ) : (
+            <>
+              {!loaded && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-aeris-bg/60">
+                  <AerisLoadingLogo size="md" variant="splash" />
+                  <div className="text-[11px] font-mono uppercase tracking-wider text-aeris-muted">
+                    {config.loadingLabel}
+                  </div>
+                </div>
+              )}
+              <iframe
+                src={config.url}
+                title={config.iframeTitle}
+                className="h-full w-full border-0"
+                allow="geolocation; fullscreen"
+                referrerPolicy="no-referrer-when-downgrade"
+                onLoad={() => setLoaded(true)}
+              />
+            </>
           )}
-          <iframe
-            src={config.url}
-            title={config.iframeTitle}
-            className="h-full w-full border-0"
-            allow="geolocation; fullscreen"
-            referrerPolicy="no-referrer-when-downgrade"
-            onLoad={() => setLoaded(true)}
-          />
         </div>
       </div>
     </div>

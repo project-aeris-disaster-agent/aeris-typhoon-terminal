@@ -173,6 +173,80 @@ export async function listStaleQueuedMintReports(
   return rows.map(rowToPublic);
 }
 
+const VERIFIED_PENDING_MINT_STATUSES = [
+  "not_started",
+  "pending_phone",
+  "pending_review",
+  "failed",
+  "queued",
+] as const;
+
+const VERIFIED_QUEUEABLE_MINT_STATUSES = [
+  "not_started",
+  "pending_phone",
+  "pending_review",
+  "failed",
+] as const;
+
+export function isVerifiedPendingMint(status: string | undefined | null): boolean {
+  if (!status || status === "minted" || status === "minting") return false;
+  return (VERIFIED_PENDING_MINT_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * Count verified disaster reports that are eligible for on-chain mint but not
+ * yet confirmed on-chain (`minted` / in-flight `minting`).
+ */
+export async function countVerifiedPendingMint(): Promise<number> {
+  const c = cfg();
+  if (!c) return 0;
+  const url = new URL(`${c.url}/rest/v1/disaster_reports`);
+  url.searchParams.set("select", "id");
+  url.searchParams.set("verification_status", "eq.verified");
+  url.searchParams.set(
+    "onchain_mint_status",
+    `in.(${VERIFIED_PENDING_MINT_STATUSES.join(",")})`,
+  );
+  const res = await fetch(url.toString(), {
+    headers: {
+      ...headers(c.serviceKey),
+      prefer: "count=exact",
+    },
+    cache: "no-store",
+  });
+  if (!res.ok) return 0;
+  const range = res.headers.get("content-range");
+  if (!range) return 0;
+  const match = /\/(\d+)$/.exec(range);
+  return match ? Number(match[1]) : 0;
+}
+
+/**
+ * Transition all verified, not-yet-minted rows into `queued` so the mint worker
+ * (or Supabase push webhook) can pick them up.
+ */
+export async function queueVerifiedReportsForMint(): Promise<number> {
+  const c = cfg();
+  if (!c) return 0;
+  const url = new URL(`${c.url}/rest/v1/disaster_reports`);
+  url.searchParams.set("verification_status", "eq.verified");
+  url.searchParams.set(
+    "onchain_mint_status",
+    `in.(${VERIFIED_QUEUEABLE_MINT_STATUSES.join(",")})`,
+  );
+  const res = await fetch(url.toString(), {
+    method: "PATCH",
+    headers: {
+      ...headers(c.serviceKey),
+      prefer: "return=representation",
+    },
+    body: JSON.stringify({ onchain_mint_status: "queued" }),
+  });
+  if (!res.ok) return 0;
+  const rows = (await res.json()) as Row[];
+  return rows.length;
+}
+
 export async function listQueuedMintReports(limit = 10): Promise<PublicReport[]> {
   const c = cfg();
   if (!c) return [];
