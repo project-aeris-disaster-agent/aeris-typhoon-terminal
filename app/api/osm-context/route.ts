@@ -34,6 +34,12 @@ const OVERPASS_ENDPOINTS = [
   "http://overpass.kumi.systems/api/interpreter",
 ];
 const CACHE_TTL_SECONDS = 10 * 60;
+/** Long-lived "last good" copy served when every Overpass mirror is down. */
+const STALE_TTL_SECONDS = 6 * 60 * 60;
+/** Public Overpass mirrors are slow; give each a generous per-request budget. */
+const OVERPASS_TIMEOUT_MS = 20_000;
+
+type ContextPayload = ReturnType<typeof buildPayload>;
 
 export async function GET(request: NextRequest) {
   const bboxText = request.nextUrl.searchParams.get("bbox");
@@ -49,8 +55,10 @@ export async function GET(request: NextRequest) {
   }
 
   const zoom = Number(zoomText ?? "0");
-  const cacheKey = `osm-context:${bbox.map((value) => value.toFixed(3)).join(",")}:${Math.round(zoom * 10)}`;
-  const cached = await store.get<ReturnType<typeof buildPayload>>(cacheKey);
+  const keySuffix = `${bbox.map((value) => value.toFixed(3)).join(",")}:${Math.round(zoom * 10)}`;
+  const cacheKey = `osm-context:${keySuffix}`;
+  const staleKey = `osm-context-stale:${keySuffix}`;
+  const cached = await store.get<ContextPayload>(cacheKey);
   if (cached) {
     return NextResponse.json(cached, {
       status: 200,
@@ -73,7 +81,7 @@ export async function GET(request: NextRequest) {
           "user-agent": "aeris-typhoon-terminal/1.0 (+http://localhost)",
         },
         cache: "no-store",
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(OVERPASS_TIMEOUT_MS),
       });
     } catch (error) {
       console.warn(`OSM context fetch failed for ${endpoint}:`, error);
@@ -84,14 +92,15 @@ export async function GET(request: NextRequest) {
       break;
     }
   }
-  if (!response) return jsonError("Failed to fetch OpenStreetMap context.", 502);
+  if (!response) return serveStaleOrError(staleKey, "Failed to fetch OpenStreetMap context.");
 
   const data = (await response.json()) as unknown;
   if (!isOverpassResponse(data)) {
-    return jsonError("OpenStreetMap context payload was invalid.", 502);
+    return serveStaleOrError(staleKey, "OpenStreetMap context payload was invalid.");
   }
   const payload = buildPayload(data.elements);
   await store.set(cacheKey, payload, CACHE_TTL_SECONDS);
+  await store.set(staleKey, payload, STALE_TTL_SECONDS);
 
   return NextResponse.json(payload, {
     status: 200,
@@ -99,6 +108,24 @@ export async function GET(request: NextRequest) {
       "cache-control": "public, max-age=300, s-maxage=600, stale-while-revalidate=300",
     },
   });
+}
+
+/**
+ * Serve the last-known-good context (flagged `degraded`) when every Overpass
+ * mirror is unreachable, falling back to a 502 only when no cache exists.
+ */
+async function serveStaleOrError(staleKey: string, message: string) {
+  const stale = await store.get<ContextPayload>(staleKey);
+  if (stale) {
+    return NextResponse.json(
+      { ...stale, degraded: true },
+      {
+        status: 200,
+        headers: { "cache-control": "no-store" },
+      },
+    );
+  }
+  return jsonError(message, 502);
 }
 
 function parseBbox(text: string): [number, number, number, number] | null {

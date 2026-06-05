@@ -68,7 +68,23 @@ CRON_SECRET=...                                   # set by Vercel for cron auth
 ONCHAIN_MINT_BATCH_LIMIT=10                       # default 5 for manual, 10 for cron
 ONCHAIN_MINT_STALE_SECONDS=120                    # cron only picks rows older than this
 PINATA_JWT=...                                    # optional, falls back to dev-skip
+MINT_PIN_EVIDENCE_IMAGE=                          # optional: 1/true to pin the citizen photo to IPFS
 ```
+
+## Token image (evidence photo)
+
+By default the token metadata `image` points at the citizen evidence photo
+(`disaster_reports.photo_url`, a Supabase public URL) when the report has one
+and has passed moderation (`verification_status = 'verified'` and
+`moderation_status` not `hidden`/`needs_review`). Reports without an approved
+photo fall back to the static badge `https://aeris.bagyo.app/badge/report.png`.
+
+Set `MINT_PIN_EVIDENCE_IMAGE=1` (requires `PINATA_JWT`) to make the on-chain
+image **immutable**: the worker pins the photo file to IPFS first, then pins the
+metadata JSON referencing the resulting `ipfs://` image. If the file pin fails
+the mint still proceeds using the mutable Supabase URL — pinning never blocks a
+mint. Because IPFS pinning is effectively irreversible, photos are only pinned
+**after** a report is approved.
 
 ## Enabling the push path
 

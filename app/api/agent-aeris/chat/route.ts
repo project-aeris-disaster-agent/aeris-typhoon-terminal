@@ -219,9 +219,17 @@ export async function POST(request: Request) {
   } catch (error) {
     clearTimeout(timeout);
     if (error instanceof Error && error.name === "AbortError") {
+      console.error(
+        `[agent-aeris] upstream timed out after ${proxyTimeoutMs}ms (${baseUrl}/api/llm/chat)`,
+      );
       return jsonError("AGENT AERIS backend timed out.", 504);
     }
 
+    console.error(
+      `[agent-aeris] upstream connection failed (${baseUrl}/api/llm/chat): ${
+        (error as Error).message
+      }`,
+    );
     return jsonError("Unable to connect to AERIS CHAT backend.", 503);
   }
 }

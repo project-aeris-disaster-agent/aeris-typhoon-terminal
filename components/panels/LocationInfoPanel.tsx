@@ -67,6 +67,8 @@ type FacilityProps = {
 type FacilityFeature = GeoJSON.Feature<GeoJSON.Point, FacilityProps>;
 type OsmContextPayload = {
   facilities: GeoJSON.FeatureCollection<GeoJSON.Point>;
+  /** Set when served from last-known-good cache (Overpass mirrors were down). */
+  degraded?: boolean;
 };
 type NearbyFacility = {
   feature: FacilityFeature;
@@ -426,6 +428,13 @@ export function LocationInfoPanel({
     [forecast],
   );
 
+  // Endpoints flag `degraded` when they fall back to last-known-good cache
+  // (upstream provider was unreachable). Surface it instead of hiding it.
+  const forecastDegraded = Boolean(
+    (forecast as (ForecastSummary & { degraded?: boolean }) | null)?.degraded,
+  );
+  const osmDegraded = Boolean(osm?.degraded);
+
   const peakWeather = useMemo(
     () =>
       forecast
@@ -674,6 +683,13 @@ export function LocationInfoPanel({
           summary={stormSummary}
           open={openSections.storm}
           onToggle={() => toggleSection("storm")}
+          trailing={
+            forecastDegraded ? (
+              <span title="Showing last-known-good forecast; live source is unavailable.">
+                <Pill tone="warn">cached</Pill>
+              </span>
+            ) : undefined
+          }
         >
           {forecastLoading || !peakWeather || !forecastAlert ? (
             <SkeletonRow />
@@ -770,7 +786,15 @@ export function LocationInfoPanel({
           open={openSections.help}
           onToggle={() => toggleSection("help")}
           trailing={
-            osmLoading ? <Pill>loading</Pill> : <Pill>{nearbyFacilities.length}</Pill>
+            osmLoading ? (
+              <Pill>loading</Pill>
+            ) : osmDegraded ? (
+              <span title="Showing last-known-good map data; OpenStreetMap was unavailable.">
+                <Pill tone="warn">cached</Pill>
+              </span>
+            ) : (
+              <Pill>{nearbyFacilities.length}</Pill>
+            )
           }
         >
           {!osmLoading && nearbyFacilities.length === 0 ? (

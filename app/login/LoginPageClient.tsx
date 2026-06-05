@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { normalizePhoneE164 } from "@/lib/phone-auth";
 import { useTheme } from "@/components/providers/ThemeProvider";
+import { AerisLoadingLogo } from "@/components/ui/AerisLoadingLogo";
 
 const RESEND_COOLDOWN_SEC = 60;
 
@@ -138,7 +139,24 @@ export default function LoginPageClient() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-aeris-bg px-4">
-      <div className="w-full max-w-md rounded-lg border border-aeris-border bg-aeris-surface p-6 shadow-xl">
+      <div className="relative w-full max-w-md overflow-hidden rounded-lg border border-aeris-border bg-aeris-surface p-6 shadow-xl">
+        {loading && (
+          <div
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-aeris-surface/85 backdrop-blur-[2px]"
+            role="status"
+            aria-live="polite"
+          >
+            <AerisLoadingLogo size="md" variant="glyph" />
+            <span className="text-[11px] font-mono uppercase tracking-wider text-aeris-muted">
+              {step === "otp" ? "Verifying…" : "Sending OTP…"}
+            </span>
+          </div>
+        )}
+        <AerisLoadingLogo
+          variant="logo"
+          size="md"
+          className="mx-auto mb-4 max-h-12"
+        />
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="hud-text text-lg font-semibold text-aeris-text">AERIS Dashboard</h1>

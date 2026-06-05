@@ -90,36 +90,43 @@ export function HazardPopupContent({
         )}
       </p>
 
+      {report.photoHref ? (
+        <a
+          href={report.photoHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 block overflow-hidden rounded border border-aeris-border/60 focus:outline-none focus:ring-1 focus:ring-aeris-accent"
+          title="Open full-size evidence photo"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={report.photoHref}
+            alt="Citizen evidence photo"
+            loading="lazy"
+            decoding="async"
+            className="h-24 w-full object-cover"
+          />
+        </a>
+      ) : null}
+
       {meta.length > 0 ? (
         <p className="mt-2 font-mono text-[9px] leading-snug text-aeris-muted">
           {meta.join(" · ")}
         </p>
       ) : null}
 
-      {(report.basescanTxHref || report.photoHref) && (
+      {report.basescanTxHref ? (
         <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px]">
-          {report.basescanTxHref ? (
-            <a
-              href={report.basescanTxHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-aeris-accent hover:underline"
-            >
-              Transaction
-            </a>
-          ) : null}
-          {report.photoHref ? (
-            <a
-              href={report.photoHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-aeris-accent hover:underline"
-            >
-              Photo
-            </a>
-          ) : null}
+          <a
+            href={report.basescanTxHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-aeris-accent hover:underline"
+          >
+            Transaction
+          </a>
         </div>
-      )}
+      ) : null}
 
       <p
         className="mt-1.5 truncate font-mono text-[9px] text-aeris-muted/80"

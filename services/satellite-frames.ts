@@ -311,17 +311,31 @@ export function gibsAnimationFrames(stepsBack = 11): RadarFrame[] {
   return out;
 }
 
+/** RainViewer tile origin, routed through our same-origin caching proxy. */
+const RAINVIEWER_TILE_ORIGIN = "https://tilecache.rainviewer.com";
+const RAINVIEWER_TILE_PROXY_PREFIX = "/api/rainviewer/tiles";
+
+/** Rewrite a `tilecache.rainviewer.com` URL to the same-origin tile proxy. */
+function toRainViewerProxyUrl(url: string): string {
+  if (url.startsWith(RAINVIEWER_TILE_ORIGIN)) {
+    return `${RAINVIEWER_TILE_PROXY_PREFIX}${url.slice(RAINVIEWER_TILE_ORIGIN.length)}`;
+  }
+  return url;
+}
+
 /**
  * RainViewer sometimes returns a short hash path (`/v2/radar/<id>`) and
- * sometimes a full XYZ template. MapLibre needs a single template URL.
+ * sometimes a full XYZ template. MapLibre needs a single template URL. Tiles
+ * are routed through `/api/rainviewer/tiles` (same-origin caching proxy) to
+ * avoid RainViewer's 429 rate limit and the CORS errors it produces.
  */
 export function buildRadarTileUrl(fullTileTemplateOrBase: string): string {
   const base = fullTileTemplateOrBase.trim().replace(/\/$/, "");
   if (!base) return "";
   if (/\{z\}/.test(base) && /\{x\}/.test(base) && /\{y\}/.test(base)) {
-    return base;
+    return toRainViewerProxyUrl(base);
   }
-  return `${base}/256/{z}/{x}/{y}/2/1_1.png`;
+  return toRainViewerProxyUrl(`${base}/256/{z}/{x}/{y}/2/1_1.png`);
 }
 
 function satelliteTileUrl(
@@ -799,15 +813,6 @@ export function ensureSatelliteLayer(
   satelliteProviderByMap.set(map, provider);
   pinSatelliteRastersToTop(map);
   reapplySatelliteImageryForStoredMapMode(map);
-}
-
-export function ensureGibsLayer(map: MLMap, sourceKey: string) {
-  ensureSatelliteLayer(
-    map,
-    sourceKey as Exclude<LiveImagerySource, "radar">,
-    { time: new Date().toISOString(), path: "" },
-    "gibs-fallback",
-  );
 }
 
 /**

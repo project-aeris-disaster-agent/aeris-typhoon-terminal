@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clsx } from "clsx";
+import { AerisLoadingLogo } from "@/components/ui/AerisLoadingLogo";
 
 type DataLoadingPopupProps = {
   active: boolean;
@@ -63,13 +64,15 @@ export function DataLoadingPopup({
       aria-live="polite"
       aria-atomic="true"
     >
-      <div className="relative min-w-[280px] rounded-2xl border border-aeris-border bg-aeris-surface px-4 py-3 text-aeris-text shadow-xl">
+      <div className="relative min-w-[280px] overflow-hidden rounded-2xl border border-aeris-border bg-aeris-surface px-4 py-3 text-aeris-text shadow-xl">
+        <AerisLoadingLogo
+          size="sm"
+          variant="char"
+          className="pointer-events-none absolute -bottom-1 -right-1 max-h-[88px] opacity-[0.14]"
+        />
         <div className="relative flex items-center gap-3">
-          <div className="h-[72px] w-[72px] shrink-0 rounded-xl border border-aeris-border bg-aeris-elev/55 flex items-center justify-center">
-            <div className="relative h-10 w-10">
-              <span className="absolute inset-0 rounded-full border-2 border-aeris-border" />
-              <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-aeris-accent animate-spin" />
-            </div>
+          <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-xl border border-aeris-border bg-aeris-elev/55 px-1">
+            <AerisLoadingLogo size="sm" variant="glyph" className="max-h-14" />
           </div>
           <div className="min-w-0">
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-aeris-muted">

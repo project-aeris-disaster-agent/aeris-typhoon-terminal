@@ -5,13 +5,7 @@ import dynamic from "next/dynamic";
 import { clsx } from "clsx";
 import type { Map as MLMap } from "maplibre-gl";
 import type { SelectedLocation } from "@/components/MapSearchBar";
-
-const PanelSkeleton = () => (
-  <div className="h-24 rounded-md border border-aeris-border bg-aeris-bg/60 px-3 text-[11px] text-aeris-muted inline-flex items-center gap-2">
-    <span className="inline-block h-1.5 w-1.5 rounded-full bg-aeris-accent animate-pulse" />
-    <span>Loading data, please wait...</span>
-  </div>
-);
+import { PanelSkeleton } from "@/components/ui/PanelSkeleton";
 
 const LiveWebcamsPanel = dynamic(
   () =>

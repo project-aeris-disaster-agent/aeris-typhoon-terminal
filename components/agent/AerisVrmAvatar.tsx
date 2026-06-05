@@ -151,7 +151,7 @@ export function AerisVrmAvatar({
         }
 
         VRMUtils.removeUnnecessaryVertices(vrm.scene);
-        VRMUtils.removeUnnecessaryJoints(vrm.scene);
+        VRMUtils.combineSkeletons(vrm.scene);
         vrm.scene.rotation.y = 0;
         scene.add(vrm.scene);
         vrm.update(0);

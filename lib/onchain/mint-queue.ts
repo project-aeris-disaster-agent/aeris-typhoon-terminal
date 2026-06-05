@@ -23,7 +23,9 @@ const MINT_COLUMNS = [
   "description",
   "longitude",
   "latitude",
+  "photo_url",
   "verification_status",
+  "moderation_status",
   "phone_verification_status",
   "proxy_wallet_address",
   "onchain_network",
@@ -72,11 +74,14 @@ function rowToPublic(row: Row): PublicReport {
     category: String(row.category),
     description: String(row.description),
     position: [Number(row.longitude), Number(row.latitude)],
+    photoUrl: typeof row.photo_url === "string" ? row.photo_url : undefined,
     createdAt: String(row.created_at),
     confirmations: 0,
     sourceApp: typeof row.source_app === "string" ? row.source_app : undefined,
     verificationStatus:
       typeof row.verification_status === "string" ? row.verification_status : undefined,
+    moderationStatus:
+      typeof row.moderation_status === "string" ? row.moderation_status : undefined,
     phoneVerificationStatus:
       typeof row.phone_verification_status === "string"
         ? row.phone_verification_status

@@ -6,6 +6,7 @@ import type { Map as MLMap } from "maplibre-gl";
 import { clsx } from "clsx";
 import { PANELS, SIDEBAR_PANELS, type PanelId } from "@/config/panels";
 import { LiveWeatherFrameIndicator } from "@/components/LiveWeatherFrameHud";
+import { PanelSkeleton } from "@/components/ui/PanelSkeleton";
 
 // On mobile, the sidebar becomes the "Reports" tab. We curate it down to the
 // panels that actually help an operator monitor incoming ground reports:
@@ -18,13 +19,6 @@ const MOBILE_PANEL_IDS: PanelId[] = ["alerts", "typhoon"];
 // JS bundle only ships the shell + currently-needed panels. Panels are
 // client-only, so `ssr: false` skips the SSR render and lets us show a
 // lightweight skeleton while the chunk streams in on first open.
-const PanelSkeleton = () => (
-  <div className="h-16 rounded-md border border-aeris-border bg-aeris-bg/60 px-3 text-[11px] text-aeris-muted inline-flex items-center gap-2">
-    <span className="inline-block h-1.5 w-1.5 rounded-full bg-aeris-accent animate-pulse" />
-    <span>Loading data, please wait...</span>
-  </div>
-);
-
 const TyphoonTrackerPanel = dynamic(
   () =>
     import("./panels/TyphoonTrackerPanel").then((m) => ({

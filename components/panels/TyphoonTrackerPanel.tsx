@@ -209,7 +209,7 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
             windKph={s.windKph}
             position={`${s.position[1].toFixed(1)}°N, ${s.position[0].toFixed(1)}°E`}
             movement={s.heading ?? "—"}
-            gusts="—"
+            gusts={formatGustKph(s.gustKph)}
           />
         ))}
 
@@ -412,6 +412,11 @@ function formatPagasaLocationLine(raw: string): string {
     .replace(/^LOCATION:\s*/i, "")
     .replace(/\s*\([^)]*\)\s*$/, "")
     .trim();
+}
+
+/** GDACS gusts are estimated from sustained wind, so flag them as approximate. */
+function formatGustKph(gustKph: number | null | undefined): string {
+  return typeof gustKph === "number" && gustKph > 0 ? `~${gustKph} km/h` : "—";
 }
 
 function formatPagasaQuantity(raw: string | undefined): string {

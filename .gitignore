@@ -4,9 +4,11 @@ out/
 build/
 dist/
 
+# Ignore every env variant (incl. .env.production / .env.development); keep the
+# committed template so no real secret file can be added by accident.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 *.log
 npm-debug.log*

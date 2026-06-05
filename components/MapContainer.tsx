@@ -12,6 +12,11 @@ import type { Map as MLMap } from "maplibre-gl";
 import { Map2D } from "./Map2D";
 import { LiveWeatherMapPanel } from "./LiveWeatherMapPanel";
 import { MapModeToggle } from "./MapModeToggle";
+import { ExternalMapFrame } from "./ExternalMapFrame";
+import {
+  EXTERNAL_MAP_FRAMES,
+  type ExternalMapFrameId,
+} from "@/config/external-map-frames";
 import { LayerLegend, QuickViewsPanel } from "./LayerLegend";
 import { readUrlState, writeUrlState } from "@/services/url-state";
 import {
@@ -57,6 +62,9 @@ export const MapContainer = memo(function MapContainer({
   const themeUrlSyncedRef = useRef(false);
   const [mode, setMode] = useState<MapMode>("2d");
   const [mobile3dUnlocked, setMobile3dUnlocked] = useState(false);
+  const [externalFrame, setExternalFrame] = useState<ExternalMapFrameId | null>(
+    null,
+  );
   const [map, setMap] = useState<MLMap | null>(null);
   const [showLoadingPopup, setShowLoadingPopup] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("Loading data, please wait...");
@@ -221,12 +229,22 @@ export const MapContainer = memo(function MapContainer({
       />
       <div className="absolute z-10 flex flex-col gap-2 top-3 left-3 max-md:bottom-[4.25rem] max-md:top-auto max-md:left-3 max-md:right-auto">
         <LiveWeatherMapPanel map={map} />
-        <MapModeToggle mode={mode} onChange={handleModeChange} />
+        <MapModeToggle
+          mode={mode}
+          onChange={handleModeChange}
+          onOpenPanahon={() => setExternalFrame("panahon")}
+          onOpenNoah={() => setExternalFrame("noah")}
+        />
         <div className="hidden md:flex flex-col gap-2">
           <QuickViewsPanel map={map} mode={mode} />
           <LayerLegend map={map} mode={mode} />
         </div>
       </div>
+      <ExternalMapFrame
+        open={externalFrame !== null}
+        onClose={() => setExternalFrame(null)}
+        config={externalFrame ? EXTERNAL_MAP_FRAMES[externalFrame] : null}
+      />
     </div>
   );
 });

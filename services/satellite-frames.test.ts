@@ -16,18 +16,20 @@ import {
 } from "./satellite-frames";
 
 describe("buildRadarTileUrl", () => {
-  it("appends RainViewer tile suffix for short hash paths", () => {
+  it("appends the RainViewer tile suffix and routes through the same-origin proxy", () => {
     expect(
       buildRadarTileUrl("https://tilecache.rainviewer.com/v2/radar/abc123"),
     ).toBe(
-      "https://tilecache.rainviewer.com/v2/radar/abc123/256/{z}/{x}/{y}/2/1_1.png",
+      "/api/rainviewer/tiles/v2/radar/abc123/256/{z}/{x}/{y}/2/1_1.png",
     );
   });
 
   it("does not double-append when the path is already an XYZ template", () => {
-    const full =
-      "https://tilecache.rainviewer.com/v2/radar/1/256/{z}/{x}/{y}/2/1_1.png";
-    expect(buildRadarTileUrl(full)).toBe(full);
+    expect(
+      buildRadarTileUrl(
+        "https://tilecache.rainviewer.com/v2/radar/1/256/{z}/{x}/{y}/2/1_1.png",
+      ),
+    ).toBe("/api/rainviewer/tiles/v2/radar/1/256/{z}/{x}/{y}/2/1_1.png");
   });
 });
 

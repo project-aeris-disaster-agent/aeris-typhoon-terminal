@@ -3,6 +3,8 @@ import { parseLatLonFromText } from "@/lib/geo";
 import {
   categoryFromGdacsProps,
   deriveTcCategory,
+  gustKphFromWind,
+  headingFromTrack,
   isInParBbox,
   pressureHpaFromGdacsProps,
   windKphFromGdacsProps,
@@ -41,6 +43,7 @@ type Storm = {
   position: [number, number];
   windKph: number;
   pressureHpa: number;
+  gustKph: number | null;
   heading: string | null;
   landfallEta: string | null;
   bestTrack: StormPoint[];
@@ -217,7 +220,10 @@ function buildStormFromGdacsFeatures(
     position: coords,
     windKph,
     pressureHpa: pressureHpaFromGdacsProps(props),
-    heading: coerceString(props["direction"]),
+    gustKph: gustKphFromWind(windKph),
+    heading:
+      coerceString(props["direction"]) ??
+      headingFromTrack(bestTrack.map((p) => p.position)),
     landfallEta: coerceString(props["landfall"]),
     bestTrack,
     forecast: [],
@@ -261,6 +267,7 @@ function parseRssStorms(xml: string): { storms: Storm[]; outsideParGdacs: Storm[
       position,
       windKph,
       pressureHpa: 0,
+      gustKph: gustKphFromWind(windKph),
       heading: null,
       landfallEta: null,
       bestTrack: [{ position, time: pubDate, windKph }],

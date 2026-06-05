@@ -14,20 +14,21 @@ const nextConfig = {
         ],
       },
       {
-        source: "/api/gibs/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, s-maxage=600, stale-while-revalidate=3600",
-          },
-        ],
-      },
-      {
         source: "/api/rainviewer",
         headers: [
           {
             key: "Cache-Control",
             value: "public, s-maxage=300, stale-while-revalidate=600",
+          },
+        ],
+      },
+      {
+        source: "/api/rainviewer/tiles/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value:
+              "public, max-age=300, s-maxage=86400, stale-while-revalidate=86400",
           },
         ],
       },

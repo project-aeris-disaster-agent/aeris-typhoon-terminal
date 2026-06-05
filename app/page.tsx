@@ -15,6 +15,7 @@ import { BottomPanel } from "@/components/BottomPanel";
 import { MobileTabBar, type MobileTab } from "@/components/MobileTabBar";
 import { ReportPingsSync } from "@/components/ReportPingsSync";
 import { WebcamPingsSync } from "@/components/WebcamPingsSync";
+import { BootScreen } from "@/components/BootScreen";
 import { YouTubeFeedsProvider } from "@/components/YouTubeFeedsProvider";
 import { initMapLayers } from "@/services/hazard-layers";
 import { focusAddress3DContext, initMapScene } from "@/services/map-scene";
@@ -65,6 +66,14 @@ export default function HomePage() {
     initLiveWeatherOverlay(m);
     setMap(m);
 
+    // Dismiss the cold-start boot screen once the map has actually painted its
+    // first frame (`idle`), with a short fallback in case `idle` is delayed
+    // (e.g. tab backgrounded during load).
+    const signalBootReady = () =>
+      window.dispatchEvent(new Event("aeris:boot-ready"));
+    m.once("idle", signalBootReady);
+    window.setTimeout(signalBootReady, 1500);
+
     if (!initialLocationResolvedRef.current) {
       initialLocationResolvedRef.current = true;
       void resolveUserLocationOnLoad(
@@ -95,6 +104,7 @@ export default function HomePage() {
 
   return (
     <YouTubeFeedsProvider>
+    <BootScreen />
     <div className="h-screen [@supports(height:100dvh)]:h-[100dvh] w-screen flex flex-col">
       <Header
         liveReportsOpen={liveReportsOpen}

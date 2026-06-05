@@ -22,6 +22,7 @@ export const ReportPingsSync = memo(function ReportPingsSync({
   map: MLMap | null;
 }) {
   const latestReportsRef = useRef<IncidentReport[]>([]);
+  const emptyStreakRef = useRef(0);
 
   useEffect(() => {
     if (!map) return;
@@ -38,10 +39,23 @@ export const ReportPingsSync = memo(function ReportPingsSync({
       try {
         const reports = await fetchReports();
         if (disposed) return;
+
+        // A successful-but-empty response can be a transient backend fallback
+        // (e.g. Supabase outage serving an empty KV list). Don't erase pings
+        // that are already on the map until we've seen the feed empty twice in
+        // a row — this stops a single blip from blanking the map.
+        if (reports.length === 0 && latestReportsRef.current.length > 0) {
+          emptyStreakRef.current += 1;
+          if (emptyStreakRef.current < 2) return;
+        } else {
+          emptyStreakRef.current = 0;
+        }
+
         latestReportsRef.current = reports;
         renderReportsOnMap(map, reports);
       } catch {
         // Keep the last known report pings rendered when the feed is degraded.
+        emptyStreakRef.current = 0;
       }
     };
 

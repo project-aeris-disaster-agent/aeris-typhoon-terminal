@@ -97,6 +97,47 @@ export function pressureHpaFromGdacsProps(props: Record<string, unknown>): numbe
   return 0;
 }
 
+/**
+ * GDACS publishes sustained wind only. Peak gusts are estimated with a standard
+ * over-water gust factor (~1.3x) so the tracker can surface a gust figure.
+ */
+export function gustKphFromWind(windKph: number): number | null {
+  if (!Number.isFinite(windKph) || windKph <= 0) return null;
+  return Math.round(windKph * 1.3);
+}
+
+const COMPASS_16 = [
+  "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+];
+
+export function bearingToCompass(bearingDeg: number): string {
+  const idx = Math.round((((bearingDeg % 360) + 360) % 360) / 22.5) % 16;
+  return COMPASS_16[idx];
+}
+
+/**
+ * Travel direction from the last two best-track points. GDACS rarely includes an
+ * explicit heading, so we derive the compass bearing of the storm's motion.
+ */
+export function headingFromTrack(
+  points: Array<[number, number]>,
+): string | null {
+  if (!points || points.length < 2) return null;
+  const [lng1, lat1] = points[points.length - 2];
+  const [lng2, lat2] = points[points.length - 1];
+  if (lng1 === lng2 && lat1 === lat2) return null;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const dLng = toRad(lng2 - lng1);
+  const y = Math.sin(dLng) * Math.cos(phi2);
+  const x =
+    Math.cos(phi1) * Math.sin(phi2) -
+    Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLng);
+  return bearingToCompass((Math.atan2(y, x) * 180) / Math.PI);
+}
+
 export function windKphFromRssSeverity(
   valueAttr: string | undefined,
   severityText: string,

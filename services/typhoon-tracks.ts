@@ -25,6 +25,7 @@ export type Typhoon = {
   position: LngLat;
   windKph: number;
   pressureHpa: number;
+  gustKph?: number | null;
   heading?: string | null;
   landfallEta?: string | null;
   bestTrack: TyphoonPoint[];

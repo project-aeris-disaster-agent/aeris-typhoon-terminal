@@ -1,9 +1,14 @@
 import { jsonError, jsonOk } from "@/lib/api-response";
 import { withBreaker } from "@/lib/circuit-breaker";
+import { store } from "@/lib/kv";
 import { PAR_BBOX } from "@/config/region";
 import type { WindFieldPayload } from "@/services/wind-field-types";
 
 export const runtime = "edge";
+
+/** Last good wind grid, replayed while Open-Meteo is unavailable. */
+const WIND_FIELD_STALE_KEY = "wind-field-stale";
+const STALE_TTL_SECONDS = 6 * 60 * 60;
 
 export type { WindFieldPayload } from "@/services/wind-field-types";
 
@@ -118,8 +123,13 @@ export async function GET() {
       generatedAt: new Date().toISOString(),
     };
 
+    await store.set(WIND_FIELD_STALE_KEY, payload, STALE_TTL_SECONDS);
     return jsonOk(payload, 900);
   } catch (e) {
+    const stale = await store.get<WindFieldPayload>(WIND_FIELD_STALE_KEY);
+    if (stale) {
+      return jsonOk({ ...stale, degraded: true }, 120);
+    }
     return jsonError((e as Error).message, 502);
   }
 }

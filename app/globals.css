@@ -253,3 +253,37 @@ body > div {
 .aeris-popup-facility.maplibregl-popup-anchor-top .maplibregl-popup-tip {
   border-bottom-color: rgb(var(--aeris-border));
 }
+
+@keyframes aeris-glyph-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes aeris-logo-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.62;
+  }
+}
+
+.aeris-loading-glyph-spin {
+  animation: aeris-glyph-spin 2.4s linear infinite;
+}
+
+.aeris-loading-pulse {
+  animation: aeris-logo-pulse 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aeris-loading-glyph-spin,
+  .aeris-loading-pulse {
+    animation: none !important;
+  }
+}

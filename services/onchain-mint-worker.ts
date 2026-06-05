@@ -21,7 +21,11 @@ import {
   buildAerisReportHypercert,
   reportToTokenId,
 } from "@/lib/onchain/hypercert-metadata";
-import { pinJson } from "@/lib/onchain/ipfs";
+import {
+  pinJson,
+  pinFileFromUrl,
+  evidenceImagePinningEnabled,
+} from "@/lib/onchain/ipfs";
 import {
   getMintClient,
   mintClientAvailable,
@@ -31,6 +35,53 @@ import {
 import { explorerTxUrl } from "@/lib/onchain/skale-base";
 import type { PublicReport } from "@/lib/supabase-reports";
 import type { Address } from "viem";
+
+/**
+ * Decide which image URI (if any) to embed in the token metadata.
+ *
+ * Returns:
+ *  - an `ipfs://` URI when evidence-image pinning is enabled and the file pins
+ *    successfully (immutable, preferred for on-chain),
+ *  - the report's Supabase `photoUrl` (https) otherwise,
+ *  - `undefined` when there is no photo or the report has not passed moderation,
+ *    in which case the metadata builder falls back to the static badge image.
+ *
+ * Never throws: a pin failure degrades to the Supabase URL so a missing/slow
+ * Pinata never blocks a mint.
+ */
+async function resolveMintImageUri(
+  report: PublicReport,
+): Promise<string | undefined> {
+  const photoUrl = report.photoUrl;
+  if (!photoUrl || !/^https?:\/\//i.test(photoUrl)) return undefined;
+
+  // Reuse the existing moderation workflow: a report is safe to surface/pin
+  // only once verified and not hidden/flagged. (Mint already requires verified.)
+  const moderation = report.moderationStatus;
+  const moderationOk = moderation !== "hidden" && moderation !== "needs_review";
+  if (report.verificationStatus !== "verified" || !moderationOk) {
+    return undefined;
+  }
+
+  if (evidenceImagePinningEnabled()) {
+    try {
+      const pinnedImage = await pinFileFromUrl(
+        photoUrl,
+        `aeris-report-${report.id}-photo`,
+      );
+      return pinnedImage.uri;
+    } catch (err) {
+      // Non-fatal: keep the Supabase URL as the image so the mint still proceeds.
+      console.error(
+        `[onchain-mint] report=${report.id} evidence pin failed, using supabase url: ${
+          (err as Error).message
+        }`,
+      );
+    }
+  }
+
+  return photoUrl;
+}
 
 export type MintWorkerOptions = {
   limit?: number;
@@ -228,10 +279,19 @@ async function mintOne(
     const verifiedAtUnix = Math.floor(new Date(verifiedAt).getTime() / 1000);
     const contributorAddress =
       report.onchain?.proxyWallet?.address ?? client.serviceAddress;
+
+    // Moderation safety: only use the citizen photo as the token image once the
+    // report has passed review. Mint is already gated on verification_status ===
+    // 'verified', but we re-check moderation here so we never pin/reference a
+    // photo that was hidden or flagged for review. Falls back to the static
+    // badge (handled by the metadata builder) when there is no approved photo.
+    const imageUri = await resolveMintImageUri(report);
+
     const metadata = buildAerisReportHypercert({
       report,
       contributorAddress,
       verifiedAtUnix,
+      imageUri,
     });
 
     const pinned = await pinJson(metadata, `aeris-report-${report.id}`);
@@ -268,6 +328,11 @@ async function mintOne(
     const attemptsAfter = attempts + 1;
     const finalStatus =
       attemptsAfter >= maxAttempts ? ("failed" as const) : ("queued" as const);
+    // Surface to stderr so the failure appears in Vercel function logs and can
+    // drive log-based alerting. The DB transition below is the durable record.
+    console.error(
+      `[onchain-mint] report=${report.id} attempt=${attemptsAfter}/${maxAttempts} status=${finalStatus}: ${message}`,
+    );
     await applyMintTransition(report.id, {
       status: finalStatus,
       reason: message.slice(0, 280),

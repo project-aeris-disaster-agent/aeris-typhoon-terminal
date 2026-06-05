@@ -219,10 +219,17 @@ async function refreshSatelliteFrames(
   if (options?.preserveAnimation && hadFrames && !providerChanged) {
     const playheadTime = currentFrame(cur)?.time ?? null;
     const existingTimes = new Set(cur.timeline.frames.map((f) => f.time));
-    const additions = result.frames.filter((f) => !existingTimes.has(f.time));
-    if (additions.length > 0) {
-      const merged = [...cur.timeline.frames, ...additions];
-      setTimelineFrames(cur, merged, { preservePlayheadTime: playheadTime });
+    const freshTimes = new Set(result.frames.map((f) => f.time));
+    const hasNewFrames = result.frames.some((f) => !existingTimes.has(f.time));
+    const hasExpiredFrames = cur.timeline.frames.some(
+      (f) => !freshTimes.has(f.time),
+    );
+    // Reconcile to the provider's authoritative window so expired satellite
+    // frames are pruned (not just appended), preventing stale/blank imagery.
+    if (hasNewFrames || hasExpiredFrames) {
+      setTimelineFrames(cur, result.frames, {
+        preservePlayheadTime: playheadTime,
+      });
     }
     cur.fallbackMessage =
       result.provider === "gibs-fallback"
@@ -277,10 +284,20 @@ async function refreshRadarFrames(
   if (options?.preserveAnimation && cur.timeline.frames.length > 0) {
     const playheadTime = currentFrame(cur)?.time ?? null;
     const existingTimes = new Set(cur.timeline.frames.map((f) => f.time));
-    const additions = result.frames.filter((f) => !existingTimes.has(f.time));
-    if (additions.length > 0) {
-      const merged = [...cur.timeline.frames, ...additions];
-      setTimelineFrames(cur, merged, { preservePlayheadTime: playheadTime });
+    const freshTimes = new Set(result.frames.map((f) => f.time));
+    const hasNewFrames = result.frames.some((f) => !existingTimes.has(f.time));
+    const hasExpiredFrames = cur.timeline.frames.some(
+      (f) => !freshTimes.has(f.time),
+    );
+    // Reconcile to RainViewer's authoritative window instead of appending.
+    // `result.frames` already covers the valid past + nowcast range, so
+    // adopting it both adds new frames and drops expired ones — the latter is
+    // what previously caused the loop to animate dead tiles (blank radar) the
+    // longer the tab stayed open.
+    if (hasNewFrames || hasExpiredFrames) {
+      setTimelineFrames(cur, result.frames, {
+        preservePlayheadTime: playheadTime,
+      });
     }
     cur.fallbackMessage = null;
     emitStatus(cur, null);

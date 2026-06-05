@@ -109,6 +109,55 @@ describe("/api/open-meteo", () => {
     expect(fourth.status).toBe(502);
   });
 
+  it("replays the last good forecast as degraded when the upstream later fails", async () => {
+    const { GET } = await import("./route");
+    const upstream = {
+      daily: {
+        time: ["2026-04-23", "2026-04-24"],
+        temperature_2m_min: [24.2, 23.6],
+        temperature_2m_max: [31.8, 32.4],
+        precipitation_sum: [12.34, 0.04],
+        wind_speed_10m_max: [44.6, 51.2],
+        pressure_msl_min: [1002.2, 998.7],
+      },
+    };
+    const request = new NextRequest(
+      "http://localhost/api/open-meteo?lat=14.5995&lng=120.9842",
+    );
+
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => upstream }) as typeof fetch;
+    const fresh = await GET(request);
+    const freshBody = await fresh.json();
+    expect(fresh.status).toBe(200);
+    expect(freshBody.degraded).toBeUndefined();
+
+    global.fetch = jest.fn().mockRejectedValue(new Error("upstream down")) as typeof fetch;
+    const degraded = await GET(request);
+    const degradedBody = await degraded.json();
+
+    expect(degraded.status).toBe(200);
+    expect(degraded.headers.get("cache-control")).toBe(
+      "public, s-maxage=120, stale-while-revalidate=720",
+    );
+    expect(degradedBody.degraded).toBe(true);
+    expect(degradedBody.maxWindKph).toBe(freshBody.maxWindKph);
+    expect(degradedBody.daily).toEqual(freshBody.daily);
+  });
+
+  it("returns 502 on upstream failure when no prior good forecast is cached", async () => {
+    const { GET } = await import("./route");
+    global.fetch = jest.fn().mockRejectedValue(new Error("upstream down")) as typeof fetch;
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/open-meteo?lat=14.5995&lng=120.9842"),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({ error: "upstream down" });
+  });
+
   it("returns 502 when Open-Meteo responds with mismatched daily arrays", async () => {
     const { GET } = await import("./route");
     global.fetch = jest.fn().mockResolvedValue({

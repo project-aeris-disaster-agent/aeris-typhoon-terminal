@@ -204,6 +204,7 @@ describe("/api/jtwc", () => {
         position: [125.6, 14.2],
         windKph: 85,
         pressureHpa: 980,
+        gustKph: 111,
         heading: "NW",
         landfallEta: "2026-04-24T00:00:00Z",
         bestTrack: [

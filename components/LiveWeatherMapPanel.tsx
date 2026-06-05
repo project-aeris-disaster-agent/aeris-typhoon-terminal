@@ -6,20 +6,22 @@ import type { Map as MLMap } from "maplibre-gl";
 import { clsx } from "clsx";
 import { LIVE_WEATHER_PANEL } from "@/config/panels";
 import { LiveWeatherFrameIndicator } from "@/components/LiveWeatherFrameHud";
-
-const PanelSkeleton = () => (
-  <div className="h-12 rounded border border-aeris-border/80 bg-aeris-bg/40 px-2 text-[10px] text-aeris-muted inline-flex items-center gap-2">
-    <span className="inline-block h-1.5 w-1.5 rounded-full bg-aeris-accent animate-pulse" />
-    <span>Loading radar…</span>
-  </div>
-);
+import { PanelSkeleton } from "@/components/ui/PanelSkeleton";
 
 const SatelliteRadarPanel = dynamic(
   () =>
     import("./panels/SatelliteRadarPanel").then((m) => ({
       default: m.SatelliteRadarPanel,
     })),
-  { ssr: false, loading: PanelSkeleton },
+  {
+    ssr: false,
+    loading: () => (
+      <PanelSkeleton
+        label="Loading radar…"
+        className="h-12 rounded border border-aeris-border/80 bg-aeris-bg/40 px-2 text-[10px]"
+      />
+    ),
+  },
 );
 
 export function LiveWeatherMapPanel({ map }: { map: MLMap | null }) {

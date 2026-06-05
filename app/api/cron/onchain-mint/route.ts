@@ -20,18 +20,24 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function GET(request: Request) {
-  // Vercel Cron passes a Bearer token via `authorization`. Accept either the
-  // platform header or our shared INTERNAL_TRIAGE_SECRET for parity with the
-  // triage cron.
+/**
+ * Secure-by-default: the route is only reachable when at least one of
+ * CRON_SECRET / INTERNAL_TRIAGE_SECRET is configured AND the request presents
+ * the matching Bearer token. If neither secret is set the route returns 401
+ * (mirrors the triage cron's `authorizeCron`), so a misconfigured deploy can
+ * never expose an open minting endpoint.
+ */
+function authorizeCron(request: Request): boolean {
   const auth = request.headers.get("authorization") ?? "";
-  const cronSecret = process.env.CRON_SECRET;
-  const triageSecret = process.env.INTERNAL_TRIAGE_SECRET;
-  if (
-    cronSecret &&
-    auth !== `Bearer ${cronSecret}` &&
-    (!triageSecret || auth !== `Bearer ${triageSecret}`)
-  ) {
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  if (cronSecret && auth === `Bearer ${cronSecret}`) return true;
+  const triageSecret = process.env.INTERNAL_TRIAGE_SECRET?.trim();
+  if (triageSecret && auth === `Bearer ${triageSecret}`) return true;
+  return false;
+}
+
+export async function GET(request: Request) {
+  if (!authorizeCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -176,6 +176,7 @@ export async function fetchReports(): Promise<IncidentReport[]> {
     const data = (await res.json().catch(() => ({}))) as {
       reports?: IncidentReport[];
       error?: string;
+      offline?: boolean;
     };
 
     if (!res.ok) {
@@ -184,8 +185,17 @@ export async function fetchReports(): Promise<IncidentReport[]> {
       throw new Error(data.error ?? `Reports ${res.status}`);
     }
 
+    // The service worker returns a synthetic `200 { offline: true, data: null }`
+    // when the network is unreachable. A genuinely empty feed always carries a
+    // `reports: []` array, so a missing/non-array `reports` field means the
+    // response is degraded — treat it as a failure so callers preserve the last
+    // known pings instead of clearing the map.
+    if (data.offline === true || !Array.isArray(data.reports)) {
+      throw new Error("Reports feed unavailable (offline or malformed response)");
+    }
+
     recordSuccess("reports");
-    return Array.isArray(data.reports) ? data.reports : [];
+    return data.reports;
   } catch (error) {
     recordFailure("reports", (error as Error).message);
     throw error;

@@ -159,8 +159,3 @@ export function LiveWeatherFrameIndicator({
     </div>
   );
 }
-
-/** @deprecated Prefer `LiveWeatherFrameIndicator` in the Live weather panel header. */
-export function LiveWeatherFrameHud() {
-  return <LiveWeatherFrameIndicator variant="map" />;
-}

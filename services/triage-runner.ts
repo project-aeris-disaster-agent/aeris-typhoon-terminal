@@ -176,10 +176,14 @@ async function applyTriage(report: PublicReport): Promise<TriageRunResult> {
       broadcasted,
     };
   } catch (error) {
+    const message = (error as Error).message;
+    // Surface to stderr for Vercel function logs / log-based alerting; the
+    // returned `error` field is what the cron summary reports back to callers.
+    console.error(`[triage] report=${report.id} failed: ${message}`);
     return {
       reportId: report.id,
       triaged: false,
-      error: (error as Error).message,
+      error: message,
     };
   }
 }
