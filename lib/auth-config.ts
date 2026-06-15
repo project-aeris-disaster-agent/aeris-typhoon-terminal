@@ -1,3 +1,5 @@
+import { isPrivyConfigured, privyServerEnvMissing } from "@/lib/privy-config";
+
 export function isDashboardAuthDisabled(): boolean {
   return process.env.DASHBOARD_AUTH_DISABLED === "true";
 }
@@ -14,5 +16,12 @@ export function supabaseAuthEnvMissing(): boolean {
 }
 
 export function productionAuthMisconfigured(): boolean {
-  return isProductionDeploy() && !isDashboardAuthDisabled() && supabaseAuthEnvMissing();
+  if (!isProductionDeploy() || isDashboardAuthDisabled()) {
+    return false;
+  }
+
+  const privyReady = isPrivyConfigured() && !privyServerEnvMissing();
+  const supabaseReady = !supabaseAuthEnvMissing();
+
+  return !privyReady || !supabaseReady;
 }

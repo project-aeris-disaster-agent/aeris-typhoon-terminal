@@ -50,9 +50,6 @@ export type MapContainerProps = {
   layoutActive?: boolean;
 };
 
-const MOBILE_3D_CONFIRM =
-  "3D mode uses more GPU and battery on mobile. Enable immersive 3D view?";
-
 export const MapContainer = memo(function MapContainer({
   onMapReady,
   mapOverlay,
@@ -61,7 +58,10 @@ export const MapContainer = memo(function MapContainer({
   const { theme, setTheme } = useTheme();
   const themeUrlSyncedRef = useRef(false);
   const [mode, setMode] = useState<MapMode>("2d");
-  const [mobile3dUnlocked, setMobile3dUnlocked] = useState(false);
+  // 3D mode is fully disabled on mobile/touch devices — terrain + Three.js
+  // are too heavy for phone GPUs/batteries. Resolved in an effect (not a
+  // lazy initializer) so SSR markup stays consistent with hydration.
+  const [allow3d, setAllow3d] = useState(true);
   const [externalFrame, setExternalFrame] = useState<ExternalMapFrameId | null>(
     null,
   );
@@ -78,21 +78,18 @@ export const MapContainer = memo(function MapContainer({
     [onMapReady],
   );
 
-  const handleModeChange = useCallback(
-    (next: MapMode) => {
-      if (
-        next === "3d" &&
-        isCoarsePointerDevice() &&
-        !mobile3dUnlocked &&
-        !window.confirm(MOBILE_3D_CONFIRM)
-      ) {
-        return;
-      }
-      if (next === "3d") setMobile3dUnlocked(true);
-      setMode(next);
-    },
-    [mobile3dUnlocked],
-  );
+  const handleModeChange = useCallback((next: MapMode) => {
+    if (next === "3d" && isCoarsePointerDevice()) return;
+    setMode(next);
+  }, []);
+
+  useEffect(() => {
+    if (!isCoarsePointerDevice()) return;
+    setAllow3d(false);
+    // Force back to 2D in case 3D was already active (e.g. desktop responsive
+    // emulation or a device-mode change mid-session).
+    setMode((current) => (current === "3d" ? "2d" : current));
+  }, []);
 
   useEffect(() => {
     const initial = readUrlState();
@@ -202,19 +199,20 @@ export const MapContainer = memo(function MapContainer({
 
   useEffect(() => {
     if (!map || !layoutActive) return;
+    // One immediate pass once layout settles, plus a single delayed pass to
+    // catch late flex/panel transitions. (Map2D's resize handlers already
+    // no-op when the canvas size is unchanged.)
     const rafId = requestAnimationFrame(() => {
       map.resize();
       map.triggerRepaint();
     });
-    const timeoutIds = [120, 360].map((delay) =>
-      window.setTimeout(() => {
-        map.resize();
-        map.triggerRepaint();
-      }, delay),
-    );
+    const timeoutId = window.setTimeout(() => {
+      map.resize();
+      map.triggerRepaint();
+    }, 300);
     return () => {
       cancelAnimationFrame(rafId);
-      timeoutIds.forEach((id) => window.clearTimeout(id));
+      window.clearTimeout(timeoutId);
     };
   }, [map, layoutActive]);
 
@@ -234,6 +232,7 @@ export const MapContainer = memo(function MapContainer({
           onChange={handleModeChange}
           onOpenPanahon={() => setExternalFrame("panahon")}
           onOpenNoah={() => setExternalFrame("noah")}
+          allow3d={allow3d}
         />
         <div className="hidden md:flex flex-col gap-2">
           <QuickViewsPanel map={map} mode={mode} />

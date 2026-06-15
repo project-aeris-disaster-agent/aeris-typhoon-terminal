@@ -111,8 +111,8 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
     return (
       <aside className="md:hidden flex flex-col w-full h-full bg-aeris-surface/98">
         <div className="flex items-center justify-between px-3 py-2 border-b border-aeris-border bg-aeris-elev/35 shrink-0">
-          <span className="hud-text text-aeris-muted text-[11px] font-mono uppercase tracking-wider">
-            Ground Reports
+          <span className="hud-text text-aeris-muted">
+            Ground reports
           </span>
           <LiveWeatherFrameIndicator variant="panel" />
         </div>
@@ -149,7 +149,7 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
         // Mutually exclusive widths: both md:w-[360px] and md:w-10 would compile
         // with equal specificity — the wider rule can win and block minimize.
         "w-full",
-        collapsed ? "md:w-10" : "md:w-[360px]",
+        collapsed ? "md:w-10" : "md:w-[380px]",
         collapsed ? "h-auto md:h-full" : "h-full",
       )}
     >
@@ -163,7 +163,7 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
           {collapsed ? "»" : "«"}
         </button>
         {!collapsed && (
-          <span className="hud-text text-aeris-muted">Ops Panels</span>
+          <span className="hud-text text-aeris-muted">Weather & Alerts</span>
         )}
       </div>
 
@@ -268,7 +268,7 @@ function CollapsedPanelRailButton({
       type="button"
       onClick={onClick}
       className={clsx(
-        "w-8 rounded flex flex-col items-center justify-center gap-0.5 py-1 font-mono text-[10px] border",
+        "w-8 rounded flex flex-col items-center justify-center gap-0.5 py-1 text-chrome border",
         active
           ? "bg-aeris-accent/10 text-aeris-accent border-aeris-accent/30"
           : "border-aeris-border text-aeris-muted hover:text-aeris-text",
@@ -278,7 +278,7 @@ function CollapsedPanelRailButton({
     >
       <span>{hotkey}</span>
       {badge ? (
-        <span className="max-w-full scale-[0.85] origin-center [&_span]:!px-1 [&_span]:!py-0 [&_span]:!text-[8px] [&_span]:truncate [&_span]:max-w-[30px] [&_span]:block">
+        <span className="max-w-full scale-[0.9] origin-center [&_span]:!px-1 [&_span]:!py-0 [&_span]:!text-chrome [&_span]:truncate [&_span]:max-w-[30px] [&_span]:block">
           {badge}
         </span>
       ) : null}
@@ -314,7 +314,7 @@ function PanelWrapper({
           aria-controls={`panel-${id}`}
         >
           <span className="flex shrink-0 items-center gap-2 min-w-0">
-            <span className="text-[10px] font-mono text-aeris-accent/70 w-3">
+            <span className="text-chrome text-aeris-accent/70 w-3">
               {hotkey}
             </span>
             <span className="truncate">{label}</span>
@@ -322,7 +322,7 @@ function PanelWrapper({
           {!open && badge ? (
             <span className="ml-auto shrink-0">{badge}</span>
           ) : null}
-          <span className={clsx("shrink-0 text-[10px]", !open && badge && "ml-1")}>
+          <span className={clsx("shrink-0 text-body-sm", !open && badge && "ml-1")}>
             {open ? "−" : "+"}
           </span>
         </button>

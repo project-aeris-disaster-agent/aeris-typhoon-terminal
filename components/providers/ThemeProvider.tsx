@@ -31,6 +31,12 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 const SSR_THEME: AppTheme = "light";
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  // The React tree hydrates with the SSR default and flips to the stored
+  // theme in an effect — resolving it synchronously in the initializer causes
+  // hydration mismatches for theme-dependent markup. The MapLibre basemap
+  // does NOT wait for this effect: `Map2D` reads `readStoredTheme()` directly
+  // when creating the map (inside a post-hydration effect), so the map style
+  // is correct on first load without a second `setStyle()` swap.
   const [theme, setThemeState] = useState<AppTheme>(SSR_THEME);
 
   useEffect(() => {

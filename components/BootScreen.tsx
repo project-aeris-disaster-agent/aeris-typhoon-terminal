@@ -113,7 +113,7 @@ export function BootScreen() {
         : done < total
           ? `Verifying data feeds… ${done}/${total}`
           : hasFail
-            ? "Some systems degraded — entering terminal"
+            ? "Some systems degraded — opening dashboard…"
             : "All systems nominal";
     return { done, total, statusLabel };
   }, [results, mapReady]);
@@ -126,7 +126,7 @@ export function BootScreen() {
     <div
       role="status"
       aria-live="polite"
-      aria-label="Loading AERIS terminal"
+      aria-label="Loading AERIS dashboard"
       style={{
         position: "fixed",
         inset: 0,

@@ -75,8 +75,8 @@ function AerisGlyph({
 }
 
 const SPLASH_TITLE = {
-  sm: "text-[10px] tracking-[0.18em]",
-  md: "text-[11px] tracking-[0.2em]",
+  sm: "text-body-sm tracking-[0.18em]",
+  md: "text-body-sm tracking-[0.2em]",
   lg: "text-xs sm:text-sm tracking-[0.22em]",
 } as const;
 

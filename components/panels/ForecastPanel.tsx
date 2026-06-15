@@ -103,7 +103,7 @@ export function ForecastPanel() {
                 disabled={!f}
                 onClick={() => setRegionIdx(i)}
                 className={clsx(
-                  "w-full flex items-center gap-2 px-2 py-1.5 text-left text-[11px] transition-colors",
+                  "w-full flex items-center gap-2 px-2 py-1.5 text-left text-body-sm transition-colors",
                   selected && "bg-aeris-accent/10",
                   !f && "opacity-50 cursor-not-allowed",
                   f && !selected && "hover:bg-aeris-elev/60",
@@ -114,7 +114,7 @@ export function ForecastPanel() {
                     L{alert.level}
                   </Pill>
                 ) : (
-                  <span className="shrink-0 w-9 font-mono text-[9px] text-aeris-muted">
+                  <span className="shrink-0 w-9 font-mono text-chrome text-aeris-muted">
                     —
                   </span>
                 )}
@@ -123,7 +123,7 @@ export function ForecastPanel() {
                   <span className="text-aeris-muted"> — {r.name}</span>
                 </span>
                 {f && alert ? (
-                  <span className="shrink-0 tabular-nums text-[10px] text-aeris-muted hidden sm:inline">
+                  <span className="shrink-0 tabular-nums text-body-sm text-aeris-muted hidden sm:inline">
                     {Math.max(...f.daily.map((d) => d.tempMax))}° max ·{" "}
                     {f.totalRainMm} mm · {f.maxWindKph} km/h
                   </span>
@@ -135,7 +135,7 @@ export function ForecastPanel() {
       )}
 
       {selectedAlert && data && (
-        <div className="text-[10px] text-aeris-muted">
+        <div className="text-body-sm text-aeris-muted">
           Selected outlook:{" "}
           <span className="text-aeris-text">{selectedAlert.label}</span>
         </div>
@@ -143,7 +143,7 @@ export function ForecastPanel() {
 
       {data && (
         <div className="space-y-1">
-          <div className="grid grid-cols-3 gap-1 text-[11px] text-aeris-muted">
+          <div className="grid grid-cols-3 gap-1 text-body-sm text-aeris-muted">
             <Stat label="Wind max" value={`${data.maxWindKph} km/h`} />
             <Stat label="Rain total" value={`${data.totalRainMm} mm`} />
             <Stat label="Min pres" value={`${data.minPressureHpa} hPa`} />
@@ -155,7 +155,7 @@ export function ForecastPanel() {
                 <div
                   key={d.date}
                   className={clsx(
-                    "flex items-center justify-between text-[11px] border-b border-aeris-border/40 py-1 last:border-0 rounded-sm -mx-0.5 px-0.5",
+                    "flex items-center justify-between text-body-sm border-b border-aeris-border/40 py-1 last:border-0 rounded-sm -mx-0.5 px-0.5",
                     dayAlert === "danger" && "bg-aeris-danger/5",
                     dayAlert === "warn" && "bg-aeris-warn/5",
                   )}
@@ -206,8 +206,8 @@ function dayRowAlert(
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-aeris-bg/40 border border-aeris-border rounded px-1.5 py-1">
-      <div className="text-[9px] uppercase tracking-wider">{label}</div>
-      <div className="text-aeris-text font-mono text-[11px]">{value}</div>
+      <div className="text-chrome uppercase tracking-wider">{label}</div>
+      <div className="text-aeris-text font-mono text-body-sm">{value}</div>
     </div>
   );
 }

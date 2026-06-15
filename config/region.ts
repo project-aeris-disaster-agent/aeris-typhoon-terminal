@@ -15,6 +15,14 @@ export const PH_BBOX: BBox = [116.0, 4.5, 127.0, 21.5];
 /** Axis-aligned bounds covering the PAR polygon (PAGASA advisory area). */
 export const PAR_BBOX: BBox = [115.0, 5.0, 135.0, 25.0];
 
+/**
+ * Western Pacific + South China Sea watch zone for tropical cyclones that are
+ * outside PAR but could still approach the Philippines. Used to filter the
+ * "monitor" list so we don't surface Eastern Pacific / Atlantic systems (which
+ * carry western-hemisphere negative longitudes) that are irrelevant to PH ops.
+ */
+export const WESTPAC_MONITOR_BBOX: BBox = [100.0, 0.0, 180.0, 45.0];
+
 export const PH_CENTER: LngLat = [122.0, 12.5];
 
 /** Pan limits for 3D / tight PH-focused navigation. */

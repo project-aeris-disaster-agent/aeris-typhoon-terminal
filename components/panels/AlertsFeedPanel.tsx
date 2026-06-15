@@ -79,7 +79,7 @@ export function AlertsFeedPanel() {
   return (
     <div className="space-y-2.5">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[10px] text-aeris-muted leading-snug flex-1">
+        <p className="text-body-sm text-aeris-muted leading-snug flex-1">
           Active cyclones in PAR and current GDACS hazards for the Philippines.
           Official PAGASA signal numbers are linked below.
         </p>
@@ -87,7 +87,7 @@ export function AlertsFeedPanel() {
           type="button"
           onClick={() => void load()}
           disabled={loading}
-          className="shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
+          className="shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
           aria-label="Refresh alerts"
         >
           <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
@@ -104,14 +104,14 @@ export function AlertsFeedPanel() {
       <FreshnessTag source="alerts" label="Synced" />
 
       {error ? (
-        <div className="flex items-start gap-1.5 rounded-md border border-aeris-danger/40 bg-aeris-danger/10 px-2 py-1.5 text-[11px] text-aeris-danger">
+        <div className="flex items-start gap-1.5 rounded-md border border-aeris-danger/40 bg-aeris-danger/10 px-2 py-1.5 text-body-sm text-aeris-danger">
           <AlertTriangle size={14} className="shrink-0 mt-0.5" aria-hidden />
           <span>{error}</span>
         </div>
       ) : null}
 
       {loading && alerts.length === 0 ? (
-        <p className="text-[11px] text-aeris-muted py-4 text-center">
+        <p className="text-body-sm text-aeris-muted py-4 text-center">
           Fetching advisories…
         </p>
       ) : null}
@@ -122,7 +122,7 @@ export function AlertsFeedPanel() {
         <div className="max-h-[min(50vh,320px)] overflow-y-auto pr-0.5 space-y-3">
           {activeSystems.length > 0 ? (
             <section>
-              <h3 className="text-[9px] font-mono uppercase tracking-wider text-aeris-muted mb-1.5">
+              <h3 className="text-label text-aeris-muted mb-1.5">
                 Active systems
               </h3>
               <ul className="space-y-2">
@@ -136,7 +136,7 @@ export function AlertsFeedPanel() {
           ) : null}
           {bulletins.length > 0 ? (
             <section>
-              <h3 className="text-[9px] font-mono uppercase tracking-wider text-aeris-muted mb-1.5">
+              <h3 className="text-label text-aeris-muted mb-1.5">
                 Active hazards
               </h3>
               <ul className="space-y-2">
@@ -164,7 +164,7 @@ function SourceChip({
   loading: boolean;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-aeris-border bg-aeris-elev/30 px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider text-aeris-muted">
+    <span className="inline-flex items-center gap-1 rounded-full border border-aeris-border bg-aeris-elev/30 px-2 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted">
       {label}
       <span className="text-aeris-text">{loading ? "…" : count}</span>
     </span>
@@ -174,13 +174,13 @@ function SourceChip({
 function EmptyState() {
   return (
     <div className="rounded-md border border-aeris-ok/30 bg-aeris-ok/10 px-2.5 py-2 space-y-2">
-      <div className="flex items-center gap-1.5 text-[11px] text-aeris-ok">
+      <div className="flex items-center gap-1.5 text-body-sm text-aeris-ok">
         <CheckCircle2 size={14} aria-hidden />
         <span className="font-medium">
           No active cyclones or GDACS hazards for the Philippines
         </span>
       </div>
-      <p className="text-[10px] text-aeris-muted leading-snug">
+      <p className="text-body-sm text-aeris-muted leading-snug">
         No GDACS-tracked systems in the Philippine Area of Responsibility right
         now. For official PAGASA signal numbers, use the link below.
       </p>
@@ -198,7 +198,7 @@ function OfficialLink({ href, label }: { href: string; label: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-[10px] font-mono uppercase tracking-wider text-aeris-accent hover:underline underline-offset-2"
+      className="text-body-sm font-mono uppercase tracking-wider text-aeris-accent hover:underline underline-offset-2"
     >
       {label} →
     </a>

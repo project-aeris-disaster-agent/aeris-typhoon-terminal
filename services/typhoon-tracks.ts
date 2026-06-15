@@ -30,6 +30,10 @@ export type Typhoon = {
   landfallEta?: string | null;
   bestTrack: TyphoonPoint[];
   forecast: TyphoonPoint[];
+  /** Distance (km) to PAR — only set for outside-PAR monitor systems. */
+  distanceToParKm?: number;
+  /** Whether an outside-PAR system is tracking toward PAR. */
+  approachingPar?: boolean;
 };
 
 /** PAGASA Daily Weather — TC block when the system is outside PAR. */

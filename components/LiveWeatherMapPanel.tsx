@@ -18,7 +18,7 @@ const SatelliteRadarPanel = dynamic(
     loading: () => (
       <PanelSkeleton
         label="Loading radar…"
-        className="h-12 rounded border border-aeris-border/80 bg-aeris-bg/40 px-2 text-[10px]"
+        className="h-12 rounded border border-aeris-border/80 bg-aeris-bg/40 px-2 text-body-sm"
       />
     ),
   },
@@ -42,7 +42,7 @@ export function LiveWeatherMapPanel({ map }: { map: MLMap | null }) {
   }, [toggle]);
 
   return (
-    <div className="panel-glass rounded-md font-mono text-[11px] w-full max-w-[280px]">
+    <div className="panel-glass rounded-md font-mono text-body-sm w-full max-w-[280px]">
       <button
         type="button"
         onClick={toggle}
@@ -50,14 +50,14 @@ export function LiveWeatherMapPanel({ map }: { map: MLMap | null }) {
         aria-expanded={open}
         aria-controls="live-weather-map-panel"
       >
-        <span className="shrink-0 text-[9px] uppercase tracking-wider text-aeris-accent/80">
+        <span className="shrink-0 text-chrome uppercase tracking-wider text-aeris-accent/80">
           {LIVE_WEATHER_PANEL.hotkey}
         </span>
-        <span className="shrink-0 text-[9px] uppercase tracking-wider">
+        <span className="shrink-0 text-chrome uppercase tracking-wider">
           {LIVE_WEATHER_PANEL.label}
         </span>
         <LiveWeatherFrameIndicator variant="panel" />
-        <span className="ml-auto shrink-0 text-[10px]">{open ? "−" : "+"}</span>
+        <span className="ml-auto shrink-0 text-body-sm">{open ? "−" : "+"}</span>
       </button>
       {open && (
         <div

@@ -98,7 +98,7 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
 
   return (
     <div className="space-y-1.5">
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] leading-tight">
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-body-sm leading-tight">
         <span
           className={clsx(
             "rounded border px-1 py-px font-medium uppercase tracking-wide",
@@ -130,17 +130,17 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
       </div>
 
       {error && (
-        <p className="rounded border border-aeris-danger/40 bg-aeris-danger/10 px-1.5 py-1 text-[10px] leading-snug text-aeris-danger">
+        <p className="rounded border border-aeris-danger/40 bg-aeris-danger/10 px-1.5 py-1 text-body-sm leading-snug text-aeris-danger">
           {error}
         </p>
       )}
       {!error && status?.message && (
-        <p className="rounded border border-amber-500/35 bg-amber-500/10 px-1.5 py-1 text-[10px] leading-snug text-amber-300">
+        <p className="rounded border border-amber-500/35 bg-amber-500/10 px-1.5 py-1 text-body-sm leading-snug text-amber-300">
           {status.message}
         </p>
       )}
 
-      <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-aeris-muted">
+      <div className="flex items-center gap-1 text-chrome uppercase tracking-wider text-aeris-muted">
         <span>Imagery Source</span>
         <HelpHint helpId="control.satelliteSource" side="top" />
       </div>
@@ -154,7 +154,7 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
             title={SOURCES[k].hint}
             aria-label={SOURCES[k].label}
             className={clsx(
-              "min-w-0 flex-1 rounded px-1.5 py-1 text-[10px] font-medium transition-colors",
+              "min-w-0 flex-1 rounded px-1.5 py-1 text-body-sm font-medium transition-colors",
               source === k
                 ? "border border-aeris-accent/25 bg-aeris-accent/15 text-aeris-accent shadow-sm"
                 : "border border-transparent text-aeris-muted hover:bg-aeris-elev/60 hover:text-aeris-text",

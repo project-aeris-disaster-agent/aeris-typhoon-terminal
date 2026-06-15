@@ -54,10 +54,10 @@ export function ExternalMapFrame({
           <div className="flex min-w-0 items-center gap-2">
             <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-aeris-accent" />
             <div className="min-w-0">
-              <div className="truncate text-[12px] font-semibold text-aeris-text">
+              <div className="truncate text-body-sm font-semibold text-aeris-text">
                 {config.title}
               </div>
-              <div className="truncate text-[9px] font-mono uppercase tracking-wider text-aeris-muted">
+              <div className="truncate text-chrome font-mono uppercase tracking-wider text-aeris-muted">
                 {config.subtitle}
               </div>
             </div>
@@ -67,7 +67,7 @@ export function ExternalMapFrame({
               href={config.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded border border-aeris-border px-2 py-1 text-[10px] font-mono text-aeris-muted transition-colors hover:border-aeris-border/60 hover:bg-aeris-elev/50 hover:text-aeris-text"
+              className="rounded border border-aeris-border px-2 py-1 text-body-sm font-mono text-aeris-muted transition-colors hover:border-aeris-border/60 hover:bg-aeris-elev/50 hover:text-aeris-text"
               title="Open in new tab"
             >
               Open ↗
@@ -75,7 +75,7 @@ export function ExternalMapFrame({
             <button
               type="button"
               onClick={onClose}
-              className="rounded border border-aeris-border px-2 py-1 text-[10px] font-mono text-aeris-muted transition-colors hover:border-aeris-danger/60 hover:bg-aeris-danger/5 hover:text-aeris-danger"
+              className="rounded border border-aeris-border px-2 py-1 text-body-sm font-mono text-aeris-muted transition-colors hover:border-aeris-danger/60 hover:bg-aeris-danger/5 hover:text-aeris-danger"
               title="Close (Esc)"
               aria-label="Close"
             >
@@ -87,7 +87,7 @@ export function ExternalMapFrame({
         <div className="relative flex-1 bg-black">
           {config.embeddable === false ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-              <p className="max-w-md text-[12px] leading-relaxed text-aeris-muted">
+              <p className="max-w-md text-body-sm leading-relaxed text-aeris-muted">
                 {config.title} cannot be embedded here. The site only allows
                 framing on its own domain, so the browser blocks the map inside
                 this popup.
@@ -96,7 +96,7 @@ export function ExternalMapFrame({
                 href={config.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded border border-aeris-accent/40 bg-aeris-accent/10 px-4 py-2 text-[11px] font-mono uppercase tracking-wider text-aeris-accent transition-colors hover:bg-aeris-accent/20"
+                className="rounded border border-aeris-accent/40 bg-aeris-accent/10 px-4 py-2 text-body-sm font-mono uppercase tracking-wider text-aeris-accent transition-colors hover:bg-aeris-accent/20"
               >
                 Open {config.title} in new tab ↗
               </a>
@@ -106,7 +106,7 @@ export function ExternalMapFrame({
               {!loaded && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-aeris-bg/60">
                   <AerisLoadingLogo size="md" variant="splash" />
-                  <div className="text-[11px] font-mono uppercase tracking-wider text-aeris-muted">
+                  <div className="text-body-sm font-mono uppercase tracking-wider text-aeris-muted">
                     {config.loadingLabel}
                   </div>
                 </div>

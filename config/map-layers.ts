@@ -38,3 +38,37 @@ export function layerBeforeDynamicOverlays(map: MLMap): string | undefined {
     ? AERIS_OVERLAY_TOP_LAYER_ID
     : undefined;
 }
+
+/**
+ * Run `fn` once the map's style can safely accept `addSource`/`addLayer`.
+ *
+ * Overlay renderers (report pings, webcams, water levels, satellite rasters)
+ * can be invoked while a `map.setStyle()` swap is in flight — e.g. the
+ * theme-correction swap during first load. Adding sources/layers against a
+ * style that is not done loading either throws or gets silently wiped by the
+ * incoming style, leaving overlays missing until the next poll. This helper
+ * defers the add to the next `style.load` in that case.
+ *
+ * Falls through immediately when the map (e.g. a test stub) doesn't expose
+ * `isStyleLoaded`/`once`.
+ */
+export function whenStyleReady(map: MLMap, fn: () => void): void {
+  const candidate = map as MLMap & {
+    isStyleLoaded?: () => boolean;
+    once?: MLMap["once"];
+  };
+  let loaded = true;
+  if (typeof candidate.isStyleLoaded === "function") {
+    try {
+      // MapLibre types this as `boolean | void`; treat void as loaded.
+      loaded = candidate.isStyleLoaded() !== false;
+    } catch {
+      loaded = true;
+    }
+  }
+  if (loaded || typeof candidate.once !== "function") {
+    fn();
+    return;
+  }
+  candidate.once("style.load", () => fn());
+}

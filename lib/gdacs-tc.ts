@@ -1,4 +1,4 @@
-import { PAR_BBOX } from "@/config/region";
+import { PAR_BBOX, WESTPAC_MONITOR_BBOX } from "@/config/region";
 
 export type GdacsSeverityData = {
   severity?: number;
@@ -9,6 +9,16 @@ export type GdacsSeverityData = {
 /** Active TC position inside the PAGASA PAR bounding box (same rule as alerts). */
 export function isInParBbox(lng: number, lat: number): boolean {
   const [minLng, minLat, maxLng, maxLat] = PAR_BBOX;
+  return lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat;
+}
+
+/**
+ * Active TC position inside the Western Pacific / South China Sea watch zone.
+ * Outside-PAR systems must pass this to appear as "monitor" cards so we don't
+ * surface Eastern Pacific or Atlantic storms that can never reach the PH.
+ */
+export function isInWestpacMonitorZone(lng: number, lat: number): boolean {
+  const [minLng, minLat, maxLng, maxLat] = WESTPAC_MONITOR_BBOX;
   return lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat;
 }
 

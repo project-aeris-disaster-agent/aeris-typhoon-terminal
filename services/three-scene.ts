@@ -24,6 +24,7 @@ import {
   type BuildingFeature,
   type BuildingSpatialIndex,
 } from "@/lib/facility-building-match";
+import { detectDeviceTier, type DeviceTier } from "@/lib/device-tier";
 
 /**
  * Three.js-powered MapLibre custom layer that renders 3D buildings,
@@ -105,8 +106,6 @@ export type ThreeSceneHandle = {
   awaitNextRebuild(): Promise<void>;
   dispose(): void;
 };
-
-type BucketKey = "normal" | FloodLevel;
 
 // NOAH-inspired neutral greys with slight warm/cool bias per type so the
 // city reads as a coherent massing while landmarks (hospital, government,
@@ -210,7 +209,6 @@ const FACILITY_DEFAULT_HEIGHT = 14; // fallback building height when no polygon 
 const BUILDING_WIREFRAME_OPACITY = 1.0;
 const BUILDING_WIREFRAME_COLOR = 0x3b4454;
 const BUILDING_OPACITY_NORMAL = 1.0;
-const BUILDING_OPACITY_FLOODED = 0.96;
 const FACILITY_BUILDING_OPACITY = 0.92;
 const BUILDING_EDGE_MIN_ZOOM = 14;
 const BUILDING_EDGE_ANGLE_THRESHOLD = 35;
@@ -283,8 +281,32 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   // gradient driven by a uniform), not as a separate Turf-buffered geometry.
   const floodLineMeshes: LineSegments2[] = [];
   const floodLevelMeshes: Partial<Record<FloodLevel, THREE.Group>> = {};
+  // Levels whose geometry was skipped in the last `rebuildFlood()` because
+  // they were toggled off. Re-enabling such a level triggers a lazy rebuild.
+  const floodLevelsSkippedInBuild = new Set<FloodLevel>();
   const facilityPointers: Array<{ pointer: THREE.Group; baseZ: number }> = [];
-  const normalBuildingMaterials: THREE.MeshStandardMaterial[] = [];
+
+  // --- In-place building retint ------------------------------------------
+  // All buildings live in ONE merged geometry with per-vertex colors. Each
+  // record maps a building back to its vertex range in the merged fill and
+  // edge buffers so flood-highlight toggles can rewrite colors in place
+  // instead of re-extruding the whole city (the old `scheduleRebuild()` path
+  // caused multi-hundred-ms main-thread stalls on flood toggles).
+  type BuildingRetintRecord = {
+    vertexStart: number;
+    vertexCount: number;
+    /** -1 when edges were not rendered for this build (zoomed out). */
+    edgeVertexStart: number;
+    edgeVertexCount: number;
+    floodLevel?: FloodLevel;
+    /** Jittered base tone used when the building is not flood-highlighted. */
+    normalColor: THREE.Color;
+    /** Last applied flooded state — lets retint skip untouched ranges. */
+    flooded: boolean;
+  };
+  const buildingRetintRecords: BuildingRetintRecord[] = [];
+  let buildingColorAttr: THREE.BufferAttribute | null = null;
+  let buildingEdgeColorAttr: THREE.BufferAttribute | null = null;
 
   let origin: maplibregl.MercatorCoordinate | null = null;
   let meterScale = 1;
@@ -383,7 +405,9 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     scene.remove(facilityGroup);
     scene.remove(floodGroup);
     facilityPointers.length = 0;
-    normalBuildingMaterials.length = 0;
+    buildingRetintRecords.length = 0;
+    buildingColorAttr = null;
+    buildingEdgeColorAttr = null;
     for (const d of disposables.splice(0)) {
       try {
         d.dispose();
@@ -474,20 +498,20 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     // Draw-call batching: every building used to produce its own
     // `ExtrudeGeometry` + `MeshStandardMaterial` + `EdgesGeometry` +
     // `LineBasicMaterial`, which for N-thousand OSM packs meant O(N)
-    // draw calls per frame. We now group buildings by their flood-tint
-    // bucket (the four visual classes — normal, flood-low, flood-medium,
-    // flood-high) and merge each bucket's extrusions into a single
-    // `BufferGeometry` with vertex colors baked in for per-building
-    // tone jitter. Result: O(flood_buckets) draw calls for the whole city,
-    // regardless of how many buildings the pack contains.
-    type Bucket = {
-      geoms: THREE.BufferGeometry[];
-      edgeGeoms: THREE.BufferGeometry[];
-      isFlooded: boolean;
-      level?: FloodLevel;
-    };
+    // draw calls per frame. All extrusions now merge into a SINGLE
+    // `BufferGeometry` (and a single merged edge geometry) with per-vertex
+    // colors carrying both the tone jitter and the flood tint. Result:
+    // 1-2 draw calls for the whole city, and flood-highlight toggles become
+    // cheap in-place color writes (`applyBuildingTints`) instead of full
+    // geometry rebuilds.
     const renderEdges = shouldRenderBuildingEdges();
-    const buckets: Map<BucketKey, Bucket> = new Map();
+    const geoms: THREE.BufferGeometry[] = [];
+    const edgeGeoms: THREE.BufferGeometry[] = [];
+    buildingRetintRecords.length = 0;
+    buildingColorAttr = null;
+    buildingEdgeColorAttr = null;
+    let vertexCursor = 0;
+    let edgeVertexCursor = 0;
 
     for (const feat of pendingBuildings) {
       // Skip buildings claimed by a facility: `buildFacilities` will
@@ -530,114 +554,176 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         floodHighlightActive &&
         floodLevel !== undefined &&
         floodVisibleLevels[floodLevel];
-      const baseColor = isFlooded
-        ? FLOOD_BUILDING_PALETTE[floodLevel!]
-        : (BUILDING_PALETTE[kind] ?? BUILDING_PALETTE.building);
       // Deterministic tone jitter keyed off the first coordinate so the
-      // same building always looks the same. Skip jitter on flood-tinted
-      // buildings so they read as a single clear colour signal.
+      // same building always looks the same. Flood-tinted buildings skip
+      // jitter so they read as a single clear colour signal.
       const seed = Math.abs(Math.sin(ring[0][0] * 127.1 + ring[0][1] * 311.7));
-      const jitter = isFlooded ? 1 : 0.9 + ((seed * 1000) % 1) * 0.2;
-      const threeColor = new THREE.Color(baseColor).multiplyScalar(jitter);
+      const jitter = 0.9 + ((seed * 1000) % 1) * 0.2;
+      const normalColor = new THREE.Color(
+        BUILDING_PALETTE[kind] ?? BUILDING_PALETTE.building,
+      ).multiplyScalar(jitter);
+      const fillColor = isFlooded
+        ? floodBuildingFillTint(floodLevel!)
+        : normalColor;
 
-      // Bake the per-building colour into a `color` vertex attribute so
-      // the shared material can render all buildings in the bucket with
-      // their individual tones.
+      // Bake the per-building colour into a `color` vertex attribute so a
+      // single shared material renders every building with its own tone —
+      // and so flood toggles can rewrite this range in place later.
       const vertexCount = geom.attributes.position.count;
       const colors = new Float32Array(vertexCount * 3);
       for (let i = 0; i < vertexCount; i++) {
-        colors[i * 3] = threeColor.r;
-        colors[i * 3 + 1] = threeColor.g;
-        colors[i * 3 + 2] = threeColor.b;
+        colors[i * 3] = fillColor.r;
+        colors[i * 3 + 1] = fillColor.g;
+        colors[i * 3 + 2] = fillColor.b;
       }
       geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
       const edges = renderEdges
         ? new THREE.EdgesGeometry(geom, BUILDING_EDGE_ANGLE_THRESHOLD)
         : null;
-
-      const key: BucketKey = isFlooded ? (floodLevel as FloodLevel) : "normal";
-      let bucket = buckets.get(key);
-      if (!bucket) {
-        bucket = {
-          geoms: [],
-          edgeGeoms: [],
-          isFlooded,
-          level: isFlooded ? floodLevel : undefined,
-        };
-        buckets.set(key, bucket);
-      }
-      bucket.geoms.push(geom);
-      if (edges) bucket.edgeGeoms.push(edges);
-    }
-
-    // Materials are shared within each bucket (normal vs. flood level), collapsing
-    // thousands of material records to one per visual class per bucket type.
-
-    for (const bucket of buckets.values()) {
-      if (bucket.geoms.length === 0) continue;
-      const merged = BufferGeometryUtils.mergeGeometries(bucket.geoms, false);
-      // The per-building geometries are retained on disposables via the
-      // merged output; the originals can be released now that their
-      // buffers have been copied into the merged attribute arrays.
-      for (const g of bucket.geoms) g.dispose();
-
-      const emissiveColor = bucket.isFlooded
-        ? FLOOD_BUILDING_PALETTE[bucket.level!]
-        : 0x000000;
-      // Fill material strategy:
-      //   - Unaffected (normal): 40% translucent, dark grey wireframe. Reduce clutter.
-      //   - Flooded: 65% translucent, flood-level-colored outline. Stand out as affected.
-      // Both use hazard palette for vertex colors; flooded adds emissive tint.
-      const sharedMat = new THREE.MeshStandardMaterial({
-        vertexColors: true,
-        emissive: emissiveColor,
-        emissiveIntensity: bucket.isFlooded ? 0.25 : 0,
-        metalness: 0.05,
-        roughness: bucket.isFlooded ? 0.6 : 0.85,
-        flatShading: false,
-        depthTest: true,
-        depthWrite: true,
-        ...(bucket.isFlooded
-          ? { transparent: true, opacity: BUILDING_OPACITY_FLOODED }
-          : {
-              transparent: false,
-              opacity: BUILDING_OPACITY_NORMAL,
-            }
-        ),
-      });
-      if (!bucket.isFlooded) normalBuildingMaterials.push(sharedMat);
-      const mesh = new THREE.Mesh(merged, sharedMat);
-      mesh.renderOrder = BUILDING_RENDER_ORDER;
-      buildingGroup.add(mesh);
-
-      // Edge material: flood level color for affected, dark grey for unaffected.
-      if (renderEdges && bucket.edgeGeoms.length > 0) {
-        const edgeColor = bucket.isFlooded
-          ? FLOOD_BUILDING_PALETTE[bucket.level!]
-          : BUILDING_WIREFRAME_COLOR;
-        const edgeMat = new THREE.LineBasicMaterial({
-          color: edgeColor,
-          transparent: true,
-          opacity: BUILDING_WIREFRAME_OPACITY,
-          depthTest: true,
-          depthWrite: false,
-        });
-
-        const mergedEdges = BufferGeometryUtils.mergeGeometries(
-          bucket.edgeGeoms,
-          false,
+      let edgeVertexCount = 0;
+      if (edges) {
+        // Edge colors are vertex-baked too (flood palette vs neutral grey)
+        // so a single LineBasicMaterial covers all buildings.
+        const edgeColor = new THREE.Color(
+          isFlooded
+            ? FLOOD_BUILDING_PALETTE[floodLevel!]
+            : BUILDING_WIREFRAME_COLOR,
         );
-        for (const g of bucket.edgeGeoms) g.dispose();
-        const edgeMesh = new THREE.LineSegments(mergedEdges, edgeMat);
-        edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
-        buildingGroup.add(edgeMesh);
-        disposables.push(merged, sharedMat, mergedEdges, edgeMat);
-        continue;
+        edgeVertexCount = edges.attributes.position.count;
+        const edgeColors = new Float32Array(edgeVertexCount * 3);
+        for (let i = 0; i < edgeVertexCount; i++) {
+          edgeColors[i * 3] = edgeColor.r;
+          edgeColors[i * 3 + 1] = edgeColor.g;
+          edgeColors[i * 3 + 2] = edgeColor.b;
+        }
+        edges.setAttribute("color", new THREE.BufferAttribute(edgeColors, 3));
       }
-      for (const g of bucket.edgeGeoms) g.dispose();
-      disposables.push(merged, sharedMat);
+
+      buildingRetintRecords.push({
+        vertexStart: vertexCursor,
+        vertexCount,
+        edgeVertexStart: edges ? edgeVertexCursor : -1,
+        edgeVertexCount,
+        floodLevel,
+        normalColor,
+        flooded: isFlooded,
+      });
+      vertexCursor += vertexCount;
+      geoms.push(geom);
+      if (edges) {
+        edgeVertexCursor += edgeVertexCount;
+        edgeGeoms.push(edges);
+      }
     }
+
+    if (geoms.length === 0) return;
+
+    const merged = BufferGeometryUtils.mergeGeometries(geoms, false);
+    // The per-building geometries are retained on disposables via the
+    // merged output; the originals can be released now that their
+    // buffers have been copied into the merged attribute arrays.
+    for (const g of geoms) g.dispose();
+
+    const sharedMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      metalness: 0.05,
+      roughness: 0.8,
+      flatShading: false,
+      depthTest: true,
+      depthWrite: true,
+      transparent: false,
+      opacity: BUILDING_OPACITY_NORMAL,
+    });
+    const mesh = new THREE.Mesh(merged, sharedMat);
+    mesh.renderOrder = BUILDING_RENDER_ORDER;
+    buildingGroup.add(mesh);
+    buildingColorAttr = merged.getAttribute("color") as THREE.BufferAttribute;
+    disposables.push(merged, sharedMat);
+
+    if (renderEdges && edgeGeoms.length > 0) {
+      const mergedEdges = BufferGeometryUtils.mergeGeometries(edgeGeoms, false);
+      for (const g of edgeGeoms) g.dispose();
+      const edgeMat = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: BUILDING_WIREFRAME_OPACITY,
+        depthTest: true,
+        depthWrite: false,
+      });
+      const edgeMesh = new THREE.LineSegments(mergedEdges, edgeMat);
+      edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
+      buildingGroup.add(edgeMesh);
+      buildingEdgeColorAttr = mergedEdges.getAttribute(
+        "color",
+      ) as THREE.BufferAttribute;
+      disposables.push(mergedEdges, edgeMat);
+    } else {
+      for (const g of edgeGeoms) g.dispose();
+    }
+  }
+
+  /**
+   * Flood-tinted fill colour for a building. Slightly brightened relative to
+   * the raw palette to compensate for the emissive glow the old per-bucket
+   * material applied (vertex colors cannot express per-building emissive).
+   */
+  function floodBuildingFillTint(level: FloodLevel): THREE.Color {
+    return new THREE.Color(FLOOD_BUILDING_PALETTE[level]).multiplyScalar(1.2);
+  }
+
+  /**
+   * Rewrite per-vertex colours in the merged building (and edge) buffers to
+   * match the current flood-highlight state. Returns false when there is no
+   * built geometry to retint (caller should fall back to a full rebuild).
+   */
+  function applyBuildingTints(): boolean {
+    if (!buildingColorAttr || buildingRetintRecords.length === 0) return false;
+    const colors = buildingColorAttr.array as Float32Array;
+    const edgeColors = buildingEdgeColorAttr
+      ? (buildingEdgeColorAttr.array as Float32Array)
+      : null;
+    let changed = false;
+
+    for (const rec of buildingRetintRecords) {
+      const flooded =
+        floodHighlightActive &&
+        rec.floodLevel !== undefined &&
+        floodVisibleLevels[rec.floodLevel];
+      if (flooded === rec.flooded) continue;
+      rec.flooded = flooded;
+      changed = true;
+
+      const fill = flooded
+        ? floodBuildingFillTint(rec.floodLevel!)
+        : rec.normalColor;
+      const end = rec.vertexStart + rec.vertexCount;
+      for (let i = rec.vertexStart; i < end; i++) {
+        colors[i * 3] = fill.r;
+        colors[i * 3 + 1] = fill.g;
+        colors[i * 3 + 2] = fill.b;
+      }
+
+      if (edgeColors && rec.edgeVertexStart >= 0) {
+        const edge = new THREE.Color(
+          flooded
+            ? FLOOD_BUILDING_PALETTE[rec.floodLevel!]
+            : BUILDING_WIREFRAME_COLOR,
+        );
+        const edgeEnd = rec.edgeVertexStart + rec.edgeVertexCount;
+        for (let i = rec.edgeVertexStart; i < edgeEnd; i++) {
+          edgeColors[i * 3] = edge.r;
+          edgeColors[i * 3 + 1] = edge.g;
+          edgeColors[i * 3 + 2] = edge.b;
+        }
+      }
+    }
+
+    if (changed) {
+      buildingColorAttr.needsUpdate = true;
+      if (buildingEdgeColorAttr) buildingEdgeColorAttr.needsUpdate = true;
+    }
+    return true;
   }
 
   function buildFacilities(buildingIndex: BuildingSpatialIndex) {
@@ -1084,9 +1170,18 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       }
     }
 
+    floodLevelsSkippedInBuild.clear();
     for (const lvl of ["low", "medium", "high"] as const) {
+      // Skip the expensive patch/contour geometry for levels that are toggled
+      // off — they used to be built and merely hidden. `setFloodLevelVisible`
+      // schedules a lazy rebuild when a skipped level is re-enabled.
+      if (!floodVisibleLevels[lvl]) {
+        if (levelFeatures[lvl].length > 0) floodLevelsSkippedInBuild.add(lvl);
+        continue;
+      }
+
       const levelGroup = new THREE.Group();
-      levelGroup.visible = floodVisibleLevels[lvl];
+      levelGroup.visible = true;
 
       const patchGeom = buildPatchGeometry(levelFeatures[lvl], toModelXY, 0);
       if (patchGeom) {
@@ -1300,12 +1395,18 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       scene.add(facilityGroup);
       // floodGroup is added (and re-added) inside rebuildFlood()
 
+      // Tier-tuned renderer settings: low/mid devices skip antialiasing and
+      // cap the pixel ratio at 1.0 to halve fragment work in 3D scenes.
+      // (Note: `antialias` only applies if Three creates the context; with
+      // MapLibre's shared context it documents intent and covers fallbacks.)
+      const tier: DeviceTier = detectDeviceTier();
+      const pixelRatioCap = tier === "high" ? 1.5 : 1.0;
       renderer = new THREE.WebGLRenderer({
         canvas: map.getCanvas(),
         context: gl as WebGL2RenderingContext,
-        antialias: true,
+        antialias: tier === "high",
       });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatioCap));
       renderer.autoClear = false;
 
       rebuild();
@@ -1423,10 +1524,15 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     setFloodHighlight(active) {
       if (floodHighlightActive === active) return;
       floodHighlightActive = active;
-      if (scene) {
-        if (buildingsVisible) scheduleRebuild();
-        else pendingRetintRebuild = true;
+      if (!scene) return;
+      // Fast path: rewrite vertex colors in place on the merged building
+      // mesh. Falls back to a full rebuild only when no geometry exists yet.
+      if (applyBuildingTints()) {
+        mapRef.current?.triggerRepaint();
+        return;
       }
+      if (buildingsVisible) scheduleRebuild();
+      else pendingRetintRebuild = true;
     },
     setFloodPolygons(features) {
       pendingFloodFeatures = features ?? [];
@@ -1443,12 +1549,20 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       if (mesh) {
         mesh.visible = visible;
         mapRef.current?.triggerRepaint();
+      } else if (visible && floodLevelsSkippedInBuild.has(level) && scene) {
+        // Geometry for this level was skipped while hidden — build it now.
+        scheduleFloodRebuildWhenIdle();
       }
       // Re-colour 3D buildings so flood-tinted structures in the toggled
       // level revert to their normal grey (or re-appear when turned back on).
       if (floodHighlightActive && scene) {
-        if (buildingsVisible) scheduleRebuild();
-        else pendingRetintRebuild = true;
+        if (applyBuildingTints()) {
+          mapRef.current?.triggerRepaint();
+        } else if (buildingsVisible) {
+          scheduleRebuild();
+        } else {
+          pendingRetintRebuild = true;
+        }
       }
     },
     setFloodPolygonOpacity(opacity) {

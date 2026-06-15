@@ -126,7 +126,7 @@ export function LiveWeatherFrameIndicator({
       </span>
       {isForecast && (
         <span
-          className="shrink-0 rounded border border-orange-500/50 bg-orange-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-orange-300"
+          className="shrink-0 rounded border border-orange-500/50 bg-orange-500/15 px-1.5 py-0.5 text-chrome font-semibold uppercase tracking-wider text-orange-300"
           title="Model nowcast — forecast precipitation, not an observed scan"
         >
           Forecast
@@ -138,7 +138,7 @@ export function LiveWeatherFrameIndicator({
   if (variant === "panel") {
     return (
       <span
-        className="flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-hidden px-1 font-mono text-[10px]"
+        className="flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-hidden px-1 font-mono text-body-sm"
         role="status"
         aria-live="polite"
         aria-label="Active live weather frame"
@@ -150,7 +150,7 @@ export function LiveWeatherFrameIndicator({
 
   return (
     <div
-      className="pointer-events-none absolute bottom-3 right-3 z-10 flex items-center gap-2 rounded-md border border-aeris-border/70 bg-aeris-bg/85 px-2.5 py-1.5 text-[11px] font-mono text-aeris-text shadow-lg backdrop-blur-md"
+      className="pointer-events-none absolute bottom-3 right-3 z-10 flex items-center gap-2 rounded-md border border-aeris-border/70 bg-aeris-bg/85 px-2.5 py-1.5 text-body-sm font-mono text-aeris-text shadow-lg backdrop-blur-md"
       role="status"
       aria-live="polite"
       aria-label="Active live weather frame"

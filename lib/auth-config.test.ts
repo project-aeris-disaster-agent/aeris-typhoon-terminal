@@ -17,6 +17,8 @@ describe("auth-config", () => {
     delete process.env.DASHBOARD_AUTH_DISABLED;
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    delete process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+    delete process.env.PRIVY_APP_SECRET;
   });
 
   afterEach(() => {
@@ -30,11 +32,16 @@ describe("auth-config", () => {
     expect(isProductionDeploy()).toBe(false);
   });
 
-  it("flags production misconfiguration when Supabase auth env is absent", () => {
+  it("flags production misconfiguration when Privy or Supabase auth env is absent", () => {
     process.env.VERCEL_ENV = "production";
     expect(productionAuthMisconfigured()).toBe(true);
+
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://x.supabase.co";
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon";
+    expect(productionAuthMisconfigured()).toBe(true);
+
+    process.env.NEXT_PUBLIC_PRIVY_APP_ID = "privy-app-id";
+    process.env.PRIVY_APP_SECRET = "privy-secret";
     expect(productionAuthMisconfigured()).toBe(false);
   });
 

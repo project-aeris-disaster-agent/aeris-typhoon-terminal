@@ -52,7 +52,7 @@ export function NewsPanel() {
         title="News Watch"
         trailing={headerBadge}
       />
-      <p className="text-[10px] text-aeris-muted leading-snug">
+      <p className="text-body-sm text-aeris-muted leading-snug">
         Regional headlines and situational updates related to active weather.
       </p>
       {error && <div className="text-xs text-aeris-danger">Error: {error}</div>}
@@ -82,10 +82,10 @@ function renderNewsRow(n: NewsItem) {
       className="block p-2 border-b border-aeris-border/40 hover:bg-aeris-elev transition-colors"
     >
       <div className="flex items-center gap-1.5 mb-0.5">
-        <span className="text-[10px] font-mono uppercase text-aeris-muted">
+        <span className="text-body-sm font-mono uppercase text-aeris-muted">
           {n.source}
         </span>
-        <span className="text-[10px] font-mono text-aeris-muted/70">
+        <span className="text-body-sm font-mono text-aeris-muted/70">
           {new Date(n.publishedAt).toLocaleString("en-PH", {
             month: "short",
             day: "2-digit",

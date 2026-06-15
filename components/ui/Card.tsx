@@ -18,7 +18,7 @@ export function Card({
     <div
       className={clsx(
         "panel-glass rounded-xl",
-        dense ? "p-2" : "p-3",
+        dense ? "p-2.5" : "p-4",
         className,
       )}
     >
@@ -47,7 +47,7 @@ export function CardHeader({
         {trailing ? <div className="shrink-0">{trailing}</div> : null}
       </div>
       {subtitle ? (
-        <div className="text-xs text-aeris-muted/80 mt-0.5 truncate">
+        <div className="text-body-sm text-aeris-muted/80 mt-0.5 truncate">
           {subtitle}
         </div>
       ) : null}
@@ -74,7 +74,7 @@ export function Pill({
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-mono uppercase tracking-wider",
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-chrome font-sans normal-case tracking-normal",
         tones[tone],
         className,
       )}

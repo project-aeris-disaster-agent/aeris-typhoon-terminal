@@ -75,10 +75,10 @@ export function DataLoadingPopup({
             <AerisLoadingLogo size="sm" variant="glyph" className="max-h-14" />
           </div>
           <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-aeris-muted">
+            <div className="text-body-sm font-semibold uppercase tracking-[0.2em] text-aeris-muted">
               {message}
             </div>
-            <div className="mt-2 text-[13px] font-semibold text-aeris-text">
+            <div className="mt-2 text-body font-semibold text-aeris-text">
               {queue[queueIndex]}
             </div>
             <div className="mt-2 h-1.5 w-44 overflow-hidden rounded-full bg-aeris-elev">

@@ -1,7 +1,7 @@
 "use client";
 
 import type { Map as MLMap } from "maplibre-gl";
-import { layerBeforeDynamicOverlays } from "@/config/map-layers";
+import { layerBeforeDynamicOverlays, whenStyleReady } from "@/config/map-layers";
 import type { LngLat } from "@/config/region";
 import { recordFailure, recordSuccess } from "@/services/data-freshness";
 
@@ -86,6 +86,10 @@ type PingLoop = { cancelled: boolean };
 const reportPingLoopByMap = new WeakMap<MLMap, PingLoop>();
 export type ReportPingPerformanceProfile = "quality" | "balanced" | "performance";
 const reportPingProfileByMap = new WeakMap<MLMap, ReportPingPerformanceProfile>();
+/** Caller intent from `setReportPingLoopActive` (default true). */
+const reportPingDesiredByMap = new WeakMap<MLMap, boolean>();
+/** Rendered report count — the pulse loop self-stops at zero pings. */
+const reportCountByMap = new WeakMap<MLMap, number>();
 
 const PING_TARGET_FPS: Record<ReportPingPerformanceProfile, number> = {
   quality: 30,
@@ -99,12 +103,22 @@ const PING_STROKE = "#fecaca";
 
 function startReportPingLoop(map: MLMap) {
   if (reportPingLoopByMap.has(map)) return;
+  // Nothing to animate without pings — `renderReportsOnMap` restarts the
+  // loop when reports arrive.
+  if ((reportCountByMap.get(map) ?? 0) === 0) return;
   const loop = { cancelled: false };
   reportPingLoopByMap.set(map, loop);
   let lastPaintAt = 0;
   const tick = (now: number) => {
     if (loop.cancelled) return;
     if (!map.getStyle() || !map.getLayer(REPORTS_PULSE_LAYER_ID)) {
+      loop.cancelled = true;
+      reportPingLoopByMap.delete(map);
+      return;
+    }
+    // Feed drained to zero pings — stop burning rAF frames on invisible
+    // circles. The next non-empty render restarts the loop.
+    if ((reportCountByMap.get(map) ?? 0) === 0) {
       loop.cancelled = true;
       reportPingLoopByMap.delete(map);
       return;
@@ -155,6 +169,7 @@ function stopReportPingLoop(map: MLMap) {
 
 export function setReportPingLoopActive(map: MLMap | null, active: boolean) {
   if (!map) return;
+  reportPingDesiredByMap.set(map, active);
   if (active) {
     if (map.getLayer(REPORTS_PULSE_LAYER_ID)) startReportPingLoop(map);
   } else {
@@ -306,12 +321,29 @@ function toFeatureCollection(
 }
 
 export function renderReportsOnMap(map: MLMap, reports: IncidentReport[]) {
+  // Defer when a style swap is in flight — adding sources/layers against a
+  // half-loaded style throws or gets wiped, leaving pings missing on first load.
+  whenStyleReady(map, () => renderReportsOnMapNow(map, reports));
+}
+
+function renderReportsOnMapNow(map: MLMap, reports: IncidentReport[]) {
   const data = toFeatureCollection(reports);
+  reportCountByMap.set(map, reports.length);
   const src = map.getSource(REPORTS_SOURCE_ID);
   if (src && "setData" in src) {
     (src as maplibregl.GeoJSONSource).setData(data);
   } else {
     map.addSource(REPORTS_SOURCE_ID, { type: "geojson", data });
+  }
+
+  // The pulse loop self-stops while the feed is empty; restart it when pings
+  // (re)appear, unless the caller paused it via `setReportPingLoopActive`.
+  if (
+    reports.length > 0 &&
+    reportPingDesiredByMap.get(map) !== false &&
+    map.getLayer(REPORTS_PULSE_LAYER_ID)
+  ) {
+    startReportPingLoop(map);
   }
 
   if (!map.getLayer(REPORTS_PULSE_LAYER_ID)) {

@@ -228,7 +228,7 @@ export function AerisVrmAvatar({
       {status !== "ready" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center">
           <div className="h-12 w-12 rounded-full border border-aeris-accent/30 bg-aeris-accent/10 shadow-[0_0_24px_rgba(45,212,191,0.14)]" />
-          <div className="hud-text text-[9px] uppercase tracking-widest text-aeris-muted">
+          <div className="hud-text text-chrome uppercase tracking-widest text-aeris-muted">
             {status === "loading" ? "Loading avatar" : "Avatar standby"}
           </div>
         </div>

@@ -196,7 +196,7 @@ export function NewsLivestreamsPanel() {
               key={ch.handle}
               type="button"
               onClick={() => handleChannelSelect(ch.handle)}
-              className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-[10px] font-mono border transition-colors ${
+              className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-body-sm font-mono border transition-colors ${
                 isActive
                   ? "bg-aeris-accent/10 border-aeris-accent/40 text-aeris-accent"
                   : isNewlyLive
@@ -223,7 +223,7 @@ export function NewsLivestreamsPanel() {
       )}
 
       {!loading && error && videos.length === 0 && (
-        <div className="text-[11px] text-aeris-danger px-1 py-2">{error}</div>
+        <div className="text-body-sm text-aeris-danger px-1 py-2">{error}</div>
       )}
 
       {!loading && (
@@ -246,7 +246,7 @@ export function NewsLivestreamsPanel() {
               />
             </div>
           ) : (
-            <div className="aspect-video bg-aeris-elev rounded flex items-center justify-center text-[11px] text-aeris-muted border border-aeris-border shrink-0">
+            <div className="aspect-video bg-aeris-elev rounded flex items-center justify-center text-body-sm text-aeris-muted border border-aeris-border shrink-0">
               No stream available
             </div>
           )}
@@ -255,15 +255,15 @@ export function NewsLivestreamsPanel() {
           {displayed && (
             <div className="flex items-start justify-between gap-2 min-w-0 shrink-0">
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] text-aeris-text font-medium leading-snug truncate">
+                <div className="text-body-sm text-aeris-text font-medium leading-snug truncate">
                   {displayed.title}
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[9px] font-mono text-aeris-muted">
+                  <span className="text-chrome font-mono text-aeris-muted">
                     {channelInfo.label}
                   </span>
                   {isConfirmedLive(displayed) && (
-                    <span className="text-[9px] font-mono text-aeris-danger">
+                    <span className="text-chrome font-mono text-aeris-danger">
                       ● LIVE
                     </span>
                   )}
@@ -277,7 +277,7 @@ export function NewsLivestreamsPanel() {
                   onClick={goToPrevVideo}
                   disabled={!hasPrevVideo}
                   title="Previous video"
-                  className={`px-1.5 py-0.5 rounded text-[9px] font-mono border transition-colors ${
+                  className={`px-1.5 py-0.5 rounded text-chrome font-mono border transition-colors ${
                     hasPrevVideo
                       ? "border-aeris-border hover:border-aeris-border/60 hover:bg-aeris-elev/50 text-aeris-muted hover:text-aeris-text"
                       : "border-aeris-border/30 text-aeris-muted/40 cursor-not-allowed"
@@ -289,7 +289,7 @@ export function NewsLivestreamsPanel() {
                   type="button"
                   onClick={goToMostRecent}
                   title="Most recent or live"
-                  className="px-1.5 py-0.5 rounded text-[9px] font-mono border border-aeris-border hover:border-aeris-border/60 hover:bg-aeris-elev/50 text-aeris-muted hover:text-aeris-text transition-colors"
+                  className="px-1.5 py-0.5 rounded text-chrome font-mono border border-aeris-border hover:border-aeris-border/60 hover:bg-aeris-elev/50 text-aeris-muted hover:text-aeris-text transition-colors"
                 >
                   ◆ Latest
                 </button>
@@ -298,7 +298,7 @@ export function NewsLivestreamsPanel() {
                   onClick={goToNextVideo}
                   disabled={!hasNextVideo}
                   title="Next video"
-                  className={`px-1.5 py-0.5 rounded text-[9px] font-mono border transition-colors ${
+                  className={`px-1.5 py-0.5 rounded text-chrome font-mono border transition-colors ${
                     hasNextVideo
                       ? "border-aeris-border hover:border-aeris-border/60 hover:bg-aeris-elev/50 text-aeris-muted hover:text-aeris-text"
                       : "border-aeris-border/30 text-aeris-muted/40 cursor-not-allowed"
@@ -312,11 +312,11 @@ export function NewsLivestreamsPanel() {
 
           {/* Video list for current channel */}
           <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-            <div className="text-[9px] font-mono text-aeris-muted uppercase tracking-wider px-0.5 mb-1">
+            <div className="text-chrome font-mono text-aeris-muted uppercase tracking-wider px-0.5 mb-1">
               {channelInfo.label} · Recent
             </div>
             {channelVideos.length === 0 && !loading && (
-              <div className="text-[11px] text-aeris-muted py-2 text-center">
+              <div className="text-body-sm text-aeris-muted py-2 text-center">
                 No videos found
               </div>
             )}
@@ -340,15 +340,15 @@ export function NewsLivestreamsPanel() {
                     loading="lazy"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="text-[11px] text-aeris-text leading-tight line-clamp-2">
+                    <div className="text-body-sm text-aeris-text leading-tight line-clamp-2">
                       {v.title}
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[9px] font-mono text-aeris-muted">
+                      <span className="text-chrome font-mono text-aeris-muted">
                         {new Date(v.publishedAt).toLocaleDateString()}
                       </span>
                       {isConfirmedLive(v) && (
-                        <span className="text-[9px] font-mono text-aeris-danger">
+                        <span className="text-chrome font-mono text-aeris-danger">
                           ● LIVE
                         </span>
                       )}
@@ -359,7 +359,7 @@ export function NewsLivestreamsPanel() {
             })}
           </div>
 
-          <div className="text-[9px] text-aeris-muted font-mono shrink-0">
+          <div className="text-chrome text-aeris-muted font-mono shrink-0">
             {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Loading…"}
             {" "}· YouTube News PH
           </div>

@@ -8,7 +8,7 @@ import { Pill } from "./ui/Card";
 import { useConnectionStatus } from "@/services/connection-status";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useAerisRole } from "@/services/role-context";
-import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { HeaderSignOut } from "@/components/HeaderSignOut";
 import { NewsTicker } from "@/components/NewsTicker";
 
 function AlertTriangleIcon(props: React.SVGProps<SVGSVGElement>) {
@@ -76,13 +76,6 @@ export const Header = memo(function Header({
   const [time, setTime] = useState(formatManilaClock);
   const showAuthControls = !authDisabled && Boolean(userId);
 
-  const signOut = async () => {
-    await fetch("/api/auth/signout", { method: "POST" });
-    const supabase = createSupabaseBrowserClient();
-    await supabase.auth.signOut();
-    window.location.href = "/login";
-  };
-
   useEffect(() => {
     const tick = () => setTime(formatManilaClock());
     tick();
@@ -121,11 +114,11 @@ export const Header = memo(function Header({
             priority
           />
           <span className="live-dot" aria-hidden />
-          <span className="font-mono text-sm tracking-[0.2em] text-aeris-accent">
+          <span className="text-body-sm font-semibold tracking-wide text-aeris-accent">
             A.E.R.I.S.
           </span>
           <span className="hud-text text-aeris-muted hidden lg:inline">
-            Autonomous Emergency Reporting Intelligence System · PH
+            Emergency reporting for the Philippines
           </span>
         </div>
       </div>
@@ -144,7 +137,7 @@ export const Header = memo(function Header({
           ) : (
             <MoonIcon className="h-3.5 w-3.5" />
           )}
-          <span className="hud-text text-[10px]">{theme === "dark" ? "Dark" : "Light"}</span>
+          <span className="text-body-sm">{theme === "dark" ? "Dark" : "Light"}</span>
         </button>
         <div className="relative" ref={liveReportsTriggerRef}>
           <button
@@ -165,24 +158,13 @@ export const Header = memo(function Header({
           </button>
         </div>
 
-        {showAuthControls && (
-          <>
-            <Pill tone={role === "admin" ? "ok" : "warn"}>{role}</Pill>
-            <button
-              type="button"
-              onClick={() => void signOut()}
-              className="hud-text rounded border border-aeris-border px-2 py-1 text-[10px] text-aeris-muted hover:border-aeris-accent/40 hover:text-aeris-text"
-            >
-              Sign out
-            </button>
-          </>
-        )}
+        {showAuthControls && <HeaderSignOut role={role} />}
         {online ? (
           <Pill tone="ok">LIVE</Pill>
         ) : (
           <Pill tone="warn">OFFLINE — stale data</Pill>
         )}
-        <span className="hud-text text-aeris-muted tabular-nums hidden sm:inline">{time}</span>
+        <span className="chrome-label text-aeris-muted tabular-nums hidden sm:inline">{time}</span>
       </div>
     </header>
   );

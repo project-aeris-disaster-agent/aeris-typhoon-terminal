@@ -99,9 +99,9 @@ export const HELP: Record<HelpId, HelpEntry> = {
   },
   "feeds.community": {
     title: "Community Chat",
-    tip: "Real-time coordination and field reports from responders and the community (in development). The Agent AERIS tab is live now.",
+    tip: "Open Chat on the map for real-time coordination between responders and community members. One global room, live via Supabase Realtime.",
     detail:
-      "Community Chat will host real-time coordination and field reports between responders and community members. The Agent AERIS tab beside it is already live for AI assistance.",
+      "Community Chat is a live, MIRC-style global room available from the Open Chat button on the map. Pick a nickname once and coordinate in real time with responders and community members. Agent AERIS remains available in the Intel Feeds bar for AI assistance.",
   },
   "control.viewMode": {
     title: "Map View Mode",

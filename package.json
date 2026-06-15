@@ -29,6 +29,8 @@
   "dependencies": {
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@pixiv/three-vrm": "^3.5.2",
+    "@privy-io/node": "^0.21.0",
+    "@privy-io/react-auth": "^3.29.2",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.1",
     "@turf/bbox": "^7.1.0",

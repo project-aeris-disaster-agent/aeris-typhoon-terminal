@@ -6,6 +6,7 @@ import {
   AERIS_OVERLAY_TOP_LAYER_ID,
   BASEMAP_MARKERS_LAYER_ID,
   layerBeforeBasemapLabels,
+  whenStyleReady,
 } from "@/config/map-layers";
 export type ImageryBufferSlot = 0 | 1;
 
@@ -764,6 +765,19 @@ export function ensureSatelliteLayer(
   frame: RadarFrame,
   provider: SatelliteFrameProvider,
 ) {
+  // Defer when a style swap is in flight so raster source/layer adds aren't
+  // thrown away by the incoming style (first-load theme correction).
+  whenStyleReady(map, () =>
+    ensureSatelliteLayerNow(map, sourceKey, frame, provider),
+  );
+}
+
+function ensureSatelliteLayerNow(
+  map: MLMap,
+  sourceKey: Exclude<LiveImagerySource, "radar">,
+  frame: RadarFrame,
+  provider: SatelliteFrameProvider,
+) {
   setActiveSatelliteOverlay(map, "gibs");
   for (const layerId of RADAR_LAYER_IDS) {
     if (map.getLayer(layerId)) {
@@ -900,6 +914,11 @@ export function setRadarFrameOnSlot(
 }
 
 export function ensureRadarLayer(map: MLMap, frame?: RadarFrame) {
+  // Defer when a style swap is in flight (see ensureSatelliteLayer).
+  whenStyleReady(map, () => ensureRadarLayerNow(map, frame));
+}
+
+function ensureRadarLayerNow(map: MLMap, frame?: RadarFrame) {
   for (const layerId of GIBS_LAYER_IDS) {
     if (map.getLayer(layerId)) {
       map.setLayoutProperty(layerId, "visibility", "none");

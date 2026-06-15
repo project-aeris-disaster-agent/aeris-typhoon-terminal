@@ -24,7 +24,7 @@ export function PanelSkeleton({
       aria-label={label}
     >
       <AerisLoadingLogo size="sm" variant="glyph" />
-      <span className="text-[10px] font-mono uppercase tracking-wider">{label}</span>
+      <span className="text-body-sm font-mono uppercase tracking-wider">{label}</span>
     </div>
   );
 }

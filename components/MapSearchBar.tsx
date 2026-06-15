@@ -212,13 +212,13 @@ export function MapSearchBar({
           }}
           onBlur={() => setIsFocused(false)}
           placeholder="Search address, street, barangay, or city…"
-          className="flex-1 bg-transparent text-[12px] text-aeris-text placeholder:text-aeris-muted/40 outline-none min-w-0 font-medium"
+          className="flex-1 bg-transparent text-body-sm text-aeris-text placeholder:text-aeris-muted/40 outline-none min-w-0 font-medium"
           autoComplete="off"
           spellCheck={false}
         />
 
         {!isFocused && !query && (
-          <span className="shrink-0 hud-text text-[9px] text-aeris-muted/50 tracking-widest uppercase hidden sm:inline">
+          <span className="shrink-0 hud-text text-chrome text-aeris-muted/50 tracking-widest uppercase hidden sm:inline">
             PH
           </span>
         )}
@@ -276,18 +276,18 @@ export function MapSearchBar({
                   )}
                 >
                   <div className="flex-1 min-w-0 pt-0.5">
-                    <div className="text-[12px] text-aeris-text truncate font-semibold">
+                    <div className="text-body-sm text-aeris-text truncate font-semibold">
                       {s.shortName}
                     </div>
                     {secondary && (
-                      <div className="text-[10px] text-aeris-muted/70 truncate mt-0.5">
+                      <div className="text-body-sm text-aeris-muted/70 truncate mt-0.5">
                         {secondary}
                       </div>
                     )}
                   </div>
                   <span
                     className={clsx(
-                      "shrink-0 text-[8px] font-mono uppercase tracking-wider font-bold mt-0.5 px-1.5 py-0.5 rounded-full border",
+                      "shrink-0 text-chrome font-mono uppercase tracking-wider font-bold mt-0.5 px-1.5 py-0.5 rounded-full border",
                       typeTone,
                       "border-current border-opacity-30",
                     )}

@@ -80,15 +80,15 @@ export function AlertCard({ alert }: { alert: Alert }) {
     >
       <header className="flex items-center gap-1.5 mb-1">
         <Icon size={13} className="shrink-0" aria-hidden />
-        <span className="text-[10px] font-bold uppercase tracking-wider">
+        <span className="text-body-sm font-semibold capitalize">
           {alert.severity}
         </span>
-        <span className="text-[9px] font-mono opacity-70">{alert.source}</span>
+        <span className="chrome-label opacity-70">{alert.source}</span>
         {alert.issuedAt ? (
           <time
             dateTime={alert.issuedAt}
             title={formatTimestamp(alert.issuedAt)}
-            className="ml-auto text-[9px] font-mono opacity-70"
+            className="ml-auto chrome-label opacity-70"
           >
             {issuedLabel(alert.issuedAt)}
           </time>
@@ -97,24 +97,24 @@ export function AlertCard({ alert }: { alert: Alert }) {
             href={alert.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto inline-flex items-center gap-0.5 text-[9px] font-mono uppercase tracking-wider opacity-70 hover:opacity-100"
+            className="ml-auto inline-flex items-center gap-0.5 chrome-label opacity-70 hover:opacity-100"
             aria-label="Open official source"
           >
-            <ExternalLink size={9} aria-hidden />
+            <ExternalLink size={12} aria-hidden />
           </a>
         ) : null}
       </header>
 
-      <p className="text-[9px] font-mono uppercase tracking-wider text-aeris-muted/90 mb-0.5">
+      <p className="text-body-sm font-semibold text-aeris-text mb-0.5">
         {alert.title}
       </p>
 
       {showSummary ? (
-        <p className="text-[11px] text-aeris-text leading-snug line-clamp-4">
+        <p className="text-body-sm text-aeris-text line-clamp-4">
           {alert.summary}
         </p>
       ) : (
-        <p className="text-[11px] text-aeris-text leading-snug">{alert.title}</p>
+        <p className="text-body-sm text-aeris-text">{alert.title}</p>
       )}
     </article>
   );

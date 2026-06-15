@@ -12,6 +12,7 @@ import { createMapStub } from "@/test/helpers/map-stub";
 
 jest.mock("@/config/map-layers", () => ({
   layerBeforeDynamicOverlays: () => undefined,
+  whenStyleReady: (_map: unknown, fn: () => void) => fn(),
 }));
 
 const sampleReport: IncidentReport = {

@@ -6,6 +6,7 @@ import type { Map as MLMap } from "maplibre-gl";
 import { Header } from "@/components/Header";
 import { MapContainer } from "@/components/MapContainer";
 import { LiveReportsMapOverlay } from "@/components/LiveReportsMapOverlay";
+import { CommunityChatOverlay } from "@/components/CommunityChatOverlay";
 import { type SelectedLocation } from "@/components/MapSearchBar";
 import { MapTopChrome } from "@/components/MapTopChrome";
 import { LocationInfoShell } from "@/components/LocationInfoShell";
@@ -33,6 +34,7 @@ export default function HomePage() {
   const [map, setMap] = useState<MLMap | null>(null);
   const [opsSidebarCollapsed, setOpsSidebarCollapsed] = useState(false);
   const [liveReportsOpen, setLiveReportsOpen] = useState(false);
+  const [communityChatOpen, setCommunityChatOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>("map");
   const [selectedLocation, setSelectedLocation] =
     useState<SelectedLocation | null>(null);
@@ -160,6 +162,36 @@ export default function HomePage() {
                       map={map}
                       popoverRef={liveReportsPopoverRef}
                     />
+                    <div className="hidden md:contents">
+                      <CommunityChatOverlay
+                        open={communityChatOpen}
+                        onClose={() => setCommunityChatOpen(false)}
+                      />
+                      {!communityChatOpen && (
+                        <button
+                          type="button"
+                          onClick={() => setCommunityChatOpen(true)}
+                          className="hud-text absolute bottom-3 left-3 z-40 flex items-center gap-1.5 rounded-md border border-aeris-border bg-aeris-surface/95 px-2.5 py-1.5 text-body-sm font-semibold text-aeris-muted shadow-md backdrop-blur-md transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent"
+                          aria-label="Open community chat"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            aria-hidden
+                          >
+                            <path
+                              d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          Open Chat
+                        </button>
+                      )}
+                    </div>
                     <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 hidden md:block w-[min(480px,80%)] pointer-events-none [&>*]:pointer-events-auto">
                       <MapTopChrome
                         map={map}
@@ -202,7 +234,7 @@ export default function HomePage() {
           <Sidebar map={map} onCollapsedChange={setOpsSidebarCollapsed} />
         </div>
       </div>
-      {/* Intel Feeds (webcams / livestreams / community chat) — desktop only.
+      {/* Intel Feeds (webcams / livestreams / Agent AERIS) — desktop only.
           Mobile is focused on monitoring ground reports. */}
       <div className="hidden md:block">
         <BottomPanel

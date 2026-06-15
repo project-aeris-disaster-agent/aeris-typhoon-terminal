@@ -33,9 +33,10 @@ export async function createSupabaseServerClient() {
 }
 
 export async function getSessionUserId(): Promise<string | null> {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase.auth.getUser();
-  return data.user?.id ?? null;
+  const { getSessionUserId: resolveSessionUserId } = await import(
+    "@/lib/session-auth"
+  );
+  return resolveSessionUserId();
 }
 
 export async function lookupAerisRoleForUser(userId: string): Promise<AerisRole> {
@@ -53,10 +54,10 @@ export async function getSessionAerisRole(): Promise<{
   userId: string | null;
   role: AerisRole;
 }> {
-  const userId = await getSessionUserId();
-  if (!userId) return { userId: null, role: "guest_viewer" };
-  const role = await lookupAerisRoleForUser(userId);
-  return { userId, role };
+  const { getSessionAerisRole: resolveSessionAerisRole } = await import(
+    "@/lib/session-auth"
+  );
+  return resolveSessionAerisRole();
 }
 
 export function isDashboardAuthDisabled() {

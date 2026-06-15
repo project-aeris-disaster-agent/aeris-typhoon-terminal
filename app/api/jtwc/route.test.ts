@@ -154,6 +154,57 @@ describe("/api/jtwc", () => {
     });
   });
 
+  it("excludes Eastern Pacific / Atlantic storms from the outside-PAR monitor list", async () => {
+    const { GET } = await import("./route");
+    const collection = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          // Eastern Pacific (off Mexico) — irrelevant to PH ops.
+          geometry: { type: "Point", coordinates: [-136.3, 11.3] },
+          properties: {
+            eventid: "1001273",
+            eventname: "AMANDA-26",
+            severitydata: {
+              severity: 74,
+              severitytext: "Tropical Depression (maximum wind speed of 74 km/h)",
+              severityunit: "km/h",
+            },
+          },
+        },
+        {
+          type: "Feature",
+          // West Pacific, just east of PAR — a legitimate monitor.
+          geometry: { type: "Point", coordinates: [142.0, 12.0] },
+          properties: {
+            eventid: "1001280",
+            eventname: "WESTPAC-26",
+            severitydata: {
+              severity: 95,
+              severitytext: "Tropical Storm (maximum wind speed of 95 km/h)",
+              severityunit: "km/h",
+            },
+          },
+        },
+      ],
+    };
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => collection,
+    }) as typeof fetch;
+
+    const body = await (await GET()).json();
+
+    expect(body.storms).toEqual([]);
+    expect(body.outsideParGdacs).toEqual([
+      expect.objectContaining({ id: "1001280", name: "WESTPAC-26" }),
+    ]);
+    expect(
+      body.outsideParGdacs.some((s: { id: string }) => s.id === "1001273"),
+    ).toBe(false);
+  });
+
   it("maps GDACS storm geometry into the typhoon response shape", async () => {
     const { GET } = await import("./route");
     const collection = {

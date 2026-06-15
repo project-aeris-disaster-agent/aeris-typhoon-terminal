@@ -41,7 +41,7 @@ const SUB_PANELS: {
 }[] = [
   { id: "webcams", label: "Live Webcams", hotkey: "A" },
   { id: "news", label: "News Livestreams", hotkey: "B" },
-  { id: "location", label: "Community Chat", hotkey: "C" },
+  { id: "location", label: "Agent AERIS", hotkey: "C" },
 ];
 
 export function BottomPanel({
@@ -56,7 +56,7 @@ export function BottomPanel({
   /** Controlled Intel Feeds collapse (lifted to page for layout sync). */
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
-  /** When set, opens the Community Chat subpanel and asks AERIS to explain. */
+  /** When set, opens the Agent AERIS subpanel and asks AERIS to explain. */
   explainRequest?: AgentExplainRequest | null;
 }) {
   const [collapsedInternal, setCollapsedInternal] = useState(true);
@@ -69,7 +69,7 @@ export function BottomPanel({
     location: true,
   });
 
-  // An incoming explain request must reveal the Community Chat subpanel so the
+  // An incoming explain request must reveal the Agent AERIS subpanel so the
   // Agent AERIS reply is visible (page un-collapses the bar separately).
   useEffect(() => {
     if (explainRequest) {
@@ -108,13 +108,13 @@ export function BottomPanel({
             type="button"
             onClick={toggleCollapsed}
             className="hud-text text-aeris-muted hover:text-aeris-text flex items-center gap-1.5"
-            aria-label={collapsed ? "Expand intel feeds" : "Collapse intel feeds"}
+            aria-label={collapsed ? "Expand live updates" : "Collapse live updates"}
           >
-            <span className="text-aeris-accent/70 font-mono text-[10px]">0</span>
-            <span className="tracking-widest text-[11px] font-semibold uppercase">
-              Intel Feeds
+            <span className="text-chrome text-aeris-accent/70">0</span>
+            <span className="text-body-sm font-semibold">
+              Live Updates
             </span>
-            <span className="text-[10px] ml-1">{collapsed ? "▲" : "▼"}</span>
+            <span className="text-body-sm ml-1">{collapsed ? "▲" : "▼"}</span>
           </button>
 
           {!collapsed && (
@@ -125,7 +125,7 @@ export function BottomPanel({
                   type="button"
                   onClick={() => toggleSub(sp.id)}
                   className={clsx(
-                    "px-2 py-0.5 rounded text-[10px] font-mono border transition-colors",
+                    "px-2 py-1 rounded text-body-sm border transition-colors",
                     openPanels[sp.id]
                       ? "bg-aeris-accent/10 border-aeris-accent/30 text-aeris-accent"
                       : "border-aeris-border text-aeris-muted hover:text-aeris-text",
@@ -140,7 +140,7 @@ export function BottomPanel({
 
         <div className="flex items-center gap-2">
           {!collapsed && (
-            <span className="text-[9px] font-mono text-aeris-muted">
+            <span className="text-chrome text-aeris-muted">
               Press 0 to toggle
             </span>
           )}

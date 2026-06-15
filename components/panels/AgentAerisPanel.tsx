@@ -504,7 +504,7 @@ export function AgentAerisPanel({
               <div
                 key={message.id}
                 className={clsx(
-                  "max-w-[92%] rounded-lg border px-3 py-2 text-[11px] leading-relaxed whitespace-pre-wrap",
+                  "max-w-[92%] rounded-lg border px-3 py-2 text-body-sm leading-relaxed whitespace-pre-wrap",
                   isUser
                     ? "ml-auto border-aeris-accent/30 bg-aeris-accent/10 text-aeris-text"
                     : isOperatorReply
@@ -516,7 +516,7 @@ export function AgentAerisPanel({
                           : "border-aeris-border/50 bg-aeris-surface/60 text-aeris-text/90",
                 )}
               >
-                <div className="mb-1 flex items-center gap-2 text-[8px] font-mono uppercase tracking-widest text-aeris-muted/70">
+                <div className="mb-1 flex items-center gap-2 text-label text-aeris-muted/80">
                   <span>{label}</span>
                   {isWeather && (
                     <span className="rounded border border-aeris-warn/30 px-1 py-0.5 text-aeris-warn">
@@ -536,7 +536,7 @@ export function AgentAerisPanel({
         </div>
 
         {error && (
-          <div className="mx-3 mb-2 flex items-center justify-between gap-2 rounded-md border border-aeris-danger/40 bg-aeris-danger/10 px-2 py-1.5 text-[10px] text-aeris-text">
+          <div className="mx-3 mb-2 flex items-center justify-between gap-2 rounded-md border border-aeris-danger/40 bg-aeris-danger/10 px-2 py-1.5 text-body-sm text-aeris-text">
             <span className="min-w-0 truncate">{error}</span>
             <button
               type="button"
@@ -549,7 +549,7 @@ export function AgentAerisPanel({
         )}
 
         {activeBackChannel && (
-          <label className="mx-3 mb-1 flex items-center gap-2 text-[10px] text-aeris-muted/90">
+          <label className="mx-3 mb-1 flex items-center gap-2 text-body-sm text-aeris-muted/90">
             <input
               type="checkbox"
               checked={replyToChatSession}
@@ -578,7 +578,7 @@ export function AgentAerisPanel({
               type="button"
               onClick={() => void sendPrompt(action.prompt)}
               disabled={isSending}
-              className="rounded-full border border-aeris-border/60 bg-aeris-bg/50 px-2 py-0.5 text-[9px] font-mono uppercase tracking-widest text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-full border border-aeris-border/60 bg-aeris-bg/50 px-3 py-1.5 text-body-sm text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               {action.label}
             </button>
@@ -594,12 +594,12 @@ export function AgentAerisPanel({
             onChange={(event) => setInput(event.target.value)}
             disabled={isSending}
             placeholder="Ask AGENT AERIS..."
-            className="min-w-0 flex-1 rounded-md border border-aeris-border/60 bg-aeris-bg/70 px-3 py-2 text-[11px] text-aeris-text outline-none placeholder:text-aeris-muted/50 focus:border-aeris-accent/60 disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-w-0 flex-1 rounded-md border border-aeris-border/60 bg-aeris-bg/70 px-3 py-2 text-body-sm text-aeris-text outline-none placeholder:text-aeris-muted/50 focus:border-aeris-accent/60 disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button
             type="submit"
             disabled={!input.trim() || isSending}
-            className="rounded-md border border-aeris-accent/40 bg-aeris-accent/10 px-3 py-2 text-[10px] font-mono font-semibold uppercase tracking-widest text-aeris-accent transition-colors hover:bg-aeris-accent/15 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-aeris-accent/40 bg-aeris-accent/10 px-3 py-2 text-body-sm font-semibold text-aeris-accent transition-colors hover:bg-aeris-accent/15 disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px]"
           >
             Send
           </button>

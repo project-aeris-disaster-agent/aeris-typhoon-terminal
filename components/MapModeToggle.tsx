@@ -9,20 +9,24 @@ export function MapModeToggle({
   onChange,
   onOpenPanahon,
   onOpenNoah,
+  allow3d = true,
 }: {
   mode: MapMode;
   onChange: (m: MapMode) => void;
   onOpenPanahon?: () => void;
   onOpenNoah?: () => void;
+  /** When false (mobile/touch devices), the 3D mode button is hidden. */
+  allow3d?: boolean;
 }) {
   const MODE_META: Record<MapMode, { label: string; hint: string }> = {
     "2d": { label: "2D", hint: "Analytical" },
     "3d": { label: "3D", hint: "Immersive" },
   };
+  const modes: readonly MapMode[] = allow3d ? ["2d", "3d"] : ["2d"];
 
   return (
-    <div className="panel-glass rounded-md p-0.5 font-mono text-[11px]">
-      <div className="mb-0.5 flex items-center gap-1 px-1.5 text-[9px] uppercase tracking-wider text-aeris-muted">
+    <div className="panel-glass rounded-md p-0.5 font-mono text-body-sm">
+      <div className="mb-0.5 flex items-center gap-1 px-1.5 text-chrome uppercase tracking-wider text-aeris-muted">
         <span>View Mode</span>
         <HelpHint helpId="control.viewMode" side="right" />
         {(onOpenPanahon || onOpenNoah) && (
@@ -30,7 +34,7 @@ export function MapModeToggle({
         )}
       </div>
       <div className="flex items-stretch">
-        {(["2d", "3d"] as const).map((m) => (
+        {modes.map((m) => (
           <button
             key={m}
             type="button"
@@ -45,7 +49,7 @@ export function MapModeToggle({
             title={MODE_META[m].hint}
           >
             <span className="block leading-none">{MODE_META[m].label}</span>
-            <span className="block text-[9px] normal-case tracking-normal opacity-80">
+            <span className="block text-chrome normal-case tracking-normal opacity-80">
               {MODE_META[m].hint}
             </span>
           </button>
@@ -58,7 +62,7 @@ export function MapModeToggle({
             title="Open PAGASA PANaHON nationwide hydromet map"
           >
             <span className="block leading-none">PAGASA</span>
-            <span className="block text-[9px] normal-case tracking-normal opacity-80">
+            <span className="block text-chrome normal-case tracking-normal opacity-80">
               PANaHON ↗
             </span>
           </button>
@@ -71,7 +75,7 @@ export function MapModeToggle({
             title="Open UP NOAH rainfall contour map"
           >
             <span className="block leading-none">NOAH</span>
-            <span className="block text-[9px] normal-case tracking-normal opacity-80">
+            <span className="block text-chrome normal-case tracking-normal opacity-80">
               Rainfall ↗
             </span>
           </button>

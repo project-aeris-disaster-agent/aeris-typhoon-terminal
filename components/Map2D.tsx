@@ -15,6 +15,7 @@ import { reattachMapOverlaysAfterStyleChange } from "@/services/map-style-reatta
 import type { MapMode } from "./MapContainer";
 import { applyMapViewMode } from "@/services/map-scene";
 import { DEVICE_TIER, detectDeviceTier } from "@/lib/device-tier";
+import { readStoredTheme } from "@/lib/theme-storage";
 
 export type Map2DProps = {
   mode: MapMode;
@@ -34,6 +35,14 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
   /** Last basemap style URL successfully applied (not just requested). */
   const appliedBasemapUrlRef = useRef<string | null>(null);
   const themeSyncGenerationRef = useRef(0);
+  /**
+   * Completion callbacks for in-flight theme swaps. Stored on a shared ref so
+   * a swap superseded by a newer theme write (generation mismatch) never drops
+   * its `onComplete` — the winning swap drains every pending callback. The
+   * initial `finishReady` (-> `onReady`) rides this path, so losing it meant
+   * overlays never initialized on first load.
+   */
+  const pendingThemeCompletionsRef = useRef<Array<() => void>>([]);
   const onReadyRef = useRef(onReady);
   const modeRef = useRef(mode);
   const themeRef = useRef(theme);
@@ -53,13 +62,15 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
   const applyBasemapTheme = useCallback(
     (map: MLMap, nextTheme: BasemapTheme, onComplete?: () => void) => {
       const styleUrl = getBasemapStyleUrl(nextTheme);
+      if (onComplete) pendingThemeCompletionsRef.current.push(onComplete);
 
       const runComplete = () => {
         if (themeRef.current !== nextTheme) {
-          applyBasemapTheme(map, themeRef.current, onComplete);
+          // Pending completions stay queued; the follow-up swap drains them.
+          applyBasemapTheme(map, themeRef.current);
           return;
         }
-        onComplete?.();
+        for (const cb of pendingThemeCompletionsRef.current.splice(0)) cb();
       };
 
       const finishApply = () => {
@@ -96,7 +107,14 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const initialTheme = themeRef.current;
+    // Resolve the theme synchronously from storage instead of trusting the
+    // `theme` prop: ThemeProvider hydrates the stored theme in an effect that
+    // runs AFTER this one, so the prop still holds the SSR default ("light")
+    // here. Creating the map with the wrong style forced a `setStyle()` swap
+    // at load time that raced overlay layer-adds and wiped them (report
+    // pings / satellite missing until a manual theme toggle).
+    const initialTheme = readStoredTheme();
+    themeRef.current = initialTheme;
     const initialStyleUrl = getBasemapStyleUrl(initialTheme);
 
     const map = new maplibregl.Map({
@@ -130,7 +148,25 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
     );
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
+    // Resize passes are cheap-gated: skip `map.resize()` + `triggerRepaint()`
+    // entirely when the container's on-screen size (and DPR) hasn't actually
+    // changed, so the deferred ladders below don't burn GPU frames for no-ops.
+    let lastResizeW = -1;
+    let lastResizeH = -1;
+    let lastResizeDpr = -1;
     const resizeMap = () => {
+      const container = containerRef.current;
+      if (container) {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        const dpr = window.devicePixelRatio || 1;
+        if (w === lastResizeW && h === lastResizeH && dpr === lastResizeDpr) {
+          return;
+        }
+        lastResizeW = w;
+        lastResizeH = h;
+        lastResizeDpr = dpr;
+      }
       map.resize();
       map.triggerRepaint();
     };
@@ -140,14 +176,17 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
     // height without firing a normal `resize` event on the map container.
     // We listen to `visualViewport` + `orientationchange` and re-run a few
     // delayed `map.resize()` passes so the WebGL canvas always matches the
-    // container's real on-screen size.
+    // container's real on-screen size. Re-invocations cancel the previous
+    // ladder so rapid viewport events coalesce into a single schedule.
+    let deferredResizeTimers: number[] = [];
     const scheduleDeferredResizes = () => {
-      [0, 60, 200, 500, 1000].forEach((delay) => {
-        setTimeout(() => {
+      for (const id of deferredResizeTimers) window.clearTimeout(id);
+      deferredResizeTimers = [0, 150, 500, 1000].map((delay) =>
+        window.setTimeout(() => {
           if (!mapRef.current) return;
           resizeMap();
-        }, delay);
-      });
+        }, delay),
+      );
     };
 
     const onVisualViewportChange = () => scheduleDeferredResizes();
@@ -197,6 +236,8 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
 
     return () => {
       ro?.disconnect();
+      for (const id of deferredResizeTimers) window.clearTimeout(id);
+      deferredResizeTimers = [];
       if (typeof window !== "undefined") {
         window.removeEventListener("orientationchange", onOrientationChange);
         window.removeEventListener("resize", onWindowResize);
@@ -208,6 +249,7 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
       mapReadyRef.current = false;
       appliedBasemapUrlRef.current = null;
       themeSyncGenerationRef.current += 1;
+      pendingThemeCompletionsRef.current = [];
       map.remove();
       mapRef.current = null;
     };

@@ -33,6 +33,24 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
   const hasAnyTc = storms.length > 0 || hasOutsidePar;
   const monitorCount = (outsidePar ? 1 : 0) + outsideParGdacs.length;
 
+  const outsideParThreats: OutsideParThreatItem[] = outsidePar
+    ? [
+        {
+          key: "pagasa",
+          name: formatPagasaStormName(outsidePar.name),
+          windKph: outsidePar.windKph,
+          source: "pagasa",
+        },
+      ]
+    : outsideParGdacs.map((s) => ({
+        key: s.id,
+        name: s.name,
+        windKph: s.windKph,
+        distanceToParKm: s.distanceToParKm,
+        approachingPar: s.approachingPar,
+        source: "gdacs" as const,
+      }));
+
   const statusBadge = useMemo(() => {
     if (loading) return <Pill>loading</Pill>;
     if (error) return <Pill tone="danger">err</Pill>;
@@ -141,14 +159,14 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
           <div className="text-xs font-medium tracking-wide text-aeris-ok">
             NO TYPHOON THREAT ACTIVE
           </div>
-          <div className="text-[11px] text-aeris-muted">
+          <div className="text-body-sm text-aeris-muted">
             No tropical cyclone on the last advisory check.
           </div>
         </div>
       )}
 
       {storms.length > 0 && !loading && (
-        <p className="text-[10px] text-aeris-muted leading-snug">
+        <p className="text-body-sm text-aeris-muted leading-snug">
           Storms in PAR feed cyclonic flow on the map. Tap one to boost the{" "}
           <span className="font-medium text-aeris-text/80">live weather</span> loop.
         </p>
@@ -164,10 +182,8 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
             onClick={() =>
               setFocusedId((cur) => (cur === s.id ? null : s.id))
             }
-            className={`w-full text-left p-2.5 rounded-lg border space-y-2 transition-colors ${
-              isFocused
-                ? "border-aeris-accent/60 bg-aeris-accent/10 ring-1 ring-aeris-accent/30"
-                : "border-aeris-border bg-aeris-bg/40 hover:border-aeris-border/80 hover:bg-aeris-bg/55"
+            className={`w-full text-left p-2.5 rounded-lg border space-y-2 transition-colors ${threatSurfaceClasses(threat.tone)} ${
+              isFocused ? "ring-1 ring-aeris-accent/40 border-aeris-accent/70" : ""
             }`}
           >
             <StormHero
@@ -177,23 +193,20 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
               windKph={s.windKph}
               threat={threat}
             />
-            <div className="grid grid-cols-2 gap-1 text-[11px] text-aeris-muted">
+            <div className="grid grid-cols-2 gap-1 text-body-sm text-aeris-muted">
               <Metric
                 label="Pressure"
                 value={s.pressureHpa > 0 ? `${s.pressureHpa} hPa` : "n/a"}
               />
               <Metric label="Heading" value={s.heading ?? "—"} />
-              <Metric
-                label="Position"
-                value={`${s.position[1].toFixed(1)}°N, ${s.position[0].toFixed(1)}°E`}
-              />
+              <Metric label="Position" value={formatLngLat(s.position)} />
               <Metric
                 label="Category"
                 value={s.category || "n/a"}
               />
             </div>
             {s.landfallEta && (
-              <div className="text-[11px] text-aeris-warn">
+              <div className="text-body-sm text-aeris-warn">
                 Landfall ETA: {s.landfallEta}
               </div>
             )}
@@ -201,30 +214,32 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
         );
       })}
 
-      {outsidePar && <OutsideParCard advisory={outsidePar} />}
-
-      {!outsidePar &&
-        outsideParGdacs.map((s) => (
-          <MonitorCard
-            key={s.id}
-            name={s.name}
-            windKph={s.windKph}
-            position={`${s.position[1].toFixed(1)}°N, ${s.position[0].toFixed(1)}°E`}
-            movement={s.heading ?? "—"}
-            gusts={formatGustKph(s.gustKph)}
-          />
-        ))}
+      {outsideParThreats.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-chrome uppercase tracking-wider text-aeris-muted">
+              Outside PAR — monitoring
+            </span>
+            <span className="text-chrome tracking-wider text-aeris-muted/80">
+              {outsideParThreats.length}
+            </span>
+          </div>
+          {outsideParThreats.map(({ key, ...rest }) => (
+            <OutsideParThreatRow key={key} {...rest} />
+          ))}
+        </div>
+      )}
 
       <FreshnessTag source="typhoons" />
 
       {warning && !error && (
-        <div className="text-[11px] text-aeris-warn">
+        <div className="text-body-sm text-aeris-warn">
           Advisory source degraded: {warning}
         </div>
       )}
 
       {error && (
-        <div className="text-[11px] text-aeris-danger">
+        <div className="text-body-sm text-aeris-danger">
           Source unreachable: {error}
         </div>
       )}
@@ -232,66 +247,73 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
   );
 }
 
-function OutsideParCard({ advisory }: { advisory: OutsideParAdvisory }) {
-  const name = formatPagasaStormName(advisory.name);
-  const position = advisory.position
-    ? `${advisory.position[1].toFixed(1)}°N, ${advisory.position[0].toFixed(1)}°E`
-    : "n/a";
+type OutsideParThreatItem = {
+  key: string;
+  name: string;
+  windKph?: number | null;
+  distanceToParKm?: number;
+  approachingPar?: boolean;
+  source: "pagasa" | "gdacs";
+};
 
-  return (
-    <MonitorCard
-      name={name}
-      windKph={advisory.windKph ?? 0}
-      gusts={formatPagasaQuantity(advisory.gustinessKmh)}
-      movement={formatPagasaMovement(advisory.movement)}
-      position={position}
-      subtitle={formatPagasaLocationLine(advisory.location)}
-      issuedAt={advisory.issuedAt}
-    />
-  );
-}
-
-function MonitorCard({
+/**
+ * Minimalist one-line indicator for a weather threat detected outside PAR.
+ * Replaces the heavier monitor card: a status dot, name, approach/distance,
+ * and a compact wind figure — enough to glance at without opening a subpanel.
+ */
+function OutsideParThreatRow({
   name,
   windKph,
-  gusts,
-  movement,
-  position,
-  subtitle,
-  issuedAt,
-}: {
-  name: string;
-  windKph: number;
-  gusts: string;
-  movement: string;
-  position: string;
-  subtitle?: string;
-  issuedAt?: string | null;
-}) {
-  const threat = threatFromWind(windKph);
+  distanceToParKm,
+  approachingPar,
+  source,
+}: Omit<OutsideParThreatItem, "key">) {
+  const dotTone = approachingPar
+    ? "bg-aeris-warn shadow-[0_0_6px_rgba(245,158,11,0.7)]"
+    : "bg-aeris-muted";
+  const statusClass = approachingPar ? "text-aeris-warn" : "text-aeris-muted";
+  const status = approachingPar ? "Approaching PAR" : "Outside PAR";
+
+  const meta =
+    typeof distanceToParKm === "number"
+      ? `~${distanceToParKm.toLocaleString("en-US")} km`
+      : source === "pagasa"
+        ? "PAGASA advisory"
+        : null;
+
   return (
-    <div className="w-full text-left p-2.5 rounded-lg border border-aeris-border bg-aeris-bg/40 space-y-2">
-      <StormHero
-        name={name}
-        windKph={windKph}
-        threat={threat}
-        statusLabel="Outside PAR"
-        statusTone="warn"
+    <div className="flex items-center gap-2 rounded-md border border-aeris-border bg-aeris-bg/35 px-2 py-1.5">
+      <span
+        className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotTone}`}
+        aria-hidden
       />
-      <div className="grid grid-cols-2 gap-1 text-[11px] text-aeris-muted">
-        <Metric label="Gusts" value={gusts} />
-        <Metric label="Movement" value={movement} />
-        <Metric label="Position" value={position} />
-        <Metric label="Category" value={threat.label} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-mono text-body-sm text-aeris-text">
+          {name}
+        </div>
+        <div
+          className={`truncate text-chrome uppercase tracking-wider ${statusClass}`}
+        >
+          {status}
+          {meta ? ` · ${meta}` : ""}
+        </div>
       </div>
-      {subtitle && (
-        <div className="text-[11px] text-aeris-muted leading-snug">{subtitle}</div>
-      )}
-      {issuedAt && (
-        <div className="text-[10px] text-aeris-muted/80">PAGASA · {issuedAt}</div>
+      {typeof windKph === "number" && windKph > 0 && (
+        <span className="shrink-0 font-mono text-body-sm text-aeris-text/90">
+          {windKph}
+          <span className="text-aeris-muted"> km/h</span>
+        </span>
       )}
     </div>
   );
+}
+
+/** Format a [lng, lat] pair with proper N/S and E/W hemispheres. */
+function formatLngLat(position: [number, number]): string {
+  const [lng, lat] = position;
+  const ns = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? "N" : "S"}`;
+  const ew = `${Math.abs(lng).toFixed(1)}°${lng >= 0 ? "E" : "W"}`;
+  return `${ns}, ${ew}`;
 }
 
 type ThreatTone = "ok" | "accent" | "warn" | "danger";
@@ -301,6 +323,37 @@ type ThreatLevel = {
   barPct: number;
   description: string;
 };
+
+const THREAT_SURFACE: Record<
+  ThreatTone,
+  { bg: string; border: string; hoverBg: string }
+> = {
+  ok: {
+    bg: "bg-aeris-ok/10",
+    border: "border-aeris-ok/40",
+    hoverBg: "hover:bg-aeris-ok/15",
+  },
+  accent: {
+    bg: "bg-aeris-accent/10",
+    border: "border-aeris-accent/40",
+    hoverBg: "hover:bg-aeris-accent/15",
+  },
+  warn: {
+    bg: "bg-aeris-warn/10",
+    border: "border-aeris-warn/40",
+    hoverBg: "hover:bg-aeris-warn/15",
+  },
+  danger: {
+    bg: "bg-aeris-danger/10",
+    border: "border-aeris-danger/40",
+    hoverBg: "hover:bg-aeris-danger/15",
+  },
+};
+
+function threatSurfaceClasses(tone: ThreatTone): string {
+  const s = THREAT_SURFACE[tone];
+  return `${s.bg} ${s.border} ${s.hoverBg}`;
+}
 
 function threatFromWind(windKph: number): ThreatLevel {
   if (!windKph || windKph <= 0) {
@@ -357,7 +410,7 @@ function StormHero({
             {name}
           </div>
           {subName && (
-            <div className="font-mono text-[10px] uppercase tracking-wider text-aeris-muted truncate">
+            <div className="font-mono text-body-sm uppercase tracking-wider text-aeris-muted truncate">
               {subName}
             </div>
           )}
@@ -369,14 +422,14 @@ function StormHero({
       </div>
 
       <div className="min-w-0">
-        <div className="text-[9px] uppercase tracking-wider text-aeris-muted">
+        <div className="text-chrome uppercase tracking-wider text-aeris-muted">
           Sustained wind
         </div>
         <div className="font-mono leading-none">
           <span className="text-xl font-semibold text-aeris-text">
             {windKph > 0 ? windKph : "—"}
           </span>
-          <span className="text-[11px] text-aeris-muted ml-1">km/h</span>
+          <span className="text-body-sm text-aeris-muted ml-1">km/h</span>
         </div>
       </div>
 
@@ -393,7 +446,7 @@ function StormHero({
           style={{ width: `${threat.barPct}%` }}
         />
       </div>
-      <div className="text-[10px] text-aeris-muted leading-snug">
+      <div className="text-body-sm text-aeris-muted leading-snug">
         {threat.description}
       </div>
     </div>
@@ -406,34 +459,6 @@ function formatPagasaStormName(raw: string): string {
     .trim();
 }
 
-/** Drop trailing coordinate parenthetical; coords live in the Position field. */
-function formatPagasaLocationLine(raw: string): string {
-  return decodePagasaText(raw)
-    .replace(/^LOCATION:\s*/i, "")
-    .replace(/\s*\([^)]*\)\s*$/, "")
-    .trim();
-}
-
-/** GDACS gusts are estimated from sustained wind, so flag them as approximate. */
-function formatGustKph(gustKph: number | null | undefined): string {
-  return typeof gustKph === "number" && gustKph > 0 ? `~${gustKph} km/h` : "—";
-}
-
-function formatPagasaQuantity(raw: string | undefined): string {
-  if (!raw) return "n/a";
-  const n = raw.match(/(\d+)\s*km\/h/i);
-  if (!n) return decodePagasaText(raw).toLowerCase();
-  return /up\s+to/i.test(raw) ? `up to ${n[1]} km/h` : `${n[1]} km/h`;
-}
-
-function formatPagasaMovement(raw: string | undefined): string {
-  if (!raw) return "n/a";
-  const t = decodePagasaText(raw).replace(/^MOVEMENT:\s*/i, "");
-  const at = t.match(/([A-Z]+(?:WARD)?)\s+AT\s+(\d+)\s*KM\/H/i);
-  if (at) return `${at[1].toLowerCase()} at ${at[2]} km/h`;
-  return t.toLowerCase();
-}
-
 function decodePagasaText(raw: string): string {
   return raw.replace(/&deg;/gi, "°").replace(/&amp;/g, "&").trim();
 }
@@ -441,7 +466,7 @@ function decodePagasaText(raw: string): string {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[9px] uppercase tracking-wider">{label}</div>
+      <div className="text-chrome uppercase tracking-wider">{label}</div>
       <div className="text-aeris-text font-mono">{value}</div>
     </div>
   );

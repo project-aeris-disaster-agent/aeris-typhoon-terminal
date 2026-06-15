@@ -51,7 +51,7 @@ export function HazardPopupContent({
     return (
       <div className="w-[220px] rounded-md border border-aeris-border bg-aeris-surface/95 p-2.5 text-aeris-text shadow-md backdrop-blur-sm">
         <p className="text-xs font-medium">{location}</p>
-        <p className="mt-1 font-mono text-[10px] text-aeris-muted">
+        <p className="mt-1 font-mono text-body-sm text-aeris-muted">
           {lat.toFixed(4)}°N, {lng.toFixed(4)}°E
         </p>
       </div>
@@ -77,10 +77,10 @@ export function HazardPopupContent({
           <p className="truncate text-xs font-semibold leading-tight">
             {formatLabel(report.category)}
           </p>
-          <p className="mt-0.5 truncate text-[10px] text-aeris-muted">{location}</p>
+          <p className="mt-0.5 truncate text-body-sm text-aeris-muted">{location}</p>
         </div>
         <span
-          className={`shrink-0 rounded px-1 py-0.5 font-mono text-[9px] uppercase leading-none ${
+          className={`shrink-0 rounded px-1 py-0.5 font-mono text-chrome uppercase leading-none ${
             report.verificationStatus === "verified"
               ? "bg-aeris-accent/15 text-aeris-accent"
               : "bg-aeris-danger/10 text-aeris-danger"
@@ -116,13 +116,13 @@ export function HazardPopupContent({
       ) : null}
 
       {meta.length > 0 ? (
-        <p className="mt-2 font-mono text-[9px] leading-snug text-aeris-muted">
+        <p className="mt-2 font-mono text-chrome leading-snug text-aeris-muted">
           {meta.join(" · ")}
         </p>
       ) : null}
 
       {report.onchainStatus === "minted" && report.onchainTxHash ? (
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-[10px]">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-body-sm">
           <span className="text-aeris-muted">TXN</span>
           {report.onchainTxHref ? (
             <a
@@ -143,7 +143,7 @@ export function HazardPopupContent({
       ) : null}
 
       <p
-        className="mt-1.5 truncate font-mono text-[9px] text-aeris-muted/80"
+        className="mt-1.5 truncate font-mono text-chrome text-aeris-muted/80"
         title={[report.messageId, report.sourceLine].filter(Boolean).join(" · ")}
       >
         {report.messageId ? shortId(report.messageId) : null}

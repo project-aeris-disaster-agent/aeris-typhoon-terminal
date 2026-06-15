@@ -31,7 +31,7 @@ export function AgentSpeechControls({
         )}
       </button>
       {(voiceStatus || voiceEngine) && (
-        <span className="max-w-[100px] truncate rounded bg-aeris-bg/90 px-1 py-0.5 text-[7px] font-mono uppercase tracking-wider text-aeris-muted">
+        <span className="max-w-[100px] truncate rounded bg-aeris-bg/90 px-1 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted">
           {voiceStatus ?? voiceEngine}
         </span>
       )}

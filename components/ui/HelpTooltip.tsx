@@ -181,13 +181,13 @@ export function HelpHint({
           style={positionStyle}
           className="pointer-events-none fixed z-[2000] w-60 max-w-[80vw] rounded-lg border border-aeris-border/70 bg-aeris-surface/95 p-2.5 text-left shadow-[var(--aeris-shadow-up)] backdrop-blur-md"
         >
-          <div className="hud-text mb-1 text-[10px] font-semibold uppercase tracking-widest text-aeris-accent">
+          <div className="mb-1 text-body-sm font-semibold text-aeris-accent">
             {entry.title}
           </div>
-          <p className="text-[11px] leading-relaxed text-aeris-text/90">
+          <p className="text-body text-aeris-text/90">
             {entry.tip}
           </p>
-          <div className="mt-1.5 border-t border-aeris-border/40 pt-1.5 text-[9px] font-mono uppercase tracking-widest text-aeris-muted/60">
+          <div className="mt-1.5 border-t border-aeris-border/40 pt-1.5 chrome-label text-aeris-muted/60">
             Hold to ask AERIS
           </div>
         </div>

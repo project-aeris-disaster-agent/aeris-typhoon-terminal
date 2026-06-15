@@ -656,7 +656,7 @@ export function LocationInfoPanel({
           copied={copied === "coords"}
         />
         <VerdictBand verdict={verdict} assessing={isAssessing} />
-        <div className="mx-3 mb-2 flex items-center justify-end gap-2 text-[9px] font-mono uppercase tracking-wider">
+        <div className="mx-3 mb-2 flex items-center justify-end gap-2 text-chrome font-mono uppercase tracking-wider">
           <button
             type="button"
             onClick={expandAllSections}
@@ -763,7 +763,7 @@ export function LocationInfoPanel({
           }
         >
           {!alertsLoading && alerts.length === 0 ? (
-            <div className="flex items-center gap-1.5 text-[11px] text-aeris-ok">
+            <div className="flex items-center gap-1.5 text-body-sm text-aeris-ok">
               <CheckCircle2 size={14} />
               <span>No GDACS or PAGASA bulletins in effect.</span>
             </div>
@@ -837,21 +837,21 @@ function Header({
   return (
     <div className="px-3 pt-3 pb-2 flex items-start justify-between gap-2 border-b border-aeris-border/40">
       <div className="min-w-0 flex-1">
-        <div className="hud-text text-[9px] text-aeris-accent tracking-widest mb-0.5">
+        <div className="hud-text text-chrome text-aeris-accent tracking-widest mb-0.5">
           LOCATION INFO · {location.typeLabel}
         </div>
-        <div className="text-[14px] font-semibold truncate leading-tight">
+        <div className="text-body-sm font-semibold truncate leading-tight">
           {location.shortName}
         </div>
         {location.breadcrumb && (
-          <div className="text-[10px] text-aeris-muted truncate mt-0.5">
+          <div className="text-body-sm text-aeris-muted truncate mt-0.5">
             {location.breadcrumb}
           </div>
         )}
         <button
           type="button"
           onClick={onCopyCoords}
-          className="mt-1 text-[10px] font-mono text-aeris-muted hover:text-aeris-accent transition-colors inline-flex items-center gap-1"
+          className="mt-1 text-body-sm font-mono text-aeris-muted hover:text-aeris-accent transition-colors inline-flex items-center gap-1"
           title="Copy coordinates"
         >
           <Copy size={10} />
@@ -859,7 +859,7 @@ function Header({
             {location.lat.toFixed(4)}, {location.lon.toFixed(4)}
           </span>
           {copied && (
-            <span className="text-aeris-ok text-[9px] uppercase tracking-wider">
+            <span className="text-aeris-ok text-chrome uppercase tracking-wider">
               copied
             </span>
           )}
@@ -894,7 +894,7 @@ function VerdictBand({
     >
       <Icon size={22} className="shrink-0 mt-0.5" />
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-bold uppercase tracking-wide">
+        <div className="text-body font-bold uppercase tracking-wide">
           {assessing ? "Assessing…" : verdict.label}
         </div>
         <p className="text-[10.5px] opacity-85 leading-snug mt-1">
@@ -909,8 +909,8 @@ function VerdictBand({
 
 function FloodRow({ hit }: { hit: FloodHit }) {
   return (
-    <li className="flex items-center justify-between gap-2 text-[11px]">
-      <span className="font-mono text-aeris-muted uppercase tracking-wider text-[10px]">
+    <li className="flex items-center justify-between gap-2 text-body-sm">
+      <span className="font-mono text-aeris-muted uppercase tracking-wider text-body-sm">
         {hit.returnPeriod} return
       </span>
       <span className="inline-flex items-center gap-1.5">
@@ -931,19 +931,19 @@ function FacilityRow({ item }: { item: NearbyFacility }) {
   const meta = FACILITY_META[p.category] ?? FACILITY_FALLBACK;
   const Icon = meta.Icon;
   return (
-    <div className="flex items-center justify-between gap-2 text-[11px] py-0.5">
+    <div className="flex items-center justify-between gap-2 text-body-sm py-0.5">
       <div className="min-w-0 flex items-center gap-1.5">
         <Icon size={14} className={clsx("shrink-0", meta.tone)} />
         <div className="min-w-0">
           <div className="truncate font-medium leading-tight">
             {p.name ?? p.categoryLabel}
           </div>
-          <div className="text-[9px] text-aeris-muted uppercase tracking-wider">
+          <div className="text-chrome text-aeris-muted uppercase tracking-wider">
             {p.categoryLabel}
           </div>
         </div>
       </div>
-      <span className="shrink-0 font-mono text-[10px] text-aeris-muted">
+      <span className="shrink-0 font-mono text-body-sm text-aeris-muted">
         {formatDistance(item.distanceMeters)} {item.bearing}
       </span>
     </div>
@@ -985,11 +985,11 @@ function CollapsibleSection({
         )}
       >
         <Icon size={12} className="text-aeris-muted shrink-0" />
-        <span className="hud-text text-[9px] text-aeris-muted tracking-widest shrink-0">
+        <span className="hud-text text-chrome text-aeris-muted tracking-widest shrink-0">
           {title}
         </span>
         {!open && (
-          <span className="min-w-0 flex-1 truncate text-[10px] text-aeris-text/80 font-mono normal-case tracking-normal ml-1">
+          <span className="min-w-0 flex-1 truncate text-body-sm text-aeris-text/80 font-mono normal-case tracking-normal ml-1">
             {summary}
           </span>
         )}
@@ -1042,16 +1042,16 @@ function Stat({
         t ? t.box : "border-aeris-border/50 bg-aeris-elev/30",
       )}
     >
-      <div className="flex items-center gap-1 text-[8px] uppercase tracking-wider text-aeris-muted font-mono">
-        {Icon && <Icon size={9} />}
+      <div className="flex items-center gap-1 text-label text-aeris-muted">
+        {Icon && <Icon size={12} />}
         <span>{label}</span>
       </div>
       <div
-        className={clsx("font-semibold text-[13px] leading-tight mt-0.5", t?.text)}
+        className={clsx("font-semibold text-body leading-tight mt-0.5", t?.text)}
       >
         {value}
         {suffix && (
-          <span className="ml-0.5 text-[9px] font-normal text-aeris-muted">
+          <span className="ml-0.5 text-chrome font-normal text-aeris-muted">
             {suffix}
           </span>
         )}
@@ -1065,7 +1065,7 @@ const SkeletonRow = () => (
 );
 
 const Hint = ({ children }: { children: ReactNode }) => (
-  <p className="text-[10px] text-aeris-muted leading-snug">{children}</p>
+  <p className="text-body-sm text-aeris-muted leading-snug">{children}</p>
 );
 
 function ActionButton({
@@ -1081,7 +1081,7 @@ function ActionButton({
     <button
       type="button"
       onClick={onClick}
-      className="text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded-md border border-aeris-border/60 text-aeris-muted hover:text-aeris-accent hover:border-aeris-accent/60 transition-colors inline-flex items-center gap-1"
+      className="text-body-sm px-2 py-1.5 rounded-md border border-aeris-border/60 text-aeris-muted hover:text-aeris-accent hover:border-aeris-accent/60 transition-colors inline-flex items-center gap-1 min-h-[44px]"
     >
       {Icon && <Icon size={11} />}
       {children}

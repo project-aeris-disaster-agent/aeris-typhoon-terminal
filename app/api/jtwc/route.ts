@@ -6,6 +6,7 @@ import {
   gustKphFromWind,
   headingFromTrack,
   isInParBbox,
+  isInWestpacMonitorZone,
   pressureHpaFromGdacsProps,
   windKphFromGdacsProps,
   windKphFromRssSeverity,
@@ -21,6 +22,7 @@ import {
   fetchGdacsRssXml,
   firstRssMatch,
 } from "@/lib/gdacs-rss";
+import { assessOutsideParThreat } from "@/lib/tc-threat";
 
 export const runtime = "nodejs";
 export const revalidate = 600;
@@ -48,6 +50,10 @@ type Storm = {
   landfallEta: string | null;
   bestTrack: StormPoint[];
   forecast: StormPoint[];
+  /** Distance (km) to PAR — only set for outside-PAR monitor systems. */
+  distanceToParKm?: number;
+  /** Whether an outside-PAR system is tracking toward PAR. */
+  approachingPar?: boolean;
 };
 
 type OutsideParAdvisory = {
@@ -160,10 +166,16 @@ function finalizeJtwcPayload(
   split: { storms: Storm[]; outsideParGdacs: Storm[] },
   pagasaOutsidePar: OutsideParAdvisory | null,
 ): JtwcPayload {
+  const monitors = pagasaOutsidePar
+    ? []
+    : [...split.outsideParGdacs].sort(
+        (a, b) =>
+          (a.distanceToParKm ?? Infinity) - (b.distanceToParKm ?? Infinity),
+      );
   return {
     storms: split.storms,
     outsidePar: pagasaOutsidePar,
-    outsideParGdacs: pagasaOutsidePar ? [] : split.outsideParGdacs,
+    outsideParGdacs: monitors,
   };
 }
 
@@ -188,10 +200,31 @@ function mapGeoJsonStorms(coll: GdacsCollection): {
     if (isInParBbox(storm.position[0], storm.position[1])) {
       storms.push(storm);
     } else {
-      outsideParGdacs.push(storm);
+      maybePushOutsideParMonitor(storm, outsideParGdacs);
     }
   }
   return { storms, outsideParGdacs };
+}
+
+/**
+ * Add an outside-PAR system to the monitor list only when it's a real threat:
+ * inside the WestPac watch zone and either near PAR or tracking toward it.
+ * Annotates the storm with its PAR distance and approach flag for the UI.
+ */
+function maybePushOutsideParMonitor(storm: Storm, out: Storm[]): void {
+  const [lng, lat] = storm.position;
+  if (!isInWestpacMonitorZone(lng, lat)) return;
+
+  const threat = assessOutsideParThreat({
+    position: storm.position,
+    track: storm.bestTrack.map((p) => p.position),
+    heading: storm.heading,
+  });
+  if (!threat.relevant) return;
+
+  storm.distanceToParKm = threat.distanceToParKm;
+  storm.approachingPar = threat.approachingPar;
+  out.push(storm);
 }
 
 function buildStormFromGdacsFeatures(
@@ -277,7 +310,7 @@ function parseRssStorms(xml: string): { storms: Storm[]; outsideParGdacs: Storm[
     if (isInParBbox(lng, lat)) {
       storms.push(storm);
     } else {
-      outsideParGdacs.push(storm);
+      maybePushOutsideParMonitor(storm, outsideParGdacs);
     }
   }
   return { storms, outsideParGdacs };

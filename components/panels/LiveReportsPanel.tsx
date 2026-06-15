@@ -127,7 +127,7 @@ function StatChip({
         onClick && "hover:bg-aeris-elev/40 cursor-pointer",
       )}
     >
-      <div className="text-[9px] font-mono uppercase tracking-wider opacity-80">
+      <div className="text-chrome font-mono uppercase tracking-wider opacity-80">
         {label}
       </div>
       <div className="text-sm font-mono tabular-nums leading-tight">{count}</div>
@@ -219,19 +219,19 @@ function ReportCard({
         })()}
         <time
           dateTime={report.createdAt}
-          className="ml-auto text-[9px] font-mono text-aeris-muted"
+          className="ml-auto text-chrome font-mono text-aeris-muted"
           title={new Date(report.createdAt).toLocaleString()}
         >
           {formatRelativeTime(report.createdAt)}
         </time>
       </header>
 
-      <p className="text-[12px] leading-snug text-aeris-text line-clamp-3">
+      <p className="text-body-sm leading-snug text-aeris-text line-clamp-3">
         {report.description}
       </p>
 
       {report.aiTriageRationale && (
-        <p className="mt-1 text-[10px] text-aeris-muted line-clamp-2">
+        <p className="mt-1 text-body-sm text-aeris-muted line-clamp-2">
           AI: {report.aiTriageRationale}
         </p>
       )}
@@ -248,7 +248,7 @@ function ReportCard({
         </div>
       ) : null}
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-aeris-muted">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-body-sm text-aeris-muted">
         {report.sourceApp && <span>{report.sourceApp}</span>}
         {confidencePct !== null && <span>{confidencePct}% conf</span>}
         {report.confirmations > 0 && (
@@ -287,13 +287,13 @@ function ReportCard({
           event.stopPropagation();
           setDetailsOpen((open) => !open);
         }}
-        className="mt-1 text-[9px] font-mono uppercase tracking-wider text-aeris-muted hover:text-aeris-text"
+        className="mt-1 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:text-aeris-text"
       >
         {detailsOpen ? "Hide details ▴" : "Details ▾"}
       </button>
 
       {detailsOpen && (
-        <div className="mt-1 space-y-0.5 border-t border-aeris-border/40 pt-1 text-[10px] font-mono text-aeris-muted">
+        <div className="mt-1 space-y-0.5 border-t border-aeris-border/40 pt-1 text-body-sm font-mono text-aeris-muted">
           <div>msg: {report.messageId ?? report.id}</div>
           <div>mint: {report.onchain?.mint.status ?? "not_started"}</div>
           {mintTxHash && (
@@ -333,7 +333,7 @@ function ReportCard({
             type="button"
             disabled={reviewing}
             onClick={(event) => onReview(event, "verify")}
-            className="rounded border border-aeris-ok/30 bg-aeris-ok/10 px-1 py-1 text-[10px] font-mono uppercase text-aeris-ok disabled:opacity-40"
+            className="rounded border border-aeris-ok/30 bg-aeris-ok/10 px-2 py-1.5 text-body-sm text-aeris-ok disabled:opacity-40 min-h-[36px]"
           >
             Verify
           </button>
@@ -341,7 +341,7 @@ function ReportCard({
             type="button"
             disabled={reviewing}
             onClick={(event) => onReview(event, "needs_review")}
-            className="rounded border border-aeris-warn/30 bg-aeris-warn/10 px-1 py-1 text-[10px] font-mono uppercase text-aeris-warn disabled:opacity-40"
+            className="rounded border border-aeris-warn/30 bg-aeris-warn/10 px-2 py-1.5 text-body-sm text-aeris-warn disabled:opacity-40 min-h-[36px]"
           >
             Review
           </button>
@@ -349,7 +349,7 @@ function ReportCard({
             type="button"
             disabled={reviewing}
             onClick={(event) => onReview(event, "reject")}
-            className="rounded border border-aeris-danger/30 bg-aeris-danger/10 px-1 py-1 text-[10px] font-mono uppercase text-aeris-danger disabled:opacity-40"
+            className="rounded border border-aeris-danger/30 bg-aeris-danger/10 px-2 py-1.5 text-body-sm text-aeris-danger disabled:opacity-40 min-h-[36px]"
           >
             Reject
           </button>
@@ -545,7 +545,7 @@ export function LiveReportsPanel({
           type="button"
           onClick={() => void load()}
           disabled={loading}
-          className="shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
+          className="shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
           aria-label="Refresh reports"
         >
           <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
@@ -556,7 +556,7 @@ export function LiveReportsPanel({
       <div className="rounded-md border border-aeris-danger/45 bg-aeris-danger/10 px-3 py-2">
         <div className="flex items-end justify-between gap-2">
           <div>
-            <div className="text-[9px] font-mono uppercase tracking-wider text-aeris-danger/80">
+            <div className="text-chrome font-mono uppercase tracking-wider text-aeris-danger/80">
               Total Reports
             </div>
             <div className="text-2xl font-mono font-semibold tabular-nums leading-none text-aeris-danger">
@@ -564,7 +564,7 @@ export function LiveReportsPanel({
             </div>
           </div>
           {loading && reports.length === 0 ? (
-            <span className="text-[10px] font-mono text-aeris-danger/70">Loading…</span>
+            <span className="text-body-sm font-mono text-aeris-danger/70">Loading…</span>
           ) : null}
         </div>
       </div>
@@ -634,7 +634,7 @@ export function LiveReportsPanel({
                   : `Queue and mint ${pendingMintReports.length} verified report${pendingMintReports.length === 1 ? "" : "s"}`
               }
             >
-              <div className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider opacity-80">
+              <div className="flex items-center gap-1 text-chrome font-mono uppercase tracking-wider opacity-80">
                 <Stamp size={10} aria-hidden />
                 Mint all
               </div>
@@ -653,7 +653,7 @@ export function LiveReportsPanel({
         </div>
       </div>
 
-      <p className="text-[10px] leading-snug text-aeris-muted">
+      <p className="text-body-sm leading-snug text-aeris-muted">
         Consumer reports are displayed immediately as unverified intelligence
         until corroborated by operators or official sources.
       </p>
@@ -661,7 +661,7 @@ export function LiveReportsPanel({
       {status && (
         <div
           className={clsx(
-            "text-[11px]",
+            "text-body-sm",
             status.tone === "ok"
               ? "text-aeris-ok"
               : status.tone === "warn"
@@ -686,10 +686,10 @@ export function LiveReportsPanel({
               : "border-aeris-border/60 bg-aeris-bg/40 hover:border-aeris-accent/30 hover:bg-aeris-elev/30",
           )}
         >
-          <span className="text-[10px] font-mono uppercase tracking-wider text-aeris-text">
+          <span className="text-body-sm font-mono uppercase tracking-wider text-aeris-text">
             Report feed
           </span>
-          <span className="text-[10px] font-mono tabular-nums text-aeris-muted">
+          <span className="text-body-sm font-mono tabular-nums text-aeris-muted">
             {loading && reports.length === 0
               ? "…"
               : `${filteredReports.length} item${filteredReports.length === 1 ? "" : "s"}`}
@@ -715,11 +715,11 @@ export function LiveReportsPanel({
             className="mt-2 space-y-2 max-h-[min(50vh,420px)] overflow-y-auto"
           >
             {loading && reports.length === 0 ? (
-              <p className="text-[11px] text-aeris-muted py-4 text-center">
+              <p className="text-body-sm text-aeris-muted py-4 text-center">
                 Fetching reports…
               </p>
             ) : filteredReports.length === 0 ? (
-              <p className="text-[11px] text-aeris-muted py-4 text-center">
+              <p className="text-body-sm text-aeris-muted py-4 text-center">
                 {filter === "all"
                   ? "No reports yet."
                   : "No reports match this filter."}
@@ -738,7 +738,7 @@ export function LiveReportsPanel({
             )}
           </div>
         ) : filteredReports.length > 0 ? (
-          <p className="mt-1.5 text-[10px] text-aeris-muted">
+          <p className="mt-1.5 text-body-sm text-aeris-muted">
             Expand to review individual reports and take action.
           </p>
         ) : null}

@@ -1,7 +1,7 @@
 "use client";
 
 import maplibregl, { Map as MLMap, Popup } from "maplibre-gl";
-import { layerBeforeDynamicOverlays } from "@/config/map-layers";
+import { layerBeforeDynamicOverlays, whenStyleReady } from "@/config/map-layers";
 import type { YtVideo } from "@/services/youtube-feeds";
 import { getEmbedUrl } from "@/services/youtube-feeds";
 
@@ -119,6 +119,11 @@ async function ensureCameraIcon(map: MLMap): Promise<boolean> {
 
 /** Idempotent: safe to call on every refresh tick. */
 export function renderWebcamsOnMap(map: MLMap, videos: YtVideo[]): void {
+  // Defer when a style swap is in flight so layer adds aren't lost/thrown.
+  whenStyleReady(map, () => renderWebcamsOnMapNow(map, videos));
+}
+
+function renderWebcamsOnMapNow(map: MLMap, videos: YtVideo[]): void {
   const data = toFeatureCollection(videos);
   const src = map.getSource(SOURCE_ID);
   if (src && "setData" in src) {

@@ -256,7 +256,7 @@ export function LayerLegend({
           className="flex flex-1 items-center justify-between px-2.5 py-1.5 hover:text-aeris-text"
         >
           <span>Layers</span>
-          <span className="text-[10px]">{expanded ? "▾" : "▸"}</span>
+          <span className="text-body-sm">{expanded ? "▾" : "▸"}</span>
         </button>
         <span className="pr-2.5">
           <HelpHint helpId="control.layers" side="left" />
@@ -266,7 +266,7 @@ export function LayerLegend({
       {expanded && (
         <div className="px-2.5 pb-2 space-y-2 border-t border-aeris-border">
           <div className="pt-2">
-            <div className="text-[10px] text-aeris-muted uppercase tracking-wider mb-1">
+            <div className="text-body-sm text-aeris-muted uppercase tracking-wider mb-1">
               Hazard
             </div>
             <div className="space-y-0.5">
@@ -295,17 +295,17 @@ export function LayerLegend({
                 swatch="rgb(var(--aeris-muted))"
               />
               {!hazardReadyPeriod ? (
-                <div className="px-1.5 py-1 text-[11px] text-aeris-muted italic">
+                <div className="px-1.5 py-1 text-body-sm text-aeris-muted italic">
                   Loading flood hazard packs…
                 </div>
               ) : null}
               {waterLevelsLoading ? (
-                <div className="px-1.5 py-1 text-[11px] text-aeris-muted italic">
+                <div className="px-1.5 py-1 text-body-sm text-aeris-muted italic">
                   Loading water level stations…
                 </div>
               ) : null}
               {waterLevelsError ? (
-                <div className="px-1.5 py-1 text-[11px] text-aeris-warn">
+                <div className="px-1.5 py-1 text-body-sm text-aeris-warn">
                   Water levels unavailable right now.
                 </div>
               ) : null}
@@ -325,7 +325,7 @@ export function LayerLegend({
           )}
 
           {mode === "3d" && sceneStatus && (
-            <div className="text-[11px] text-aeris-warn">{sceneStatus}</div>
+            <div className="text-body-sm text-aeris-warn">{sceneStatus}</div>
           )}
         </div>
       )}
@@ -345,7 +345,7 @@ export function QuickViewsPanel({
   return (
     <div className="panel-glass rounded-md overflow-hidden w-64">
       <div className="px-2.5 py-1.5 border-b border-aeris-border">
-        <div className="flex items-center gap-1 text-[10px] text-aeris-muted uppercase tracking-wider">
+        <div className="flex items-center gap-1 text-body-sm text-aeris-muted uppercase tracking-wider">
           <span>Quick Views</span>
           <HelpHint helpId="control.quickViews" side="right" />
         </div>
@@ -376,7 +376,7 @@ export function QuickViewsPanel({
                 }
               }}
               className={clsx(
-                "rounded border px-2 py-1 text-[11px] text-left",
+                "rounded border px-2 py-1 text-body-sm text-left",
                 selectedPreset === preset.id
                   ? "border-aeris-accent/40 bg-aeris-accent/10 text-aeris-accent"
                   : "border-aeris-border text-aeris-muted hover:text-aeris-text",
@@ -460,11 +460,11 @@ function FloodHazardDetails({
   return (
     <div className="mt-2 pt-2 space-y-2 border-t border-aeris-border/60">
       <div className="space-y-0.5">
-        <div className="text-[10px] text-aeris-muted uppercase tracking-wider">
+        <div className="text-body-sm text-aeris-muted uppercase tracking-wider">
           Rainfall
         </div>
         <div className="rounded border border-aeris-border/60 bg-aeris-bg/35 p-2 space-y-1.5">
-          <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-aeris-muted">
+          <div className="flex items-center justify-between text-body-sm uppercase tracking-wider text-aeris-muted">
             <span>Level</span>
             <span>{FLOOD_LEVEL_STYLE[selectedRainfallLevel].label}</span>
           </div>
@@ -637,7 +637,7 @@ function RangeControl({
 }) {
   return (
     <div className={clsx("space-y-1", disabled && "opacity-45")}>
-      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-aeris-muted">
+      <div className="flex items-center justify-between text-body-sm uppercase tracking-wider text-aeris-muted">
         <span>{label}</span>
         <span>{format(value)}</span>
       </div>

@@ -24,8 +24,21 @@ const config: Config = {
         },
       },
       fontFamily: {
-        mono: ["JetBrains Mono", "Menlo", "monospace"],
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        mono: [
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Consolas",
+          "monospace",
+        ],
+      },
+      fontSize: {
+        chrome: ["0.75rem", { lineHeight: "1.25" }],
+        label: ["0.8125rem", { lineHeight: "1.4" }],
+        "body-sm": ["0.875rem", { lineHeight: "1.5" }],
+        body: ["1rem", { lineHeight: "1.5" }],
+        "body-lg": ["1.125rem", { lineHeight: "1.45" }],
       },
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",

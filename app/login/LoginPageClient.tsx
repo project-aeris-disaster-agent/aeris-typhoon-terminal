@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { normalizePhoneE164 } from "@/lib/phone-auth";
+import { useLogin, usePrivy } from "@privy-io/react-auth";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { AerisLoadingLogo } from "@/components/ui/AerisLoadingLogo";
-
-const RESEND_COOLDOWN_SEC = 60;
-
-type Step = "phone" | "otp";
+import { isPrivyConfigured } from "@/lib/privy-config";
+import { safePostLoginPath } from "@/lib/safe-redirect";
+import { SupabaseOtpLogin } from "./SupabaseOtpLogin";
 
 function SunIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -27,131 +26,119 @@ function MoonIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+type LoadingPhase = "preparing" | "signing-in" | "redirecting" | null;
+
 export default function LoginPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/";
+  const nextPath = safePostLoginPath(searchParams.get("next"));
+  const sessionError = searchParams.get("session_error");
   const { theme, toggleTheme } = useTheme();
-
-  const [step, setStep] = useState<Step>("phone");
-  const [phone, setPhone] = useState("+63");
-  const [otp, setOtp] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [resendInSec, setResendInSec] = useState(0);
-  const lockedPhoneRef = useRef<string | null>(null);
+  const privyEnabled = isPrivyConfigured();
+  const { ready, authenticated } = usePrivy();
+  const [loadingPhase, setLoadingPhase] = useState<LoadingPhase>(
+    privyEnabled ? "preparing" : null,
+  );
+  const [status, setStatus] = useState<string | null>(sessionError);
 
   useEffect(() => {
-    if (resendInSec <= 0) return;
-    const timer = window.setInterval(() => {
-      setResendInSec((value) => (value <= 1 ? 0 : value - 1));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [resendInSec]);
+    const rawNext = searchParams.get("next");
+    if (!rawNext) return;
+
+    const safeNext = safePostLoginPath(rawNext);
+    if (safeNext === rawNext) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (safeNext === "/") {
+      params.delete("next");
+    } else {
+      params.set("next", safeNext);
+    }
+
+    const query = params.toString();
+    router.replace(query ? `/login?${query}` : "/login");
+  }, [router, searchParams]);
+
+  const redirectToDashboard = useCallback(() => {
+    setLoadingPhase("redirecting");
+    router.refresh();
+    router.replace(nextPath);
+  }, [router, nextPath]);
+
+  const { login } = useLogin({
+    onComplete: () => {
+      redirectToDashboard();
+    },
+    onError: () => {
+      setLoadingPhase(null);
+      setStatus("Sign-in failed. Please try again.");
+    },
+  });
+
+  useEffect(() => {
+    if (privyEnabled && ready && loadingPhase === "preparing") {
+      setLoadingPhase(null);
+    }
+  }, [privyEnabled, ready, loadingPhase]);
+
+  useEffect(() => {
+    if (!privyEnabled || ready) return;
+    const timeout = window.setTimeout(() => {
+      setLoadingPhase(null);
+      setStatus(
+        (current) =>
+          current ??
+          "Privy could not initialize. Add this site to Allowed Origins in the Privy Dashboard.",
+      );
+    }, 12_000);
+    return () => window.clearTimeout(timeout);
+  }, [privyEnabled, ready]);
 
   useEffect(() => {
     fetch("/api/auth/role", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.userId) router.replace(nextPath);
+        if (data?.userId) redirectToDashboard();
       })
       .catch(() => undefined);
-  }, [router, nextPath]);
+  }, [redirectToDashboard]);
 
-  const requestOtp = async () => {
-    setLoading(true);
-    setStatus(null);
-    setOtp("");
-    try {
-      const normalized = normalizePhoneE164(phone);
-      if (!normalized) {
-        throw new Error("Enter a valid mobile number in E.164 format (e.g. +639171234567).");
-      }
-
-      const res = await fetch("/api/auth/otp/request", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ phone: normalized }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        phone?: string;
-        message?: string;
-        code?: string | null;
-      };
-      if (!res.ok) {
-        if (res.status === 429 || data.code === "over_sms_send_rate_limit") {
-          throw new Error(
-            "Too many OTP requests for this number. Wait about an hour, then try again once.",
-          );
-        }
-        throw new Error(data.error ?? `Unable to send OTP (${res.status})`);
-      }
-
-      const confirmedPhone = data.phone ?? normalized;
-      lockedPhoneRef.current = confirmedPhone;
-      setPhone(confirmedPhone);
-      setStep("otp");
-      setResendInSec(RESEND_COOLDOWN_SEC);
-      setStatus(data.message ?? `OTP sent to ${confirmedPhone}.`);
-    } catch (error) {
-      setStatus((error as Error).message);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (privyEnabled && ready && authenticated) {
+      redirectToDashboard();
     }
+  }, [privyEnabled, ready, authenticated, redirectToDashboard]);
+
+  const handlePrivyLogin = () => {
+    if (!ready || authenticated) return;
+    setStatus(null);
+    setLoadingPhase("signing-in");
+    login({ loginMethods: ["google", "wallet", "sms"] });
   };
 
-  const verifyOtp = async () => {
-    setLoading(true);
-    setStatus(null);
-    try {
-      const verifyPhone = lockedPhoneRef.current ?? normalizePhoneE164(phone);
-      if (!verifyPhone) {
-        throw new Error("Invalid phone number. Go back and request a new OTP.");
-      }
-
-      const res = await fetch("/api/auth/otp/verify", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ phone: verifyPhone, token: otp }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        throw new Error(
-          data.error?.includes("expired") || data.error?.includes("invalid")
-            ? "That code is expired or invalid. Request one new OTP and enter it within a few minutes."
-            : (data.error ?? `OTP verification failed (${res.status})`),
-        );
-      }
-
-      router.refresh();
-      router.replace(nextPath);
-    } catch (error) {
-      setStatus((error as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const phoneLocked = step === "otp";
+  const loadingMessage =
+    loadingPhase === "preparing"
+      ? "Preparing sign-in…"
+      : loadingPhase === "signing-in"
+        ? "Signing you in…"
+        : loadingPhase === "redirecting"
+          ? "Opening dashboard…"
+          : null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-aeris-bg px-4">
       <div className="relative w-full max-w-md overflow-hidden rounded-lg border border-aeris-border bg-aeris-surface p-6 shadow-xl">
-        {loading && (
+        {loadingMessage && (
           <div
             className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-aeris-surface/85 backdrop-blur-[2px]"
             role="status"
             aria-live="polite"
           >
             <AerisLoadingLogo size="md" variant="glyph" />
-            <span className="text-[11px] font-mono uppercase tracking-wider text-aeris-muted">
-              {step === "otp" ? "Verifying…" : "Sending OTP…"}
-            </span>
+            <span className="text-body-sm text-aeris-muted">{loadingMessage}</span>
           </div>
         )}
+
         <AerisLoadingLogo
           variant="logo"
           size="md"
@@ -159,9 +146,9 @@ export default function LoginPageClient() {
         />
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="hud-text text-lg font-semibold text-aeris-text">AERIS Dashboard</h1>
-            <p className="mt-2 text-sm text-aeris-muted">
-              Sign in with your mobile number to view live disaster intelligence.
+            <h1 className="text-body-lg font-semibold text-aeris-text">AERIS Dashboard</h1>
+            <p className="mt-2 text-body-sm text-aeris-muted">
+              Sign in to view live disaster intelligence for the Philippines.
             </p>
           </div>
           <button
@@ -176,108 +163,35 @@ export default function LoginPageClient() {
             ) : (
               <MoonIcon className="h-3.5 w-3.5" />
             )}
-            <span className="hud-text text-[10px]">{theme === "dark" ? "Dark" : "Light"}</span>
+            <span className="hud-text text-body-sm">{theme === "dark" ? "Dark" : "Light"}</span>
           </button>
         </div>
 
-        <div className="mt-6 space-y-3">
-          <label className="block text-xs font-mono uppercase text-aeris-muted">
-            Mobile number
-            <input
-              type="tel"
-              value={phone}
-              readOnly={phoneLocked}
-              onChange={(event) => setPhone(event.target.value)}
-              className="mt-1 w-full rounded border border-aeris-border bg-aeris-bg px-3 py-2 text-sm text-aeris-text disabled:opacity-70"
-              placeholder="+63XXXXXXXXXX"
-            />
-          </label>
-
-          {step === "otp" && (
-            <label className="block text-xs font-mono uppercase text-aeris-muted">
-              OTP code
-              <input
-                inputMode="numeric"
-                maxLength={8}
-                value={otp}
-                onChange={(event) =>
-                  setOtp(event.target.value.replace(/\D/g, "").slice(0, 8))
-                }
-                className="mt-1 w-full rounded border border-aeris-border bg-aeris-bg px-3 py-2 text-sm text-aeris-text"
-                placeholder="6-digit code"
-                autoComplete="one-time-code"
-              />
-            </label>
-          )}
-
-          {status && (
-            <p className="rounded border border-aeris-border/70 bg-aeris-bg px-3 py-2 text-xs text-aeris-muted">
-              {status}
+        {privyEnabled && (
+          <div className="mt-6 border-t border-aeris-border/70 pt-6">
+            <p className="text-label text-aeris-muted">Primary sign-in</p>
+            <p className="mt-1 text-body-sm text-aeris-muted">
+              Continue with Google, wallet, or SMS.
             </p>
-          )}
-
-          <div className="flex gap-2 pt-2">
-            {step === "phone" ? (
-              <button
-                type="button"
-                disabled={loading || !normalizePhoneE164(phone) || resendInSec > 0}
-                onClick={() => void requestOtp()}
-                className="flex-1 rounded border border-aeris-accent/40 bg-aeris-accent/15 px-3 py-2 text-sm font-mono uppercase text-aeris-accent disabled:opacity-40"
-              >
-                {loading ? "Sending..." : resendInSec > 0 ? `Wait ${resendInSec}s` : "Send OTP"}
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => {
-                    setStep("phone");
-                    setOtp("");
-                    setStatus(null);
-                  }}
-                  className="rounded border border-aeris-border px-3 py-2 text-sm text-aeris-muted"
-                >
-                  Back
-                </button>
-                {resendInSec > 0 ? (
-                  <button
-                    type="button"
-                    disabled
-                    className="rounded border border-aeris-border px-3 py-2 text-sm text-aeris-muted opacity-50"
-                  >
-                    Resend in {resendInSec}s
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => void requestOtp()}
-                    className="rounded border border-aeris-border px-3 py-2 text-sm text-aeris-muted"
-                  >
-                    Resend OTP
-                  </button>
-                )}
-                <button
-                  type="button"
-                  disabled={loading || otp.length < 6}
-                  onClick={() => void verifyOtp()}
-                  className="flex-1 rounded border border-aeris-accent/40 bg-aeris-accent/15 px-3 py-2 text-sm font-mono uppercase text-aeris-accent disabled:opacity-40"
-                >
-                  {loading ? "Verifying..." : "Verify & enter"}
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              disabled={!ready || authenticated || loadingPhase !== null}
+              onClick={handlePrivyLogin}
+              className="mt-4 w-full rounded border border-aeris-accent/40 bg-aeris-accent/15 px-3 py-2.5 text-body-sm font-semibold text-aeris-accent disabled:opacity-40 min-h-[44px]"
+            >
+              Sign in to AERIS
+            </button>
           </div>
+        )}
 
-          {step === "otp" && (
-            <p className="text-[10px] text-aeris-muted">
-              Use the latest SMS code only. Each new request invalidates the previous code.
-              {resendInSec > 0
-                ? ` You can request another code in ${resendInSec}s.`
-                : " If nothing arrived, check Twilio logs or wait before resending."}
-            </p>
-          )}
+        {status && (
+          <p className="mt-4 rounded border border-aeris-border/70 bg-aeris-bg px-3 py-2 text-xs text-aeris-muted">
+            {status}
+          </p>
+        )}
+
+        <div className="mt-6 border-t border-aeris-border/70 pt-6">
+          <SupabaseOtpLogin onAuthenticated={redirectToDashboard} />
         </div>
       </div>
     </div>

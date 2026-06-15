@@ -13,10 +13,10 @@ function TickerSegment({ item }: { item: NewsItem }) {
       href={item.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex shrink-0 items-center gap-2 max-w-[min(42vw,28rem)] text-[11px] text-aeris-text transition-colors hover:text-aeris-accent"
+      className="inline-flex shrink-0 items-center gap-2 max-w-[min(42vw,28rem)] text-body-sm text-aeris-text transition-colors hover:text-aeris-accent"
       title={item.title}
     >
-      <span className="font-mono text-[10px] uppercase tracking-wide text-aeris-accent shrink-0">
+      <span className="text-body-sm font-semibold text-aeris-accent shrink-0">
         {item.source}
       </span>
       <span className="truncate">{item.title}</span>
@@ -74,7 +74,7 @@ export function NewsTicker({ className }: { className?: string }) {
       aria-live="polite"
     >
       {loading && items.length === 0 ? (
-        <span className="hud-text truncate text-[10px] text-aeris-muted">
+        <span className="hud-text truncate text-body-sm text-aeris-muted">
           Loading headlines…
         </span>
       ) : (

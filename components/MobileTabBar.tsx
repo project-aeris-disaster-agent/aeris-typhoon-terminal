@@ -90,14 +90,14 @@ function TabButton({
       onClick={onClick}
       aria-pressed={active}
       className={clsx(
-        "flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-mono transition-colors",
+        "flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[44px] text-body-sm transition-colors",
         active
           ? "text-aeris-accent bg-aeris-accent/5"
           : "text-aeris-muted hover:text-aeris-text",
       )}
     >
       {children}
-      <span className="tracking-wide uppercase text-[10px]">{label}</span>
+      <span className="text-body-sm font-medium">{label}</span>
     </button>
   );
 }

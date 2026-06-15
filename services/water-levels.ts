@@ -1,5 +1,5 @@
 import maplibregl, { type Map as MLMap } from "maplibre-gl";
-import { layerBeforeDynamicOverlays } from "@/config/map-layers";
+import { layerBeforeDynamicOverlays, whenStyleReady } from "@/config/map-layers";
 
 type WaterLevelStation = {
   id: string;
@@ -61,6 +61,11 @@ export async function fetchWaterLevels(): Promise<WaterLevelsResponse> {
 }
 
 export function renderWaterLevelsOnMap(map: MLMap, stations: WaterLevelStation[]): void {
+  // Defer when a style swap is in flight so layer adds aren't lost/thrown.
+  whenStyleReady(map, () => renderWaterLevelsOnMapNow(map, stations));
+}
+
+function renderWaterLevelsOnMapNow(map: MLMap, stations: WaterLevelStation[]): void {
   const data = toFeatureCollection(stations);
   const src = map.getSource(WATER_LEVELS_SOURCE_ID);
   if (src && "setData" in src) {

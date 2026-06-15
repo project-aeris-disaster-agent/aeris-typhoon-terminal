@@ -116,7 +116,7 @@ export function LocationInfoShell({
       <div
         className={clsx(
           "hidden md:flex md:flex-col pointer-events-auto min-h-0 overflow-hidden",
-          "absolute right-3 z-20 w-[min(360px,calc(100vw-1.5rem))]",
+          "absolute right-3 z-20 w-[min(380px,calc(100vw-1.5rem))]",
           "max-h-[min(520px,calc(100%-1.5rem-var(--aeris-map-attribution-reserve)-0.75rem))]",
         )}
         style={{
