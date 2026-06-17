@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import type { Map as MLMap } from "maplibre-gl";
 import { clsx } from "clsx";
 import { LIVE_WEATHER_PANEL } from "@/config/panels";
+import { PanelIcon } from "@/components/PanelIcon";
 import { LiveWeatherFrameIndicator } from "@/components/LiveWeatherFrameHud";
 import { PanelSkeleton } from "@/components/ui/PanelSkeleton";
 
@@ -49,10 +50,9 @@ export function LiveWeatherMapPanel({ map }: { map: MLMap | null }) {
         className="w-full flex items-center gap-1.5 px-1.5 py-1 text-aeris-muted hover:text-aeris-text transition-colors"
         aria-expanded={open}
         aria-controls="live-weather-map-panel"
+        title={`${LIVE_WEATHER_PANEL.label} (${LIVE_WEATHER_PANEL.hotkey})`}
       >
-        <span className="shrink-0 text-chrome uppercase tracking-wider text-aeris-accent/80">
-          {LIVE_WEATHER_PANEL.hotkey}
-        </span>
+        <PanelIcon id="satellite" size={13} className="text-aeris-accent/80" />
         <span className="shrink-0 text-chrome uppercase tracking-wider">
           {LIVE_WEATHER_PANEL.label}
         </span>

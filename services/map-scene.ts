@@ -1,9 +1,10 @@
 import maplibregl, { type GeoJSONSource, type Map as MLMap } from "maplibre-gl";
 import { notifyMapViewModeForSatelliteImagery } from "@/services/satellite-frames";
 import { notifyLiveWeatherMapMode } from "@/services/live-weather-overlay";
+import { setReportPingMapMode } from "@/services/reports-client";
 import {
   closeFacilityPopup,
-  openFacilityHoverPopup,
+  openFacilityPopup,
   refreshFacilityPopupTheme,
 } from "@/services/facility-popup";
 import { layerBeforeBasemapLabels } from "@/config/map-layers";
@@ -97,6 +98,9 @@ function terrainExaggerationForZoom(base: number, zoom: number): number {
   return Math.max(base * 0.4, base * (1 - decay));
 }
 
+/** Below this delta, an exaggeration change is imperceptible — skip the rebuild. */
+const TERRAIN_EXAGGERATION_EPSILON = 0.01;
+
 function applyTerrainExaggerationForCurrentZoom(map: MLMap) {
   const state = getSceneState(map);
   if (!state.terrainEnabled) return;
@@ -105,10 +109,17 @@ function applyTerrainExaggerationForCurrentZoom(map: MLMap) {
     state.terrainExaggeration,
     map.getZoom(),
   );
+  // Skip redundant `setTerrain` calls — each can trigger a terrain mesh
+  // rebuild, which is the most expensive thing we can do mid-gesture.
+  const last = state.lastAppliedTerrainExaggeration;
+  if (last !== null && Math.abs(last - exaggeration) < TERRAIN_EXAGGERATION_EPSILON) {
+    return;
+  }
   (map as TerrainCapableMap).setTerrain({
     source: "ph-terrain-dem",
     exaggeration,
   });
+  state.lastAppliedTerrainExaggeration = exaggeration;
 }
 
 function syncThreeHandleFromState(map: MLMap, handle: ThreeSceneHandle) {
@@ -138,7 +149,7 @@ const SCENE_PACK_VERSION = "2026-05-15-barangay-coverage";
 const FACILITY_POINTS_SOURCE_ID = "osm-context-facility-labels";
 const FACILITY_HIT_LAYER_ID = "lyr-osm-facility-hit";
 // MapLibre sources for ambient context (roads, water, facility hit points).
-// Facility details render in a single hover popup (see facility-popup.ts).
+// Facility details render in a click popup on 3D buildings (see facility-popup.ts).
 // Buildings are NOT a MapLibre source: they're rendered exclusively by the
 // Three.js custom layer to keep a single source of truth and eliminate the
 // dual-renderer "tag-and-filter" dance that used to break in non-NCR cities.
@@ -163,6 +174,12 @@ const facilityInteractionsBound = new WeakSet<MLMap>();
 type SceneState = {
   terrainEnabled: boolean;
   terrainExaggeration: number;
+  /**
+   * Last exaggeration actually pushed to `setTerrain`. Lets the zoomend
+   * recompute skip redundant `setTerrain` calls (each one can rebuild the
+   * terrain mesh), keeping 3D zoom buttery smooth. `null` = none applied yet.
+   */
+  lastAppliedTerrainExaggeration: number | null;
   sceneVisibility: Record<SceneLayerId, boolean>;
   /** ID of the static scene pack currently loaded into Three.js. */
   loadedPackId: ScenePresetId | null;
@@ -235,6 +252,7 @@ function getSceneState(map: MLMap): SceneState {
     state = {
       terrainEnabled: false,
       terrainExaggeration: DEFAULT_TERRAIN_EXAGGERATION,
+      lastAppliedTerrainExaggeration: null,
       sceneVisibility: { ...DEFAULT_SCENE_VISIBILITY },
       loadedPackId: null,
       refreshInFlight: false,
@@ -482,6 +500,23 @@ export function setFacilityPriorityFilter(map: MLMap, minPriority: number) {
 }
 
 /**
+ * Below this zoom (3D only), skip rendering the lowest-priority "other"
+ * facilities so the Three.js scene draws far fewer per-facility meshes while
+ * the user is browsing the wider area. All real emergency facilities
+ * (police and above) stay visible at every zoom; they reappear in full once
+ * the user zooms back in past the threshold.
+ */
+const FACILITY_LOD_ZOOM = 11;
+
+function applyZoomFacilityLod(map: MLMap) {
+  const state = getSceneState(map);
+  // Only meaningful in 3D — 2D facilities render as lightweight circle points.
+  if (!state.terrainEnabled) return;
+  const minPriority = map.getZoom() < FACILITY_LOD_ZOOM ? 2 : 0;
+  setFacilityPriorityFilter(map, minPriority);
+}
+
+/**
  * Toggle flood-impact highlighting for the 2D roads, water and 3D buildings.
  * Idempotent — safe to call on every hazard toggle in the UI.
  */
@@ -539,7 +574,7 @@ export function setFloodVisualizationSettings(
 }
 
 /**
- * Enable or disable per-frame animations (facility pin bobbing + flood pulse).
+ * Enable or disable per-frame animations (flood pulse).
  */
 export function setSceneAnimationsEnabled(map: MLMap, enabled: boolean) {
   const state = getSceneState(map);
@@ -639,51 +674,71 @@ function ensureFacilityHitLayer(map: MLMap) {
   );
 }
 
+function facilityPopupInteractionsEnabled(map: MLMap): boolean {
+  const state = getSceneState(map);
+  return (
+    state.sceneVisibility["critical-facilities"] && state.terrainEnabled
+  );
+}
+
+function queryFacilityHitAtPoint(
+  map: MLMap,
+  point: maplibregl.Point,
+): GeoJSON.Feature | null {
+  const pitch = map.getPitch();
+  const pad =
+    pitch >= 50 ? 18 : pitch >= 30 ? 12 : pitch >= 10 ? 8 : 0;
+  const features =
+    pad > 0
+      ? map.queryRenderedFeatures(
+          [
+            [point.x - pad, point.y - pad],
+            [point.x + pad, point.y + pad],
+          ],
+          { layers: [FACILITY_HIT_LAYER_ID] },
+        )
+      : map.queryRenderedFeatures(point, {
+          layers: [FACILITY_HIT_LAYER_ID],
+        });
+  const hit = features[0] ?? null;
+  return hit?.geometry?.type === "Point" ? hit : null;
+}
+
 function ensureFacilityInteractions(map: MLMap) {
   if (facilityInteractionsBound.has(map)) return;
 
   const onMouseMove = (event: maplibregl.MapMouseEvent) => {
-    const state = getSceneState(map);
-    if (!state.sceneVisibility["critical-facilities"]) {
-      closeFacilityPopup(map);
+    if (!facilityPopupInteractionsEnabled(map)) {
       map.getCanvas().style.cursor = "";
       return;
     }
-    const pitch = map.getPitch();
-    const pad =
-      pitch >= 50 ? 18 : pitch >= 30 ? 12 : pitch >= 10 ? 8 : 0;
-    const features =
-      pad > 0
-        ? map.queryRenderedFeatures(
-            [
-              [event.point.x - pad, event.point.y - pad],
-              [event.point.x + pad, event.point.y + pad],
-            ],
-            { layers: [FACILITY_HIT_LAYER_ID] },
-          )
-        : map.queryRenderedFeatures(event.point, {
-            layers: [FACILITY_HIT_LAYER_ID],
-          });
-    const hit = features[0] ?? null;
+    map.getCanvas().style.cursor = queryFacilityHitAtPoint(map, event.point)
+      ? "pointer"
+      : "";
+  };
+
+  const onClick = (event: maplibregl.MapMouseEvent) => {
+    if (!facilityPopupInteractionsEnabled(map)) return;
+    const hit = queryFacilityHitAtPoint(map, event.point);
     if (hit?.geometry?.type === "Point") {
       const coordinates = hit.geometry.coordinates as [number, number];
-      openFacilityHoverPopup(
+      openFacilityPopup(
         map,
         coordinates,
         hit.properties ?? {},
-        state.theme,
+        getSceneState(map).theme,
       );
-      map.getCanvas().style.cursor = "pointer";
     } else {
       closeFacilityPopup(map);
-      map.getCanvas().style.cursor = "";
     }
   };
 
   map.on("mousemove", onMouseMove);
+  map.on("click", onClick);
 
   const dispose = () => {
     map.off("mousemove", onMouseMove);
+    map.off("click", onClick);
     closeFacilityPopup(map);
     map.getCanvas().style.cursor = "";
   };
@@ -700,7 +755,7 @@ function ensureSceneLayers(map: MLMap) {
   ensureRoadLayer(map);
   ensureFacilityHitLayer(map);
   // Three.js custom layer (`lyr-three-scene`) is created lazily on first
-  // 3D entry — it owns building extrusions, facility pins, and flood decals.
+  // 3D entry — it owns building extrusions, critical facility meshes, and flood decals.
   ensureFacilityInteractions(map);
 }
 
@@ -874,7 +929,7 @@ export function initMapScene(map: MLMap) {
   setSceneLayerVisibility(map, "critical-facilities", true);
   void refreshOsmContext(map);
 
-  // Pause facility-pin / flood-pulse animations during camera motion (their
+  // Pause flood-pulse animations during camera motion (their
   // per-frame `triggerRepaint` is wasted compute while MapLibre is already
   // animating).
   let motionPausedAnimations = false;
@@ -900,6 +955,7 @@ export function initMapScene(map: MLMap) {
 
   const onZoomEnd = () => {
     applyTerrainExaggerationForCurrentZoom(map);
+    applyZoomFacilityLod(map);
   };
   map.on("zoomend", onZoomEnd);
 
@@ -950,8 +1006,16 @@ export function applyMapViewMode(map: MLMap, mode: "2d" | "3d") {
     map.dragRotate.enable();
     map.touchZoomRotate.enableRotation();
     setTerrainEnabled(map, true);
+    applyZoomFacilityLod(map);
     void ensureThreeSceneLayer(map).finally(() => {
       endMajorLoading(map);
+      // The Three.js scene chunk loads asynchronously on first 3D entry. If the
+      // canvas size was stale when the renderer mounted (e.g. the ops sidebar
+      // width transition hadn't settled), the terrain + 3D building layer lock
+      // to the wrong viewport and render misaligned. Re-sync the canvas to its
+      // final container size now that the scene is actually present.
+      map.resize();
+      map.triggerRepaint();
     });
 
     const state = getSceneState(map);
@@ -965,7 +1029,10 @@ export function applyMapViewMode(map: MLMap, mode: "2d" | "3d") {
     map.setMaxBounds(MAP_2D_MAX_BOUNDS);
     map.dragRotate.disable();
     map.touchZoomRotate.disableRotation();
+    closeFacilityPopup(map);
     setTerrainEnabled(map, false);
+    // Restore full facility set for 2D (zoom-based LOD is a 3D-only measure).
+    setFacilityPriorityFilter(map, 0);
     map.easeTo({
       pitch: 0,
       bearing: 0,
@@ -976,6 +1043,7 @@ export function applyMapViewMode(map: MLMap, mode: "2d" | "3d") {
 
   notifyMapViewModeForSatelliteImagery(map, mode);
   notifyLiveWeatherMapMode(map, mode);
+  setReportPingMapMode(map, mode);
   perfEnd("applyMapViewMode", t0, { mode3d: is3D ? 1 : 0 });
 }
 
@@ -988,12 +1056,15 @@ export function setTerrainEnabled(map: MLMap, enabled: boolean) {
     return;
   }
   (map as TerrainCapableMap).setTerrain(null);
+  state.lastAppliedTerrainExaggeration = null;
 }
 
 export function setTerrainExaggeration(map: MLMap, exaggeration: number) {
   const state = getSceneState(map);
   state.terrainExaggeration = exaggeration;
   if (!state.terrainEnabled) return;
+  // Base changed — force a re-apply on the next call.
+  state.lastAppliedTerrainExaggeration = null;
   applyTerrainExaggerationForCurrentZoom(map);
 }
 
@@ -1178,7 +1249,7 @@ async function fetchStaticContextPack(
 /**
  * Fly the camera to an address inside one of our preset coverages and ensure
  * its static scene pack is loaded. No live Overpass, no synthesised pin: the
- * Three.js layer's facility pins + building extrusions handle "what's there".
+ * Three.js layer's facility extrusions handle "what's there".
  */
 export async function focusAddress3DContext(
   map: MLMap,

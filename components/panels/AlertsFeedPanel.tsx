@@ -78,27 +78,20 @@ export function AlertsFeedPanel() {
 
   return (
     <div className="space-y-2.5">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-body-sm text-aeris-muted leading-snug flex-1">
-          Active cyclones in PAR and current GDACS hazards for the Philippines.
-          Official PAGASA signal numbers are linked below.
-        </p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <SourceChip label="Active TC" count={activeCount} loading={loading} />
+        <SourceChip label="Hazards" count={hazardCount} loading={loading} />
+        {loading ? <Pill>loading</Pill> : <Pill tone="accent">{alerts.length}</Pill>}
         <button
           type="button"
           onClick={() => void load()}
           disabled={loading}
-          className="shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
+          className="ml-auto shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
           aria-label="Refresh alerts"
         >
           <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
           Sync
         </button>
-      </div>
-
-      <div className="flex flex-wrap gap-1.5">
-        <SourceChip label="Active TC" count={activeCount} loading={loading} />
-        <SourceChip label="Hazards" count={hazardCount} loading={loading} />
-        {loading ? <Pill>loading</Pill> : <Pill tone="accent">{alerts.length}</Pill>}
       </div>
 
       <FreshnessTag source="alerts" label="Synced" />

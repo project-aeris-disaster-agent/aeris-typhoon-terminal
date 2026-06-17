@@ -2,8 +2,8 @@
 
 import type { RefObject } from "react";
 import { memo, useEffect, useState } from "react";
-import Image from "next/image";
 import { clsx } from "clsx";
+import { AERIS_BRAND } from "@/lib/aeris-brand-assets";
 import { Pill } from "./ui/Card";
 import { useConnectionStatus } from "@/services/connection-status";
 import { useTheme } from "@/components/providers/ThemeProvider";
@@ -105,14 +105,19 @@ export const Header = memo(function Header({
     <header className="relative z-40 h-12 px-3 flex items-center justify-between border-b border-aeris-border bg-aeris-surface/98 max-md:backdrop-blur-none md:bg-aeris-surface/95 md:backdrop-blur-md shrink-0 shadow-sm">
       <div className="flex items-center gap-3">
         <div className="relative z-10 flex items-center gap-2 min-w-0">
-          <Image
-            src="/assets/aeris-glyph.png"
-            alt="AERIS"
-            className="h-7 w-auto shrink-0 object-contain object-left"
-            width={1065}
-            height={1214}
-            priority
-          />
+          <div
+            className="aeris-loading-glyph-spin shrink-0 h-7 w-7"
+            aria-hidden
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={AERIS_BRAND.glyph}
+              alt=""
+              aria-hidden
+              decoding="async"
+              className="block h-full w-auto max-w-full object-contain object-left"
+            />
+          </div>
           <span className="live-dot" aria-hidden />
           <span className="text-body-sm font-semibold tracking-wide text-aeris-accent">
             A.E.R.I.S.

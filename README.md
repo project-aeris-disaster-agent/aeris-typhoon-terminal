@@ -41,6 +41,7 @@ incident reporting in one live terminal.
 | Open-Meteo | Wind/pressure/rainfall forecast | 1-6 hrs |
 | GDACS | Typhoon tracks + disaster alerts | ~5 min |
 | PAGASA | Daily weather / outside-PAR TC text (`/api/pagasa-daily`) | Daily |
+| PAGASA TCB | Active in-PAR Tropical Cyclone Bulletin index + official PDF links (`/api/pagasa-bulletins`, via pagasa-parser) | Per bulletin |
 | Project NOAH | Flood + landslide hazard rasters | Static |
 | OpenStreetMap | Base tiles, roads, boundaries | Static |
 | Philippine RSS | Google News (PH weather/disaster), Rappler, Inquirer, GMA, PhilStar | 10 min |
@@ -113,6 +114,7 @@ app/                      # Next.js App Router
     jtwc/                 # Typhoon tracks (via GDACS)
     alerts/               # GDACS cyclone + hazard feed
     pagasa-daily/         # PAGASA daily weather scrape
+    pagasa-bulletins/     # PAGASA active TC bulletin index (via pagasa-parser)
     rss/                  # News aggregator
     reports/              # Incident reports CRUD
   layout.tsx              # Root layout + SW registration
@@ -172,9 +174,13 @@ reference, not a direct code lift.
 
 ## Limitations and Caveats
 
-- **PAGASA** has no public JSON API for severe-weather bulletins. The alerts
-  feed uses GDACS only; daily TC context comes from `/api/pagasa-daily` and may
-  break if PAGASA redesigns their site.
+- **PAGASA** has no public RSS/JSON API for severe-weather bulletins — the
+  advertised Joomla `?format=feed` URLs return the full HTML homepage, and
+  bulletins are published only as PDFs. Daily TC context comes from
+  `/api/pagasa-daily` (HTML scrape); the active in-PAR Tropical Cyclone Bulletin
+  index comes from `/api/pagasa-bulletins`, which reads the public-domain
+  `pagasa-parser` JSON index (links point back to the official PAGASA PDFs).
+  Both degrade gracefully to `null` (circuit-broken) if the upstream changes.
 - **Project NOAH WMS** endpoints have had uptime issues historically. Drop
   static GeoJSON snapshots into `public/hazards/` as a fallback.
 - **RainViewer** free tier has modest rate limits. Edge-cached for 5 minutes.

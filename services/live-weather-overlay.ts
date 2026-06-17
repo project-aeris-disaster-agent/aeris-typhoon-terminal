@@ -32,14 +32,11 @@ import {
   weatherFrameHoldMs,
   weatherLoopEndHoldMs,
 } from "@/config/weather-animation";
-import { WindParticleCanvas } from "@/services/wind-particles";
-import type { WindPerformanceProfile } from "@/services/wind-particles";
-import type { WindFieldPayload } from "@/services/wind-field-types";
 import type { Typhoon } from "@/services/typhoon-tracks";
 import { DEVICE_TIER, detectDeviceTier, type DeviceTier } from "@/lib/device-tier";
 import { markOverlayReady } from "@/lib/overlay-ready";
 
-export type LiveWeatherPerformanceProfile = WindPerformanceProfile;
+export type LiveWeatherPerformanceProfile = "quality" | "balanced" | "performance";
 
 export const TYPHOON_FOCUS_EVENT = "aeris:typhoon-focus" as const;
 export type TyphoonFocusDetail = { storm: Typhoon | null };
@@ -50,7 +47,6 @@ export type ParStormsDetail = { storms: Typhoon[] };
 const SATELLITE_REFRESH_INTERVAL_MS = 60_000;
 const RADAR_REFRESH_INTERVAL_MS = 60_000;
 const TYPHOON_FRAME_FACTOR = 0.58;
-const WIND_REFRESH_MS = 900_000;
 
 type CrossfadePhase = {
   fromSlot: ImageryBufferSlot;
@@ -78,8 +74,6 @@ type State = {
   activeNowcastTint: boolean;
   nextAdvanceAtMs: number;
   tickId: number | null;
-  windTimer: ReturnType<typeof setInterval> | null;
-  wind: WindParticleCanvas | null;
   mapMode: "2d" | "3d";
   typhoonFocus: Typhoon | null;
   performanceProfile: LiveWeatherPerformanceProfile;
@@ -680,46 +674,11 @@ function startTicker(map: MLMap) {
   st0.tickId = requestAnimationFrame(loop);
 }
 
-async function attachWind(wind: WindParticleCanvas) {
-  try {
-    const res = await fetch("/api/wind-field", { cache: "no-store" });
-    if (!res.ok) {
-      console.warn("[live-weather] wind-field HTTP", res.status);
-      return;
-    }
-    const data = (await res.json()) as WindFieldPayload & { error?: string };
-    const cells = data.width * data.height;
-    const ok =
-      !data.error &&
-      data.width > 0 &&
-      data.height > 0 &&
-      Array.isArray(data.u) &&
-      Array.isArray(data.v) &&
-      data.u.length === cells &&
-      data.v.length === cells &&
-      Array.isArray(data.p) &&
-      data.p.length === cells;
-    if (ok) {
-      wind.setField(data);
-    } else {
-      console.warn("[live-weather] wind-field payload rejected", data?.error ?? "shape");
-    }
-  } catch (err) {
-    console.warn("[live-weather] wind-field fetch failed", err);
-  }
-}
-
 export function initLiveWeatherOverlay(map: MLMap) {
   if (store.has(map)) return;
 
   const tier = detectDeviceTier();
   const caps = DEVICE_TIER[tier];
-  const wind = new WindParticleCanvas(map, {
-    particleCount: caps.particles,
-  });
-  wind.setDeviceTier(tier);
-  wind.setPerformanceProfile(caps.profile);
-  wind.setStormSystems([]);
   const state: State = {
     source: "radar",
     timeline: {
@@ -732,8 +691,6 @@ export function initLiveWeatherOverlay(map: MLMap) {
     activeNowcastTint: false,
     nextAdvanceAtMs: 0,
     tickId: null,
-    windTimer: null,
-    wind,
     mapMode: "2d",
     typhoonFocus: null,
     performanceProfile: caps.profile,
@@ -745,33 +702,16 @@ export function initLiveWeatherOverlay(map: MLMap) {
   };
   store.set(map, state);
 
-  const onMoveStart = () => {
-    wind.pause();
-  };
-  const onMoveEnd = () => {
-    const st = store.get(map);
-    if (st?.mapMode === "2d" && st.overlayActive) wind.resume();
-  };
-  map.on("movestart", onMoveStart);
-  map.on("moveend", onMoveEnd);
-
+  // Typhoon focus tightens the satellite/radar frame cadence (see
+  // `TYPHOON_FRAME_FACTOR`); keep listening even though wind was removed.
   const onTyphoonFocus = (ev: Event) => {
     const ce = ev as CustomEvent<TyphoonFocusDetail>;
     const st = store.get(map);
     if (!st) return;
     st.typhoonFocus = ce.detail?.storm ?? null;
-    st.wind?.setTyphoonFocus(st.typhoonFocus);
     startTicker(map);
   };
   window.addEventListener(TYPHOON_FOCUS_EVENT, onTyphoonFocus);
-
-  const onParStorms = (ev: Event) => {
-    const ce = ev as CustomEvent<ParStormsDetail>;
-    const st = store.get(map);
-    if (!st) return;
-    st.wind?.setStormSystems(ce.detail?.storms ?? []);
-  };
-  window.addEventListener(PAR_STORMS_EVENT, onParStorms);
 
   void fetchRadarFrames()
     .then((result) => {
@@ -830,18 +770,8 @@ export function initLiveWeatherOverlay(map: MLMap) {
       markOverlayReady("satellite", { status: "fail", detail: "feed down" });
     });
 
-  void attachWind(wind);
-  state.windTimer = setInterval(() => {
-    void attachWind(wind);
-  }, WIND_REFRESH_MS);
-
-  wind.setVisible(true);
-
   map.once("remove", () => {
-    map.off("movestart", onMoveStart);
-    map.off("moveend", onMoveEnd);
     window.removeEventListener(TYPHOON_FOCUS_EVENT, onTyphoonFocus);
-    window.removeEventListener(PAR_STORMS_EVENT, onParStorms);
     destroyLiveWeatherOverlay(map);
   });
 }
@@ -871,10 +801,6 @@ export function destroyLiveWeatherOverlay(map: MLMap) {
   stopTicker(map);
   stopSatelliteRefreshTimer(map);
   stopRadarRefreshTimer(map);
-  if (s.windTimer) clearInterval(s.windTimer);
-  s.wind?.setTyphoonFocus(null);
-  s.wind?.setStormSystems([]);
-  s.wind?.destroy();
   store.delete(map);
 }
 
@@ -884,11 +810,9 @@ export function notifyLiveWeatherMapMode(map: MLMap, mode: "2d" | "3d") {
   s.mapMode = mode;
   if (mode === "3d") {
     stopTicker(map);
-    s.wind?.setVisible(false);
     return;
   }
   if (shouldRunWeatherTicker(s)) {
-    s.wind?.setVisible(true);
     startTicker(map);
   }
 }
@@ -912,12 +836,10 @@ export function setLiveWeatherOverlayActive(map: MLMap | null, active: boolean) 
     stopTicker(map);
     stopSatelliteRefreshTimer(map);
     stopRadarRefreshTimer(map);
-    s.wind?.setVisible(false);
     return;
   }
   syncImageryRefreshTimers(map);
   if (shouldRunWeatherTicker(s)) {
-    s.wind?.setVisible(true);
     startTicker(map);
   }
 }
@@ -928,8 +850,7 @@ export function applyLiveWeatherDeviceTier(
 ) {
   if (!map) return;
   const s = store.get(map);
-  if (!s?.wind) return;
-  s.wind.setDeviceTier(tier);
+  if (!s) return;
   setLiveWeatherPerformanceProfile(map, DEVICE_TIER[tier].profile);
 }
 
@@ -942,7 +863,6 @@ export function setLiveWeatherPerformanceProfile(
   if (!s) return;
   if (s.performanceProfile === profile) return;
   s.performanceProfile = profile;
-  s.wind?.setPerformanceProfile(profile);
   startTicker(map);
 }
 

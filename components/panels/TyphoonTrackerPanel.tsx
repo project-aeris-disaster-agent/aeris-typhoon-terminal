@@ -7,9 +7,11 @@ import { usePanelHeaderBadge } from "@/components/panel-header-badge";
 import { FreshnessTag } from "../ui/FreshnessTag";
 import {
   fetchActiveTyphoons,
+  fetchPagasaBulletins,
   renderTyphoonOnMap,
   clearTyphoonFromMap,
   type OutsideParAdvisory,
+  type PagasaBulletinItem,
   type Typhoon,
 } from "@/services/typhoon-tracks";
 import {
@@ -23,6 +25,7 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
   const [storms, setStorms] = useState<Typhoon[]>([]);
   const [outsidePar, setOutsidePar] = useState<OutsideParAdvisory | null>(null);
   const [outsideParGdacs, setOutsideParGdacs] = useState<Typhoon[]>([]);
+  const [bulletins, setBulletins] = useState<PagasaBulletinItem[]>([]);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const isFirstRun = useRef(true);
@@ -92,6 +95,22 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
     };
     run();
     const id = window.setInterval(run, 15 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  // Official PAGASA bulletins are supplementary PDF links; fetch them on their
+  // own cadence so a slow JTWC feed never holds back (or is held back by) them.
+  useEffect(() => {
+    let cancelled = false;
+    const loadBulletins = async () => {
+      const list = await fetchPagasaBulletins();
+      if (!cancelled) setBulletins(list);
+    };
+    loadBulletins();
+    const id = window.setInterval(loadBulletins, 15 * 60 * 1000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -230,6 +249,22 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
         </div>
       )}
 
+      {bulletins.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-chrome uppercase tracking-wider text-aeris-muted">
+              Official PAGASA bulletins
+            </span>
+            <span className="text-chrome tracking-wider text-aeris-muted/80">
+              {bulletins.length}
+            </span>
+          </div>
+          {bulletins.map((b) => (
+            <BulletinRow key={`${b.name}-${b.number}`} {...b} />
+          ))}
+        </div>
+      )}
+
       <FreshnessTag source="typhoons" />
 
       {warning && !error && (
@@ -305,6 +340,42 @@ function OutsideParThreatRow({
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * One-line link to an official PAGASA Tropical Cyclone Bulletin PDF.
+ * "final" bulletins are dimmed and tagged; active ones get an accent dot.
+ */
+function BulletinRow({ name, number, final, pdfUrl }: PagasaBulletinItem) {
+  return (
+    <a
+      href={pdfUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-2 rounded-md border border-aeris-border bg-aeris-bg/35 px-2 py-1.5 transition-colors hover:bg-aeris-accent/10 hover:border-aeris-accent/50"
+    >
+      <span
+        className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+          final
+            ? "bg-aeris-muted"
+            : "bg-aeris-warn shadow-[0_0_6px_rgba(245,158,11,0.7)]"
+        }`}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-mono text-body-sm text-aeris-text">
+          {name}
+        </div>
+        <div className="truncate text-chrome uppercase tracking-wider text-aeris-muted">
+          Bulletin #{number}
+          {final ? " · Final" : ""}
+        </div>
+      </div>
+      <span className="shrink-0 font-mono text-chrome uppercase tracking-wider text-aeris-accent">
+        PDF ↗
+      </span>
+    </a>
   );
 }
 

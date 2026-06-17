@@ -23,18 +23,18 @@ export const SIDEBAR_PANELS: PanelDef[] = [
     defaultOpen: true,
   },
   {
-    id: "forecast",
-    label: "Forecast",
-    hotkey: "3",
-    description: "7-day wind, rain, and pressure per province.",
-    defaultOpen: false,
-  },
-  {
     id: "alerts",
     label: "Alerts Feed",
     hotkey: "4",
     description: "GDACS active cyclones and current Philippines-relevant hazards.",
     defaultOpen: true,
+  },
+  {
+    id: "forecast",
+    label: "Forecast",
+    hotkey: "3",
+    description: "7-day wind, rain, and pressure per province.",
+    defaultOpen: false,
   },
   {
     id: "news",
@@ -49,7 +49,7 @@ export const LIVE_WEATHER_PANEL: PanelDef = {
   id: "satellite",
   label: "Live weather",
   hotkey: "2",
-  description: "Always-on radar and Himawari loops plus wind-field motion.",
+  description: "Always-on radar and Himawari satellite loops.",
   defaultOpen: false,
 };
 

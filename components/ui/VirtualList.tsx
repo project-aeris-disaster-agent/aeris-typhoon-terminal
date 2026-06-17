@@ -38,6 +38,12 @@ export function VirtualList<T>({
   const [clientHeight, setClientHeight] = useState(0);
   const [heights, setHeights] = useState<number[]>([]);
 
+  const measureGeneration = useMemo(
+    () =>
+      `${items.length}:${items[0] ? String((items[0] as { id?: string }).id ?? 0) : ""}:${items[items.length - 1] ? String((items[items.length - 1] as { id?: string }).id ?? items.length - 1) : ""}`,
+    [items],
+  );
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -52,20 +58,30 @@ export function VirtualList<T>({
     };
   }, []);
 
-  // Drop stale measurements when the item set changes.
+  // Drop stale measurements only when the list identity changes.
   useEffect(() => {
     setHeights([]);
-  }, [items]);
+  }, [measureGeneration]);
+
+  const measuredFallback = useMemo(() => {
+    const measured = heights.filter(
+      (height): height is number => typeof height === "number" && height > 0,
+    );
+    if (measured.length === 0) return rowHeight;
+    return Math.round(
+      measured.reduce((sum, height) => sum + height, 0) / measured.length,
+    );
+  }, [heights, rowHeight]);
 
   // Cumulative offset of each row (offsets[i] = top of row i).
   const offsets = useMemo(() => {
     const arr = new Array<number>(items.length + 1);
     arr[0] = 0;
     for (let i = 0; i < items.length; i++) {
-      arr[i + 1] = arr[i] + (heights[i] ?? rowHeight);
+      arr[i + 1] = arr[i] + (heights[i] ?? measuredFallback);
     }
     return arr;
-  }, [items.length, heights, rowHeight]);
+  }, [items.length, heights, measuredFallback]);
 
   const total = offsets[items.length] ?? 0;
 
@@ -88,26 +104,50 @@ export function VirtualList<T>({
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
   rowRefs.current = [];
 
-  // Measure rendered rows; commit only when something actually changed.
-  useLayoutEffect(() => {
-    if (slice.length === 0) return;
+  const updateRowHeight = (index: number, measured: number) => {
+    if (measured <= 0) return;
     setHeights((prev) => {
-      let changed = false;
+      if (prev[index] === measured) return prev;
       const next = prev.slice();
       next.length = items.length;
-      slice.forEach((_, i) => {
-        const el = rowRefs.current[i];
-        if (!el) return;
-        const measured = el.offsetHeight;
-        const idx = startIdx + i;
-        if (measured > 0 && next[idx] !== measured) {
-          next[idx] = measured;
-          changed = true;
-        }
-      });
-      return changed ? next : prev;
+      next[index] = measured;
+      return next;
     });
-  });
+  };
+
+  // Keep row heights in sync with rendered content (including async image loads).
+  useLayoutEffect(() => {
+    if (slice.length === 0) return;
+    const observers: ResizeObserver[] = [];
+
+    slice.forEach((_, i) => {
+      const el = rowRefs.current[i];
+      if (!el) return;
+      const idx = startIdx + i;
+      updateRowHeight(idx, el.offsetHeight);
+
+      const observer = new ResizeObserver(() => {
+        updateRowHeight(idx, el.offsetHeight);
+      });
+      observer.observe(el);
+      observers.push(observer);
+    });
+
+    return () => {
+      observers.forEach((observer) => observer.disconnect());
+    };
+  }, [slice, startIdx, items.length]);
+
+  // Prevent scrolling past the last row when estimates overshoot measured height.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const maxScroll = Math.max(0, total - el.clientHeight);
+    if (el.scrollTop > maxScroll) {
+      el.scrollTop = maxScroll;
+      setScrollTop(maxScroll);
+    }
+  }, [total, clientHeight]);
 
   if (items.length === 0) {
     return (

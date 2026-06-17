@@ -12,6 +12,8 @@ import type { HelpId } from "@/config/help-content";
 import {
   usePanelBadge,
 } from "@/components/panel-header-badge";
+import { PanelIcon } from "@/components/PanelIcon";
+import { BAGYO_LOGO, SIDEBAR_AD_GIF } from "@/lib/aeris-brand-assets";
 
 // On mobile, the sidebar becomes the "Reports" tab. We curate it down to the
 // panels that actually help an operator monitor incoming ground reports:
@@ -205,6 +207,23 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
         )}
         aria-hidden={collapsed}
       >
+        <div className="flex justify-center px-1">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={BAGYO_LOGO}
+            alt="bagyo.app — powered by A.E.R.I.S."
+            className="w-[40%] h-auto object-contain"
+          />
+        </div>
+        <div className="px-1">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={SIDEBAR_AD_GIF}
+            alt="Report. Respond. Rebuild. Together."
+            className="w-full h-auto object-contain rounded-lg"
+            draggable={false}
+          />
+        </div>
         {SIDEBAR_PANELS.map((p) => (
           <PanelSection
             key={p.id}
@@ -273,10 +292,10 @@ function CollapsedPanelRailButton({
           ? "bg-aeris-accent/10 text-aeris-accent border-aeris-accent/30"
           : "border-aeris-border text-aeris-muted hover:text-aeris-text",
       )}
-      title={label}
-      aria-label={label}
+      title={`${label} (${hotkey})`}
+      aria-label={`${label} (${hotkey})`}
     >
-      <span>{hotkey}</span>
+      <PanelIcon id={id} size={14} />
       {badge ? (
         <span className="max-w-full scale-[0.9] origin-center [&_span]:!px-1 [&_span]:!py-0 [&_span]:!text-chrome [&_span]:truncate [&_span]:max-w-[30px] [&_span]:block">
           {badge}
@@ -312,11 +331,10 @@ function PanelWrapper({
           className="flex flex-1 items-center gap-2 min-w-0 px-2 py-1.5 hover:bg-aeris-elev/40 hover:text-aeris-text transition-colors rounded-l-lg"
           aria-expanded={open}
           aria-controls={`panel-${id}`}
+          title={`${label} (${hotkey})`}
         >
           <span className="flex shrink-0 items-center gap-2 min-w-0">
-            <span className="text-chrome text-aeris-accent/70 w-3">
-              {hotkey}
-            </span>
+            <PanelIcon id={id} />
             <span className="truncate">{label}</span>
           </span>
           {!open && badge ? (

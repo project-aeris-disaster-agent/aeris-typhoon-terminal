@@ -10,6 +10,11 @@ import {
   fetchForecast,
   type ForecastSummary,
 } from "@/services/forecast";
+import {
+  dayWeatherEmoji,
+  forecastWeatherEmojis,
+  type WeatherEmojiItem,
+} from "@/lib/weather-emoji";
 
 export function ForecastPanel() {
   const [regionIdx, setRegionIdx] = useState(0);
@@ -68,7 +73,6 @@ export function ForecastPanel() {
   return (
     <div className="space-y-2">
       <CardHeader
-        title="7-Day Forecast"
         subtitle="Regions ranked by outlook severity (heat, rain, wind, pressure)."
         trailing={headerBadge}
       />
@@ -92,6 +96,7 @@ export function ForecastPanel() {
             const r = PH_REGIONS[i];
             const f = byRegion[i];
             const alert = f ? computeForecastAlert(f) : null;
+            const emojis = f ? forecastWeatherEmojis(f) : [];
             const selected = i === regionIdx;
 
             return (
@@ -102,13 +107,28 @@ export function ForecastPanel() {
                 aria-selected={selected}
                 disabled={!f}
                 onClick={() => setRegionIdx(i)}
+                title={
+                  f && alert
+                    ? `${r.name} (${r.code}) · ${Math.max(...f.daily.map((d) => d.tempMax))}° max · ${f.totalRainMm} mm · ${f.maxWindKph} km/h`
+                    : r.name
+                }
                 className={clsx(
-                  "w-full flex items-center gap-2 px-2 py-1.5 text-left text-body-sm transition-colors",
+                  "group relative w-full flex items-center gap-2 px-2 py-1.5 text-left text-body-sm transition-colors",
                   selected && "bg-aeris-accent/10",
                   !f && "opacity-50 cursor-not-allowed",
                   f && !selected && "hover:bg-aeris-elev/60",
                 )}
               >
+                {emojis.length > 0 ? (
+                  <WeatherEmojiStrip items={emojis} />
+                ) : (
+                  <span
+                    className="shrink-0 w-10 text-center text-base leading-none"
+                    aria-hidden
+                  >
+                    🌤️
+                  </span>
+                )}
                 {alert ? (
                   <Pill tone={alert.tone} className="shrink-0 !px-1.5 !py-0">
                     L{alert.level}
@@ -118,14 +138,31 @@ export function ForecastPanel() {
                     —
                   </span>
                 )}
-                <span className="min-w-0 flex-1 truncate font-mono">
-                  <span className="text-aeris-text">{r.code}</span>
-                  <span className="text-aeris-muted"> — {r.name}</span>
+                <span
+                  className={clsx(
+                    "min-w-0 flex-1 text-aeris-text transition-opacity",
+                    f && alert && "group-hover:opacity-30",
+                  )}
+                >
+                  {r.name}
                 </span>
                 {f && alert ? (
-                  <span className="shrink-0 tabular-nums text-body-sm text-aeris-muted hidden sm:inline">
-                    {Math.max(...f.daily.map((d) => d.tempMax))}° max ·{" "}
-                    {f.totalRainMm} mm · {f.maxWindKph} km/h
+                  <span
+                    className={clsx(
+                      "pointer-events-none absolute inset-y-0 right-0 flex items-center",
+                      "bg-gradient-to-l from-aeris-bg via-aeris-bg/95 to-transparent pl-8 pr-2",
+                      "tabular-nums text-body-sm text-aeris-muted whitespace-nowrap",
+                      "opacity-0 group-hover:opacity-100 transition-opacity",
+                    )}
+                    aria-hidden
+                  >
+                    <span className="font-mono text-chrome">{r.code}</span>
+                    <span className="mx-1 text-aeris-border">·</span>
+                    {Math.max(...f.daily.map((d) => d.tempMax))}° max
+                    <span className="mx-1 text-aeris-border">·</span>
+                    {f.totalRainMm} mm
+                    <span className="mx-1 text-aeris-border">·</span>
+                    {f.maxWindKph} km/h
                   </span>
                 ) : null}
               </button>
@@ -151,6 +188,7 @@ export function ForecastPanel() {
           <div className="mt-1 space-y-0.5">
             {data.daily.map((d) => {
               const dayAlert = dayRowAlert(d, data);
+              const dayEmoji = dayWeatherEmoji(d);
               return (
                 <div
                   key={d.date}
@@ -166,6 +204,7 @@ export function ForecastPanel() {
                       day: "2-digit",
                     })}
                   </span>
+                  <WeatherEmojiStrip items={[dayEmoji]} compact />
                   <span className="flex-1 text-right tabular-nums">
                     {d.tempMin}° / {d.tempMax}°C
                   </span>
@@ -201,6 +240,47 @@ function dayRowAlert(
   if (d.tempMax >= 37 || d.rainMm >= 25 || d.windKph >= 45) return "danger";
   if (hot || wet || gusty) return "warn";
   return "none";
+}
+
+function WeatherEmojiStrip({
+  items,
+  compact = false,
+}: {
+  items: WeatherEmojiItem[];
+  compact?: boolean;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <span
+      className={clsx(
+        "inline-flex shrink-0 items-end gap-0.5",
+        compact ? "w-8" : "w-10",
+      )}
+      aria-label={items.map((item) => item.label).join(", ")}
+    >
+      {items.map((item, idx) => (
+        <span
+          key={`${item.emoji}-${idx}`}
+          title={item.label}
+          className="inline-flex flex-col items-center leading-none"
+        >
+          <span className={compact ? "text-sm" : "text-base"}>{item.emoji}</span>
+          <span
+            className="mt-px flex gap-px"
+            aria-hidden
+          >
+            {Array.from({ length: item.intensity }, (_, dotIdx) => (
+              <span
+                key={dotIdx}
+                className="h-0.5 w-0.5 rounded-full bg-aeris-muted/80"
+              />
+            ))}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

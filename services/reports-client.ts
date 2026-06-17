@@ -88,6 +88,13 @@ export type ReportPingPerformanceProfile = "quality" | "balanced" | "performance
 const reportPingProfileByMap = new WeakMap<MLMap, ReportPingPerformanceProfile>();
 /** Caller intent from `setReportPingLoopActive` (default true). */
 const reportPingDesiredByMap = new WeakMap<MLMap, boolean>();
+/**
+ * Frozen in 3D mode (default false). The pulse rAF forces a continuous
+ * full-pipeline repaint (MapLibre terrain + Three.js); freezing it keeps 3D
+ * browsing buttery smooth. Pings stay rendered, they just stop pulsing.
+ * Tracked separately from the visibility intent so the two compose cleanly.
+ */
+const reportPing3DFrozenByMap = new WeakMap<MLMap, boolean>();
 /** Rendered report count — the pulse loop self-stops at zero pings. */
 const reportCountByMap = new WeakMap<MLMap, number>();
 
@@ -103,6 +110,8 @@ const PING_STROKE = "#fecaca";
 
 function startReportPingLoop(map: MLMap) {
   if (reportPingLoopByMap.has(map)) return;
+  // Frozen for 3D — pings render but don't pulse so the 3D pipeline can idle.
+  if (reportPing3DFrozenByMap.get(map) === true) return;
   // Nothing to animate without pings — `renderReportsOnMap` restarts the
   // loop when reports arrive.
   if ((reportCountByMap.get(map) ?? 0) === 0) return;
@@ -174,6 +183,28 @@ export function setReportPingLoopActive(map: MLMap | null, active: boolean) {
     if (map.getLayer(REPORTS_PULSE_LAYER_ID)) startReportPingLoop(map);
   } else {
     stopReportPingLoop(map);
+  }
+}
+
+/**
+ * Freeze/unfreeze the report-ping pulse for the current map view mode. Called
+ * on 2D/3D toggle: in 3D we freeze (pings stay visible but stop the rAF pulse
+ * that forces continuous repaints); back in 2D we resume if the caller intent
+ * still wants pinging and there are pings to animate.
+ */
+export function setReportPingMapMode(map: MLMap | null, mode: "2d" | "3d") {
+  if (!map) return;
+  const frozen = mode === "3d";
+  reportPing3DFrozenByMap.set(map, frozen);
+  if (frozen) {
+    stopReportPingLoop(map);
+    return;
+  }
+  if (
+    reportPingDesiredByMap.get(map) !== false &&
+    map.getLayer(REPORTS_PULSE_LAYER_ID)
+  ) {
+    startReportPingLoop(map);
   }
 }
 

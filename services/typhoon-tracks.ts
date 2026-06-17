@@ -49,6 +49,38 @@ export type OutsideParAdvisory = {
   position: LngLat | null;
 };
 
+/** A single official PAGASA Tropical Cyclone Bulletin (index entry). */
+export type PagasaBulletinItem = {
+  name: string;
+  number: number;
+  final: boolean;
+  file: string;
+  pdfUrl: string;
+};
+
+/**
+ * Fetch the official PAGASA Tropical Cyclone Bulletin index from
+ * `/api/pagasa-bulletins`. Returns [] on any failure — this is a supplementary
+ * link list, so it must never break the tracker.
+ */
+export async function fetchPagasaBulletins(): Promise<PagasaBulletinItem[]> {
+  try {
+    const res = await fetch("/api/pagasa-bulletins", {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      pagasaBulletins?: { bulletins?: PagasaBulletinItem[] } | null;
+    };
+    const bulletins = data.pagasaBulletins?.bulletins;
+    return Array.isArray(bulletins) ? bulletins : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchActiveTyphoons(): Promise<{
   storms: Typhoon[];
   outsidePar: OutsideParAdvisory | null;

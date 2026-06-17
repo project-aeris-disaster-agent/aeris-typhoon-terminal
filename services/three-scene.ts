@@ -20,7 +20,6 @@ import {
   buildBuildingSpatialIndex,
   buildingPolygonKey,
   findBuildingMatch,
-  resolveFacilityPinLngLat,
   type BuildingFeature,
   type BuildingSpatialIndex,
 } from "@/lib/facility-building-match";
@@ -28,7 +27,7 @@ import { detectDeviceTier, type DeviceTier } from "@/lib/device-tier";
 
 /**
  * Three.js-powered MapLibre custom layer that renders 3D buildings,
- * facility beacons, and flood hazard patches for the AERIS 3D scene.
+ * critical facility extrusions, and flood hazard patches for the AERIS 3D scene.
  *
  * Runs inside MapLibre's own WebGL context via `CustomLayerInterface`, so the
  * meshes stay perfectly aligned with the basemap and Terrain-RGB relief while
@@ -97,7 +96,7 @@ export type ThreeSceneHandle = {
   /** Tune flood patch/wire visual style without changing the feature payload. */
   setFloodVisualizationSettings(settings: FloodVisualizationSettings): void;
   /**
-   * Enable or disable per-frame animations (facility pin bobbing, flood pulse).
+   * Enable or disable per-frame animations (flood pulse).
    * Disabling halts ``triggerRepaint`` loops so the map goes idle between
    * interactions, which eliminates continuous GPU/CPU load on static scenes.
    * Defaults to ``true``.
@@ -182,26 +181,6 @@ const FLOOD_RENDER_ORDER_FILL = 10;
 const FLOOD_RENDER_ORDER_LINE = 11;
 const BUILDING_RENDER_ORDER = 20;
 
-// Map-pin dimensions for critical facility markers.
-// All values in model metres (1 unit = 1 metre after meterScale transform).
-/** Minimum metres the pin head floats above the roof (readability + hit target). */
-const PIN_FLOAT_HEIGHT_MIN = 18;
-/** Extra clearance on taller extrusions so heads clear the mesh silhouette. */
-const PIN_FLOAT_HEIGHT_PER_METRE = 0.35;
-const PIN_FLOAT_HEIGHT_MAX = 36;
-const PIN_HEAD_RADIUS = 3.5;
-const PIN_SPIKE_RADIUS = 0.75;
-const PIN_BOB_AMPLITUDE = 0.9;
-
-function facilityPinFloatHeight(buildingHeight: number): number {
-  const scaled =
-    PIN_FLOAT_HEIGHT_MIN + buildingHeight * PIN_FLOAT_HEIGHT_PER_METRE;
-  return Math.min(PIN_FLOAT_HEIGHT_MAX, scaled);
-}
-
-function facilityPinSpikeLength(floatHeight: number): number {
-  return floatHeight - PIN_HEAD_RADIUS;
-}
 const FACILITY_DEFAULT_HEIGHT = 14; // fallback building height when no polygon matches
 // Buildings render fully opaque (see `buildBuildings` / `buildFacilities`).
 // Opacity constant intentionally removed — translucent buildings re-introduced
@@ -210,6 +189,10 @@ const BUILDING_WIREFRAME_OPACITY = 1.0;
 const BUILDING_WIREFRAME_COLOR = 0x3b4454;
 const BUILDING_OPACITY_NORMAL = 1.0;
 const FACILITY_BUILDING_OPACITY = 0.92;
+// Facilities merge into one shared material (for draw-call batching), which
+// can't carry the per-mesh emissive the old per-facility materials used.
+// Brightening the baked vertex colour restores most of that visual "pop".
+const FACILITY_VERTEX_COLOR_BRIGHTEN = 1.25;
 const BUILDING_EDGE_MIN_ZOOM = 14;
 const BUILDING_EDGE_ANGLE_THRESHOLD = 35;
 
@@ -284,8 +267,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   // Levels whose geometry was skipped in the last `rebuildFlood()` because
   // they were toggled off. Re-enabling such a level triggers a lazy rebuild.
   const floodLevelsSkippedInBuild = new Set<FloodLevel>();
-  const facilityPointers: Array<{ pointer: THREE.Group; baseZ: number }> = [];
-
   // --- In-place building retint ------------------------------------------
   // All buildings live in ONE merged geometry with per-vertex colors. Each
   // record maps a building back to its vertex range in the merged fill and
@@ -342,11 +323,9 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   }
 
   // --- Animation control -------------------------------------------------
-  // Facility pins bob and flood patches pulse every frame while animations
-  // are active. Both share a single `animationsEnabled` flag so the caller
-  // can opt-out on low-power devices without losing the visual concept.
-  // When false, `render()` omits all per-frame mutation and no
-  // `triggerRepaint()` is posted, allowing MapLibre to go idle.
+  // Flood patches pulse every frame while animations are active. When false,
+  // `render()` omits per-frame mutation and no `triggerRepaint()` is posted,
+  // allowing MapLibre to go idle.
   let animationsEnabled = true;
 
   function computeOrigin(): maplibregl.MercatorCoordinate {
@@ -404,7 +383,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     scene.remove(buildingGroup);
     scene.remove(facilityGroup);
     scene.remove(floodGroup);
-    facilityPointers.length = 0;
     buildingRetintRecords.length = 0;
     buildingColorAttr = null;
     buildingEdgeColorAttr = null;
@@ -727,6 +705,29 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
   }
 
   function buildFacilities(buildingIndex: BuildingSpatialIndex) {
+    // Performance: facilities used to render as two meshes EACH (fill + edges)
+    // with unique transparent materials. Dense packs (NCR ~2000, Bicol ~3400
+    // facilities) produced thousands of per-frame draw calls and dragged 3D
+    // browsing down to ~20fps. We now bake every facility footprint into a
+    // single merged fill mesh + a single merged edge mesh (mirroring
+    // buildBuildings), collapsing the whole layer to 2 draw calls regardless
+    // of facility count. Per-facility category colour is baked into a vertex
+    // `color` attribute; it's brightened slightly to retain the pop the old
+    // per-mesh emissive gave (a single shared material can't vary emissive).
+    const fillGeoms: THREE.BufferGeometry[] = [];
+    const edgeGeoms: THREE.BufferGeometry[] = [];
+
+    const bakeColor = (geom: THREE.BufferGeometry, c: THREE.Color, brighten: number) => {
+      const n = geom.attributes.position.count;
+      const colors = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        colors[i * 3] = c.r * brighten;
+        colors[i * 3 + 1] = c.g * brighten;
+        colors[i * 3 + 2] = c.b * brighten;
+      }
+      geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    };
+
     for (const feat of pendingFacilities) {
       const props = feat.properties ?? {};
       const priority = typeof props.priority === "number" ? props.priority : 0;
@@ -742,22 +743,15 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
         facilityLat,
         buildingIndex,
       );
-      const [pinLng, pinLat] = resolveFacilityPinLngLat(
-        facilityLng,
-        facilityLat,
-        buildingMatch,
-      );
-      const [cx, cy] = toModelXY(pinLng, pinLat);
-
       // ── 3D Building ──────────────────────────────────────────────────────
       // Try to find the actual property polygon from the buildings pack so
       // the facility renders with its true footprint outline, not a generic box.
-      let buildingHeight: number;
+      let fillGeom: THREE.BufferGeometry;
 
       if (buildingMatch) {
         const matchedBuilding = buildingMatch.feature;
         const bProps = matchedBuilding.properties ?? {};
-        buildingHeight = Math.max(
+        const buildingHeight = Math.max(
           6,
           typeof bProps.height === "number" ? bProps.height : FACILITY_DEFAULT_HEIGHT,
         );
@@ -785,140 +779,72 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
           curveSegments: 1,
         });
         if (minH > 0) geom.translate(0, 0, minH);
-
-        // Bake a uniform facility colour into vertex attributes so the
-        // shared vertexColors material pipeline renders it correctly.
-        const vertCount = geom.attributes.position.count;
-        const colors = new Float32Array(vertCount * 3);
-        for (let i = 0; i < vertCount; i++) {
-          colors[i * 3]     = threeColor.r;
-          colors[i * 3 + 1] = threeColor.g;
-          colors[i * 3 + 2] = threeColor.b;
-        }
-        geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-
-        const mat = new THREE.MeshStandardMaterial({
-          vertexColors: true,
-          emissive: color,
-          emissiveIntensity: 0.25,
-          roughness: 0.65,
-          metalness: 0.1,
-          depthTest: true,
-          depthWrite: true,
-          transparent: true,
-          opacity: FACILITY_BUILDING_OPACITY,
-          // polygonOffset keeps facility footprint (coplanar with matching OSM
-          // building) from Z-fighting the regular building mesh underneath.
-          polygonOffset: true,
-          polygonOffsetFactor: -2,
-          polygonOffsetUnits: -2,
-        });
-        const mesh = new THREE.Mesh(geom, mat);
-        mesh.renderOrder = BUILDING_RENDER_ORDER;
-        facilityGroup.add(mesh);
-
-        const edgesGeom = new THREE.EdgesGeometry(geom, 25);
-        const edgeMat = new THREE.LineBasicMaterial({
-          color,
-          transparent: true,
-          opacity: BUILDING_WIREFRAME_OPACITY,
-          depthTest: true,
-          depthWrite: false,
-        });
-        const edgeMesh = new THREE.LineSegments(edgesGeom, edgeMat);
-        edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
-        facilityGroup.add(edgeMesh);
-
-        disposables.push(geom, mat, edgesGeom, edgeMat);
+        fillGeom = geom;
       } else {
         // Fallback: simple box centred on the facility point when OSM has no
         // polygon for this location (e.g. point-only amenity tags).
-        buildingHeight = FACILITY_DEFAULT_HEIGHT;
+        const buildingHeight = FACILITY_DEFAULT_HEIGHT;
         const boxGeom = new THREE.BoxGeometry(8, 8, buildingHeight);
-        const boxMat = new THREE.MeshStandardMaterial({
-          color,
-          emissive: color,
-          emissiveIntensity: 0.25,
-          roughness: 0.65,
-          metalness: 0.1,
-          depthTest: true,
-          depthWrite: true,
-          transparent: true,
-          opacity: FACILITY_BUILDING_OPACITY,
-        });
-        const boxMesh = new THREE.Mesh(boxGeom, boxMat);
-        // BoxGeometry is centred at origin; shift so its base sits on z = 0.
-        boxMesh.position.set(cx, cy, buildingHeight / 2);
-        boxMesh.renderOrder = BUILDING_RENDER_ORDER;
-        facilityGroup.add(boxMesh);
-
-        const boxEdgesGeom = new THREE.EdgesGeometry(boxGeom, 25);
-        const boxEdgeMat = new THREE.LineBasicMaterial({
-          color,
-          transparent: true,
-          opacity: BUILDING_WIREFRAME_OPACITY,
-          depthTest: true,
-          depthWrite: false,
-        });
-        const boxEdgeMesh = new THREE.LineSegments(boxEdgesGeom, boxEdgeMat);
-        boxEdgeMesh.position.copy(boxMesh.position);
-        boxEdgeMesh.renderOrder = BUILDING_RENDER_ORDER;
-        facilityGroup.add(boxEdgeMesh);
-        disposables.push(boxGeom, boxMat, boxEdgesGeom, boxEdgeMat);
+        const [cx, cy] = toModelXY(facilityLng, facilityLat);
+        // Bake the world position into the geometry (merged meshes can't use
+        // per-instance transforms). Box is centred at origin; lift so its base
+        // sits on z = 0.
+        boxGeom.translate(cx, cy, buildingHeight / 2);
+        fillGeom = boxGeom;
       }
 
-      // ── Animated map-pin pointer ─────────────────────────────────────────
-      // The pin group is positioned PIN_FLOAT_HEIGHT metres above the building
-      // roof and animated (bobbing) each frame. All child meshes are in the
-      // group's local space, so only the group's z needs to change per frame.
-      //
-      // Geometry (all in group-local z, group origin = building roof + float):
-      //   z = 0              → sphere head (map-pin ball)
-      //   z = -(float+head)/2 → spike centre
-      //   z = -float          → spike tip  (points at roof below)
-      //
-      // ConeGeometry default axis: +Y. After rotation.x = -π/2 the tip
-      // moves to -Z (downward in world space), which is what we need.
+      // mergeGeometries requires consistent indexing: ExtrudeGeometry is
+      // non-indexed while BoxGeometry is indexed, so normalize to non-indexed
+      // before baking colours and merging.
+      if (fillGeom.index) {
+        const nonIndexed = fillGeom.toNonIndexed();
+        fillGeom.dispose();
+        fillGeom = nonIndexed;
+      }
+      bakeColor(fillGeom, threeColor, FACILITY_VERTEX_COLOR_BRIGHTEN);
+      fillGeoms.push(fillGeom);
 
-      const pinFloatHeight = facilityPinFloatHeight(buildingHeight);
-      const pinSpikeLength = facilityPinSpikeLength(pinFloatHeight);
-      const baseZ = buildingHeight + pinFloatHeight;
-      const pointerGroup = new THREE.Group();
-      pointerGroup.position.set(cx, cy, baseZ);
-
-      // Sphere head
-      const headGeom = new THREE.SphereGeometry(PIN_HEAD_RADIUS, 16, 12);
-      const headMat = new THREE.MeshStandardMaterial({
-        color,
-        emissive: color,
-        emissiveIntensity: 0.9,
-        roughness: 0.2,
-        metalness: 0.15,
-      });
-      const headMesh = new THREE.Mesh(headGeom, headMat);
-      // head sits exactly at the group origin (z = 0)
-      pointerGroup.add(headMesh);
-
-      // Downward spike — tip points toward the building below.
-      // rotation.x = -π/2  →  ConeGeometry +Y tip becomes -Z (downward).
-      const spikeGeom = new THREE.ConeGeometry(PIN_SPIKE_RADIUS, pinSpikeLength, 8);
-      const spikeMat = new THREE.MeshStandardMaterial({
-        color,
-        emissive: color,
-        emissiveIntensity: 0.55,
-        roughness: 0.4,
-        metalness: 0.1,
-      });
-      const spikeMesh = new THREE.Mesh(spikeGeom, spikeMat);
-      spikeMesh.rotation.x = -Math.PI / 2;
-      // Cone centre: sphere bottom at -PIN_HEAD_RADIUS, tip at -pinFloatHeight.
-      spikeMesh.position.z = -(PIN_HEAD_RADIUS + pinSpikeLength / 2);
-      pointerGroup.add(spikeMesh);
-
-      facilityGroup.add(pointerGroup);
-      facilityPointers.push({ pointer: pointerGroup, baseZ });
-      disposables.push(headGeom, headMat, spikeGeom, spikeMat);
+      const edges = new THREE.EdgesGeometry(fillGeom, 25);
+      bakeColor(edges, threeColor, 1);
+      edgeGeoms.push(edges);
     }
+
+    if (fillGeoms.length === 0) return;
+
+    const mergedFill = BufferGeometryUtils.mergeGeometries(fillGeoms, false);
+    for (const g of fillGeoms) g.dispose();
+    const fillMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.65,
+      metalness: 0.1,
+      depthTest: true,
+      depthWrite: true,
+      transparent: true,
+      opacity: FACILITY_BUILDING_OPACITY,
+      // polygonOffset keeps facility footprints (coplanar with their matching
+      // OSM building) from Z-fighting the regular building mesh underneath.
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    const fillMesh = new THREE.Mesh(mergedFill, fillMat);
+    fillMesh.renderOrder = BUILDING_RENDER_ORDER;
+    facilityGroup.add(fillMesh);
+    disposables.push(mergedFill, fillMat);
+
+    const mergedEdges = BufferGeometryUtils.mergeGeometries(edgeGeoms, false);
+    for (const g of edgeGeoms) g.dispose();
+    const edgeMat = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: BUILDING_WIREFRAME_OPACITY,
+      depthTest: true,
+      depthWrite: false,
+    });
+    const edgeMesh = new THREE.LineSegments(mergedEdges, edgeMat);
+    edgeMesh.renderOrder = BUILDING_RENDER_ORDER;
+    facilityGroup.add(edgeMesh);
+    disposables.push(mergedEdges, edgeMat);
   }
 
   /**
@@ -1417,15 +1343,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
       const t0 = perfStart("render");
       const time = performance.now() * 0.001;
 
-      // Animate facility pins only when animations are globally enabled.
-      // Each pointer stores its `baseZ` (building roof + PIN_FLOAT_HEIGHT) so
-      // variable-height buildings all animate relative to their own roofline.
-      if (animationsEnabled && facilityPointers.length > 0) {
-        for (const { pointer, baseZ } of facilityPointers) {
-          pointer.position.z = baseZ + Math.sin(time * 2.0) * PIN_BOB_AMPLITUDE;
-        }
-      }
-
       const animateFlood = shouldAnimateFlood();
       if (animateFlood) applyFloodOpacity(time, true);
       projectionMatrix.fromArray(matrix);
@@ -1442,10 +1359,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
 
       // Only force the next frame when something actually animated — avoids
       // a continuous 60 fps repaint loop for purely static flood/building scenes.
-      if (
-        animateFlood ||
-        (animationsEnabled && facilityPointers.length > 0)
-      ) {
+      if (animateFlood) {
         mapRef.current?.triggerRepaint();
       }
 
@@ -1589,11 +1503,6 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
     setAnimationsEnabled(enabled) {
       animationsEnabled = enabled;
       if (!enabled) {
-        // Restore static facility pin positions so they don't freeze mid-bob.
-        for (const { pointer, baseZ } of facilityPointers) {
-          pointer.position.z = baseZ;
-        }
-        // Also reset flood materials to their base (non-pulsed) opacity.
         applyFloodOpacity(0, false);
       }
       mapRef.current?.triggerRepaint();

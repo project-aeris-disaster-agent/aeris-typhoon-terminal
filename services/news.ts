@@ -8,6 +8,7 @@ export type NewsItem = {
   title: string;
   url: string;
   publishedAt: string;
+  imageUrl?: string;
 };
 
 export type NewsFetchResult = {

@@ -6,9 +6,13 @@ jest.mock("@/services/weather-snapshot", () => ({
 jest.mock("@/lib/pagasa-daily", () => ({
   fetchPagasaDailyWeather: jest.fn(),
 }));
+jest.mock("@/lib/pagasa-bulletins", () => ({
+  fetchPagasaBulletins: jest.fn(),
+}));
 
 import { buildNationalWeatherSnapshot } from "@/services/weather-snapshot";
 import { fetchPagasaDailyWeather } from "@/lib/pagasa-daily";
+import { fetchPagasaBulletins } from "@/lib/pagasa-bulletins";
 import { buildAgentLiveContext } from "@/lib/agent-context";
 
 const NOW_ISO = "2026-05-27T14:00:00.000Z";
@@ -67,6 +71,8 @@ describe("buildAgentLiveContext", () => {
   beforeEach(() => {
     (buildNationalWeatherSnapshot as jest.Mock).mockReset();
     (fetchPagasaDailyWeather as jest.Mock).mockReset();
+    (fetchPagasaBulletins as jest.Mock).mockReset();
+    (fetchPagasaBulletins as jest.Mock).mockResolvedValue(null);
   });
 
   it("composes national context, typhoon coords, and PAGASA daily", async () => {
@@ -82,6 +88,21 @@ describe("buildAgentLiveContext", () => {
       tcOutsidePar: null,
       regionalConditions: [],
     });
+    (fetchPagasaBulletins as jest.Mock).mockResolvedValue({
+      source: "pagasa-bulletins",
+      via: "pagasa-parser",
+      fetchedAt: NOW_ISO,
+      hasActive: true,
+      bulletins: [
+        {
+          name: "Ester",
+          number: 6,
+          final: false,
+          file: "TCB#6_ester.pdf",
+          pdfUrl: "https://pubfiles.pagasa.dost.gov.ph/.../TCB%236_ester.pdf",
+        },
+      ],
+    });
 
     const ctx = await buildAgentLiveContext(null);
 
@@ -92,6 +113,9 @@ describe("buildAgentLiveContext", () => {
     expect(ctx.national.typhoonAlerts[0].coords).toEqual({ lat: 10, lon: 137.2 });
     expect(ctx.national.elevatedRivers[0].name).toBe("Marikina River");
     expect(ctx.pagasaDaily?.issuedAt).toBe("4:00 PM, 27 May 2026");
+    expect(ctx.pagasaBulletins?.hasActive).toBe(true);
+    expect(ctx.pagasaBulletins?.bulletins[0].name).toBe("Ester");
+    expect(ctx.freshness.pagasaBulletins).toBe(NOW_ISO);
     expect(ctx.selectedLocation).toBeNull();
   });
 

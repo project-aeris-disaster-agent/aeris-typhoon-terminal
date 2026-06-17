@@ -33,7 +33,7 @@ export function CardHeader({
   trailing,
   helpId,
 }: {
-  title: ReactNode;
+  title?: ReactNode;
   subtitle?: ReactNode;
   trailing?: ReactNode;
   /** When set, renders a help affordance next to the title. */
@@ -42,7 +42,7 @@ export function CardHeader({
   return (
     <div className="mb-2 min-w-0">
       <div className="hud-text flex flex-wrap items-center gap-1.5 text-aeris-muted">
-        <span>{title}</span>
+        {title ? <span>{title}</span> : null}
         {helpId ? <HelpHint helpId={helpId} side="bottom" /> : null}
         {trailing ? <div className="shrink-0">{trailing}</div> : null}
       </div>

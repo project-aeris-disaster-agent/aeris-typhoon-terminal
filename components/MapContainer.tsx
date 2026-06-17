@@ -199,22 +199,27 @@ export const MapContainer = memo(function MapContainer({
 
   useEffect(() => {
     if (!map || !layoutActive) return;
-    // One immediate pass once layout settles, plus a single delayed pass to
-    // catch late flex/panel transitions. (Map2D's resize handlers already
-    // no-op when the canvas size is unchanged.)
+    // One immediate pass once layout settles, plus delayed passes to catch
+    // late flex/panel transitions (e.g. the ops sidebar width animation) and
+    // the 2D<->3D mode switch. Without re-running on `mode`, first 3D entry
+    // can size the canvas before the layout settles, leaving the basemap and
+    // 3D building layer misaligned. (Map2D's resize handlers already no-op
+    // when the canvas size is unchanged.)
     const rafId = requestAnimationFrame(() => {
       map.resize();
       map.triggerRepaint();
     });
-    const timeoutId = window.setTimeout(() => {
-      map.resize();
-      map.triggerRepaint();
-    }, 300);
+    const timeoutIds = [300, 750].map((delay) =>
+      window.setTimeout(() => {
+        map.resize();
+        map.triggerRepaint();
+      }, delay),
+    );
     return () => {
       cancelAnimationFrame(rafId);
-      window.clearTimeout(timeoutId);
+      timeoutIds.forEach((id) => window.clearTimeout(id));
     };
-  }, [map, layoutActive]);
+  }, [map, layoutActive, mode]);
 
   return (
     <div className="relative w-full h-full bg-aeris-bg">

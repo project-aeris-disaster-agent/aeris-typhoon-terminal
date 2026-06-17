@@ -17,6 +17,7 @@ type NewsItem = {
   title: string;
   url: string;
   publishedAt: string;
+  imageUrl?: string;
 };
 
 export async function GET() {
@@ -108,9 +109,34 @@ function parseRss(xml: string, source: string): NewsItem[] {
       title: cleanTitle,
       url: link,
       publishedAt: new Date(date).toISOString(),
+      imageUrl: extractImage(b),
     });
   }
   return items;
+}
+
+/** Pull a usable article thumbnail from common RSS image conventions. */
+function extractImage(block: string): string | undefined {
+  const media = block.match(
+    /<media:(?:content|thumbnail)[^>]*\burl=["']([^"']+)["']/i,
+  );
+  if (media) return cleanImageUrl(media[1]);
+
+  const enclosure = block.match(/<enclosure\b[^>]*>/i)?.[0];
+  if (enclosure && /image|\.(?:jpe?g|png|webp|gif)/i.test(enclosure)) {
+    const url = enclosure.match(/\burl=["']([^"']+)["']/i)?.[1];
+    if (url) return cleanImageUrl(url);
+  }
+
+  const img = block.match(/<img[^>]*\bsrc=["']([^"']+)["']/i);
+  if (img) return cleanImageUrl(img[1]);
+
+  return undefined;
+}
+
+function cleanImageUrl(url: string): string | undefined {
+  const trimmed = decodeEntities(url).trim();
+  return trimmed.startsWith("http") ? trimmed : undefined;
 }
 
 function firstMatch(s: string, re: RegExp): string | undefined {

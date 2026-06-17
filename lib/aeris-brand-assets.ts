@@ -5,6 +5,9 @@ export const AERIS_BRAND = {
   char: "/assets/AERIS_char.svg",
 } as const;
 
+export const BAGYO_LOGO = "/assets/Bagyo%20Logo@5x.png";
+export const SIDEBAR_AD_GIF = "/assets/ads_v2_2026.gif";
+
 export const AERIS_GLYPH_DIM = { width: 1065, height: 1214 } as const;
 
 /** AERIS_char.svg viewBox — artwork is clipped to the right ~43% of the canvas. */

@@ -9,7 +9,7 @@ const DEFAULT_BOUNDS: Bounds = {
   north: 18,
 };
 
-/** Minimal MapLibre stub for overlay / wind canvas tests (not a mock of code under test). */
+/** Minimal MapLibre stub for overlay tests (not a mock of code under test). */
 export function createMapStub(
   bounds: Bounds = DEFAULT_BOUNDS,
   size = { width: 480, height: 360 },
@@ -100,23 +100,5 @@ export function createMapStub(
   return map as unknown as MLMap & {
     emit: (event: string, ...args: unknown[]) => void;
     getPixelRatio: () => number;
-  };
-}
-
-export function createWindFieldPayload() {
-  const w = 4;
-  const h = 3;
-  const n = w * h;
-  return {
-    width: w,
-    height: h,
-    west: 120,
-    south: 10,
-    east: 124,
-    north: 13,
-    u: Array.from({ length: n }, () => 3),
-    v: Array.from({ length: n }, () => 1),
-    p: Array.from({ length: n }, () => 1010),
-    generatedAt: "2026-06-01T00:00:00Z",
   };
 }

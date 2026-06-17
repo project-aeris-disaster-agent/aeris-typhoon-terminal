@@ -35,7 +35,7 @@ export function closeFacilityPopup(map: MLMap): void {
   activePopups.delete(map);
 }
 
-export function openFacilityHoverPopup(
+export function openFacilityPopup(
   map: MLMap,
   coordinates: [number, number],
   properties: FacilityDisplayProps | null | undefined,
@@ -43,7 +43,10 @@ export function openFacilityHoverPopup(
 ): void {
   const key = facilityFeatureKey(coordinates, properties);
   const prev = activePopups.get(map);
-  if (prev?.featureKey === key) return;
+  if (prev?.featureKey === key) {
+    closeFacilityPopup(map);
+    return;
+  }
 
   closeFacilityPopup(map);
 

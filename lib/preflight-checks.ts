@@ -162,11 +162,6 @@ const CHECKS: CheckDef[] = [
     run: jsonProbe("/osm-context/ncr.json", { warnOnFail: true }),
   },
   {
-    id: "wind",
-    label: "Wind field",
-    run: jsonProbe("/api/wind-field", { warnOnFail: true }),
-  },
-  {
     id: "typhoon",
     label: "Typhoon tracks",
     run: jsonProbe("/api/jtwc", { warnOnFail: true }),

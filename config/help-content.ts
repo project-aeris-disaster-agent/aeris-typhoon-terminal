@@ -51,9 +51,9 @@ export const HELP: Record<HelpId, HelpEntry> = {
   },
   "panel.satellite": {
     title: "Live Weather",
-    tip: "Always-on radar and Himawari satellite loops plus wind-field motion. Brighter radar returns mean heavier rain; the loop plays recent frames so you can see movement.",
+    tip: "Always-on radar and Himawari satellite loops. Brighter radar returns mean heavier rain; the loop plays recent frames so you can see movement.",
     detail:
-      "The Live Weather panel layers near-real-time weather radar, Himawari satellite imagery loops, and animated wind-field motion over the map. Stronger/brighter radar colors indicate heavier rainfall, and the animated frames reveal how systems are moving and intensifying.",
+      "The Live Weather panel layers near-real-time weather radar and Himawari satellite imagery loops over the map. Stronger/brighter radar colors indicate heavier rainfall, and the animated frames reveal how systems are moving and intensifying.",
   },
   "panel.forecast": {
     title: "Forecast",

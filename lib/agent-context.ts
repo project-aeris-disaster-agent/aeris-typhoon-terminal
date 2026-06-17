@@ -14,6 +14,10 @@ import {
   type PagasaDaily,
   type PagasaDailyTc,
 } from "@/lib/pagasa-daily";
+import {
+  fetchPagasaBulletins,
+  type PagasaBulletins,
+} from "@/lib/pagasa-bulletins";
 import { fetchOpenMeteoForecast } from "@/lib/open-meteo-server";
 import { computeForecastAlert } from "@/lib/forecast-alert";
 import {
@@ -96,12 +100,19 @@ export type AgentLiveContext = {
     elevatedRivers: AgentContextRiver[];
   };
   pagasaDaily: PagasaDaily | null;
+  /**
+   * Official PAGASA Tropical Cyclone Bulletins for systems inside PAR.
+   * Index only (name / number / final / PDF link); wind signals live in the
+   * linked PDFs. Null when unavailable; empty bulletins[] when no active TC.
+   */
+  pagasaBulletins: PagasaBulletins | null;
   selectedLocation: AgentContextLocation | null;
   freshness: {
     gdacs: string | null;
     openMeteo: string;
     waterLevels: string | null;
     pagasaDaily: string | null;
+    pagasaBulletins: string | null;
     snapshot: string;
   };
 };
@@ -178,9 +189,10 @@ function nearestTyphoonFor(
 export async function buildAgentLiveContext(
   selectedHint: AgentSelectedLocationHint | null,
 ): Promise<AgentLiveContext> {
-  const [snapshot, pagasaDaily] = await Promise.all([
+  const [snapshot, pagasaDaily, pagasaBulletins] = await Promise.all([
     getCachedSnapshot(),
     fetchPagasaDailyWeather().catch(() => null),
+    fetchPagasaBulletins().catch(() => null),
   ]);
 
   const typhoons = buildTyphoonEntries(snapshot);
@@ -261,12 +273,14 @@ export async function buildAgentLiveContext(
       })),
     },
     pagasaDaily,
+    pagasaBulletins,
     selectedLocation,
     freshness: {
       gdacs: snapshot.sourcesFreshness.gdacs,
       openMeteo: snapshot.sourcesFreshness.openMeteo,
       waterLevels: snapshot.sourcesFreshness.waterLevels,
       pagasaDaily: pagasaDaily?.fetchedAt ?? null,
+      pagasaBulletins: pagasaBulletins?.fetchedAt ?? null,
       snapshot: snapshot.generatedAt,
     },
   };
