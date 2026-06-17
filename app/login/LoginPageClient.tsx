@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useLogin, usePrivy } from "@privy-io/react-auth";
+import { useLogin, useLoginWithOAuth, usePrivy } from "@privy-io/react-auth";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { AerisLoadingLogo } from "@/components/ui/AerisLoadingLogo";
 import { isPrivyConfigured } from "@/lib/privy-config";
 import { safePostLoginPath } from "@/lib/safe-redirect";
-import { SupabaseOtpLogin } from "./SupabaseOtpLogin";
 
 function SunIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -40,6 +39,11 @@ export default function LoginPageClient() {
     privyEnabled ? "preparing" : null,
   );
   const [status, setStatus] = useState<string | null>(sessionError);
+  const [origin, setOrigin] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
 
   useEffect(() => {
     const rawNext = searchParams.get("next");
@@ -65,13 +69,29 @@ export default function LoginPageClient() {
     router.replace(nextPath);
   }, [router, nextPath]);
 
-  const { login } = useLogin({
+  const loginCallbacks = {
     onComplete: () => {
       redirectToDashboard();
     },
     onError: () => {
       setLoadingPhase(null);
       setStatus("Sign-in failed. Please try again.");
+    },
+  };
+
+  const { login } = useLogin(loginCallbacks);
+
+  const { initOAuth, loading: oauthLoading } = useLoginWithOAuth({
+    ...loginCallbacks,
+    onError: (errorCode) => {
+      setLoadingPhase(null);
+      const isOriginError =
+        typeof errorCode === "string" && errorCode.toLowerCase().includes("origin");
+      setStatus(
+        isOriginError
+          ? `Origin not allowed — add ${origin ?? window.location.origin} to Privy Dashboard → Configuration → App settings → Domains → Allowed Origins.`
+          : "Sign-in failed. Please try again.",
+      );
     },
   });
 
@@ -88,11 +108,11 @@ export default function LoginPageClient() {
       setStatus(
         (current) =>
           current ??
-          "Privy could not initialize. Add this site to Allowed Origins in the Privy Dashboard.",
+          `Privy could not initialize. Add ${origin ?? "this site's URL"} to Allowed Origins in the Privy Dashboard.`,
       );
     }, 12_000);
     return () => window.clearTimeout(timeout);
-  }, [privyEnabled, ready]);
+  }, [privyEnabled, ready, origin]);
 
   useEffect(() => {
     fetch("/api/auth/role", { cache: "no-store" })
@@ -109,11 +129,22 @@ export default function LoginPageClient() {
     }
   }, [privyEnabled, ready, authenticated, redirectToDashboard]);
 
-  const handlePrivyLogin = () => {
+  const handleGoogleLogin = async () => {
+    if (!ready || authenticated || oauthLoading) return;
+    setStatus(null);
+    setLoadingPhase("signing-in");
+    try {
+      await initOAuth({ provider: "google" });
+    } catch {
+      setLoadingPhase(null);
+    }
+  };
+
+  const handleWalletLogin = () => {
     if (!ready || authenticated) return;
     setStatus(null);
     setLoadingPhase("signing-in");
-    login({ loginMethods: ["google", "wallet", "sms"] });
+    login({ loginMethods: ["wallet"] });
   };
 
   const loadingMessage =
@@ -171,16 +202,32 @@ export default function LoginPageClient() {
           <div className="mt-6 border-t border-aeris-border/70 pt-6">
             <p className="text-label text-aeris-muted">Primary sign-in</p>
             <p className="mt-1 text-body-sm text-aeris-muted">
-              Continue with Google, wallet, or SMS.
+              Google uses a full-page redirect (works in Cursor&apos;s browser). Wallet connect may
+              require Chrome or Firefox.
             </p>
             <button
               type="button"
-              disabled={!ready || authenticated || loadingPhase !== null}
-              onClick={handlePrivyLogin}
+              disabled={!ready || authenticated || loadingPhase !== null || oauthLoading}
+              onClick={() => void handleGoogleLogin()}
               className="mt-4 w-full rounded border border-aeris-accent/40 bg-aeris-accent/15 px-3 py-2.5 text-body-sm font-semibold text-aeris-accent disabled:opacity-40 min-h-[44px]"
             >
-              Sign in to AERIS
+              Continue with Google
             </button>
+            <button
+              type="button"
+              disabled={!ready || authenticated || loadingPhase !== null}
+              onClick={handleWalletLogin}
+              className="mt-2 w-full rounded border border-aeris-border bg-aeris-bg/70 px-3 py-2.5 text-body-sm font-semibold text-aeris-text disabled:opacity-40 min-h-[44px]"
+            >
+              Connect wallet
+            </button>
+            {origin && (
+              <p className="mt-3 text-xs text-aeris-muted/80">
+                If you see &ldquo;Origin not allowed&rdquo;, add{" "}
+                <code className="text-aeris-text">{origin}</code> in Privy Dashboard →
+                Configuration → App settings → Domains → Allowed Origins.
+              </p>
+            )}
           </div>
         )}
 
@@ -190,9 +237,6 @@ export default function LoginPageClient() {
           </p>
         )}
 
-        <div className="mt-6 border-t border-aeris-border/70 pt-6">
-          <SupabaseOtpLogin onAuthenticated={redirectToDashboard} />
-        </div>
       </div>
     </div>
   );

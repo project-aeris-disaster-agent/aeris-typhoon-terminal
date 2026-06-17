@@ -1056,7 +1056,7 @@ export const SCENE_PRESETS = [
   },
   {
     id: "eastern-visayas",
-    label: "Eastern Visayas",
+    label: "Visayas",
     center: [125.0, 11.2] as [number, number],
     zoom: 10.5,
     pitch: 60,

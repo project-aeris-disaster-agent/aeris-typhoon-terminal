@@ -231,7 +231,6 @@ export const MapContainer = memo(function MapContainer({
           mode={mode}
           onChange={handleModeChange}
           onOpenPanahon={() => setExternalFrame("panahon")}
-          onOpenNoah={() => setExternalFrame("noah")}
           allow3d={allow3d}
         />
         <div className="hidden md:flex flex-col gap-2">

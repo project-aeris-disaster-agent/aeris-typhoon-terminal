@@ -38,6 +38,10 @@ import {
   renderWaterLevelsOnMap,
   setWaterLevelsVisibility,
 } from "@/services/water-levels";
+import {
+  ensureNagaBarangayLayers,
+  setNagaBarangayVisibility,
+} from "@/services/admin-boundaries";
 
 export function LayerLegend({
   map,
@@ -54,6 +58,7 @@ export function LayerLegend({
   const [waterLevelsActive, setWaterLevelsActive] = useState(false);
   const [waterLevelsLoading, setWaterLevelsLoading] = useState(false);
   const [waterLevelsError, setWaterLevelsError] = useState<string | null>(null);
+  const [barangaysActive, setBarangaysActive] = useState(false);
   // "View Buildings" toggles the full 3D building extrusion (Three.js
   // `lyr-three-scene` building group). Critical facilities live in a
   // separate group on the same layer and stay on regardless. Default OFF
@@ -138,6 +143,17 @@ export function LayerLegend({
       setOverlayVisibility(map, o.id, o.id === "par-boundary");
     }
   }, [map]);
+
+  useEffect(() => {
+    if (!map) return;
+    let cancelled = false;
+    void ensureNagaBarangayLayers(map).then(() => {
+      if (!cancelled) setNagaBarangayVisibility(map, barangaysActive);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [map, barangaysActive]);
 
   useEffect(() => {
     if (!map) return;
@@ -286,6 +302,12 @@ export function LayerLegend({
                 checked={waterLevelsActive}
                 onClick={() => setWaterLevelsActive((current) => !current)}
                 swatch="rgb(var(--aeris-accent))"
+              />
+              <LayerRadio
+                label="Barangays - Naga City"
+                checked={barangaysActive}
+                onClick={() => setBarangaysActive((current) => !current)}
+                swatch="#38bdf8"
               />
               <LayerRadio
                 label="View Buildings"

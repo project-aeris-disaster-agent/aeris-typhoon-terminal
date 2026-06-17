@@ -8,13 +8,11 @@ export function MapModeToggle({
   mode,
   onChange,
   onOpenPanahon,
-  onOpenNoah,
   allow3d = true,
 }: {
   mode: MapMode;
   onChange: (m: MapMode) => void;
   onOpenPanahon?: () => void;
-  onOpenNoah?: () => void;
   /** When false (mobile/touch devices), the 3D mode button is hidden. */
   allow3d?: boolean;
 }) {
@@ -29,7 +27,7 @@ export function MapModeToggle({
       <div className="mb-0.5 flex items-center gap-1 px-1.5 text-chrome uppercase tracking-wider text-aeris-muted">
         <span>View Mode</span>
         <HelpHint helpId="control.viewMode" side="right" />
-        {(onOpenPanahon || onOpenNoah) && (
+        {onOpenPanahon && (
           <HelpHint helpId="control.externalMaps" side="right" />
         )}
       </div>
@@ -64,19 +62,6 @@ export function MapModeToggle({
             <span className="block leading-none">PAGASA</span>
             <span className="block text-chrome normal-case tracking-normal opacity-80">
               PANaHON ↗
-            </span>
-          </button>
-        )}
-        {onOpenNoah && (
-          <button
-            type="button"
-            onClick={onOpenNoah}
-            className="px-2.5 py-1 rounded transition-colors uppercase tracking-wider text-left text-aeris-muted hover:bg-aeris-accent/10 hover:text-aeris-accent"
-            title="Open UP NOAH rainfall contour map"
-          >
-            <span className="block leading-none">NOAH</span>
-            <span className="block text-chrome normal-case tracking-normal opacity-80">
-              Rainfall ↗
             </span>
           </button>
         )}

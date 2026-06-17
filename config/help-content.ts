@@ -111,9 +111,9 @@ export const HELP: Record<HelpId, HelpEntry> = {
   },
   "control.externalMaps": {
     title: "External Maps",
-    tip: "Open official external map tools (PAGASA PANaHON, UP NOAH) for authoritative hazard and flood data.",
+    tip: "Open official external map tools (PAGASA PANaHON) for authoritative hazard and flood data.",
     detail:
-      "These buttons open official external mapping tools such as PAGASA PANaHON and UP NOAH for authoritative, agency-sourced hazard and flood hazard maps.",
+      "This button opens the official PAGASA PANaHON external mapping tool for authoritative, agency-sourced hazard and flood hazard maps.",
   },
   "control.layers": {
     title: "Map Layers",

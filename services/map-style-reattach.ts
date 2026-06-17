@@ -2,6 +2,7 @@ import type { Map as MLMap } from "maplibre-gl";
 import type { BasemapTheme } from "@/config/basemap-style";
 import { ensureBasemapOverlays } from "@/services/map-basemap";
 import { reattachHazardLayersAfterStyleChange } from "@/services/hazard-layers";
+import { reattachNagaBarangayLayersAfterStyleChange } from "@/services/admin-boundaries";
 import { reattachLiveWeatherImageryAfterStyleChange } from "@/services/live-weather-overlay";
 import {
   applyMapViewMode,
@@ -25,6 +26,7 @@ export async function reattachMapOverlaysAfterStyleChange(
   ensureBasemapOverlays(map, ctx.theme);
   reattachSceneAfterStyleChange(map);
   await reattachHazardLayersAfterStyleChange(map, ctx.mode);
+  await reattachNagaBarangayLayersAfterStyleChange(map);
   reattachLiveWeatherImageryAfterStyleChange(map);
   setMapSceneTheme(map, ctx.theme);
   applyMapViewMode(map, ctx.mode);
