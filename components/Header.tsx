@@ -108,11 +108,11 @@ export const Header = memo(function Header({
 
   return (
     <>
-    <header className="relative z-40 h-12 px-3 flex items-center justify-between border-b border-aeris-border bg-aeris-surface/98 max-md:backdrop-blur-none md:bg-aeris-surface/95 md:backdrop-blur-md shrink-0 shadow-sm">
-      <div className="flex items-center gap-3">
-        <div className="relative z-10 flex items-center gap-2 min-w-0">
+    <header className="relative z-40 flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-aeris-border bg-aeris-surface/98 px-2 shadow-sm max-md:backdrop-blur-none sm:gap-3 sm:px-3 md:bg-aeris-surface/95 md:backdrop-blur-md">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+        <div className="relative z-10 flex min-w-0 items-center gap-1.5 sm:gap-2">
           <div
-            className="aeris-loading-glyph-spin shrink-0 h-7 w-7"
+            className="aeris-loading-glyph-spin h-7 w-7 shrink-0"
             aria-hidden
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -124,22 +124,22 @@ export const Header = memo(function Header({
               className="block h-full w-auto max-w-full object-contain object-left"
             />
           </div>
-          <span className="live-dot" aria-hidden />
-          <span className="text-body-sm font-semibold tracking-wide text-aeris-accent">
+          <span className="live-dot shrink-0" aria-hidden />
+          <span className="truncate text-body-sm font-semibold tracking-wide text-aeris-accent">
             A.E.R.I.S.
           </span>
-          <span className="hud-text text-aeris-muted hidden lg:inline">
+          <span className="hud-text hidden text-aeris-muted lg:inline">
             Emergency reporting for the Philippines
           </span>
         </div>
       </div>
 
-      <div className="relative z-10 flex min-w-0 flex-1 items-center justify-end gap-2">
+      <div className="relative z-10 flex min-w-0 shrink-0 items-center justify-end gap-1 sm:gap-2">
         <NewsTicker className="hidden md:flex max-w-[min(52vw,36rem)]" />
         <button
           type="button"
           onClick={toggleTheme}
-          className="flex h-8 items-center gap-1.5 rounded border border-aeris-border bg-aeris-bg/70 px-2 text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-text"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-aeris-border bg-aeris-bg/70 text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-text sm:w-auto sm:gap-1.5 sm:px-2"
           aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
           title="Toggle light/dark theme"
         >
@@ -148,7 +148,7 @@ export const Header = memo(function Header({
           ) : (
             <MoonIcon className="h-3.5 w-3.5" />
           )}
-          <span className="text-body-sm">{theme === "dark" ? "Dark" : "Light"}</span>
+          <span className="hidden text-body-sm sm:inline">{theme === "dark" ? "Dark" : "Light"}</span>
         </button>
         <div className="relative" ref={liveReportsTriggerRef}>
           <button
@@ -174,7 +174,7 @@ export const Header = memo(function Header({
             type="button"
             onClick={() => setProfileOpen((v) => !v)}
             className={clsx(
-              "flex h-8 items-center gap-1.5 rounded border px-2 transition-colors",
+              "flex h-8 shrink-0 items-center gap-1.5 rounded border px-1.5 transition-colors sm:px-2",
               profileOpen
                 ? "border-aeris-accent/40 bg-aeris-accent/10 text-aeris-accent"
                 : "border-aeris-border text-aeris-muted hover:border-aeris-accent/30 hover:text-aeris-text",
@@ -186,18 +186,22 @@ export const Header = memo(function Header({
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-aeris-accent/15 text-[10px] font-semibold text-aeris-accent">
               {(profile?.username ?? "A").slice(0, 1).toUpperCase()}
             </span>
-            <span className="text-body-sm tabular-nums">
+            <span className="hidden text-body-sm tabular-nums sm:inline">
               Lv {profile?.level ?? 0}
             </span>
           </button>
         )}
         {showAuthControls && <HeaderSignOut role={role} />}
         {online ? (
-          <Pill tone="ok">LIVE</Pill>
+          <Pill tone="ok" className="hidden sm:inline-flex">
+            LIVE
+          </Pill>
         ) : (
-          <Pill tone="warn">OFFLINE — stale data</Pill>
+          <Pill tone="warn" className="hidden max-w-[5.5rem] truncate sm:inline-flex">
+            OFFLINE
+          </Pill>
         )}
-        <span className="chrome-label text-aeris-muted tabular-nums hidden sm:inline">{time}</span>
+        <span className="chrome-label hidden tabular-nums text-aeris-muted md:inline">{time}</span>
       </div>
     </header>
     {showProfile && (

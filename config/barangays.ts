@@ -116,6 +116,37 @@ export function createFetchState<T>(initial: T | null = null): FetchState<T> {
   return { data: initial, loading: false, error: null };
 }
 
+/** The 27 official barangays of Naga City, Camarines Sur (alphabetical). */
+export const NAGA_BARANGAYS: readonly string[] = [
+  "Abella",
+  "Bagumbayan Norte",
+  "Bagumbayan Sur",
+  "Balatas",
+  "Calauag",
+  "Cararayan",
+  "Carolina",
+  "Concepcion Grande",
+  "Concepcion Pequeño",
+  "Dayangdang",
+  "Del Rosario",
+  "Dinaga",
+  "Igualdad Interior",
+  "Lerma",
+  "Liboton",
+  "Mabolo",
+  "Pacol",
+  "Panicuason",
+  "Peñafrancia",
+  "Sabang",
+  "San Felipe",
+  "San Francisco",
+  "San Isidro",
+  "Santa Cruz",
+  "Tabuco",
+  "Tinago",
+  "Triangulo",
+] as const;
+
 /** Island group display labels */
 export const ISLAND_GROUPS: Record<string, string> = {
   Luzon: "Luzon",

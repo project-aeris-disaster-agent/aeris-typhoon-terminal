@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { Pill } from "@/components/ui/Card";
+import { NAGA_BARANGAYS } from "@/config/barangays";
 import { levelProgress, MAX_LEVEL } from "@/lib/gamification";
 import { useUserProfile } from "@/services/profile-context";
 
@@ -15,6 +16,12 @@ const SOCIAL_FIELDS: { key: string; label: string; placeholder: string }[] = [
   { key: "website", label: "Website", placeholder: "https://…" },
 ];
 
+const OTHER_BARANGAY = "__other__";
+
+// Per-field XP awarded once when a field is first completed. Mirrors the
+// per-field awards in app/api/user/profile/route.ts so the UI can preview them.
+const FIELD_XP = { barangay: 10, phone: 10, social: 5 } as const;
+
 function shortenAddress(addr: string): string {
   if (addr.length <= 12) return addr;
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -24,9 +31,11 @@ export function ProfilePanel() {
   const { profile, loading, updateProfile } = useUserProfile();
 
   const [username, setUsername] = useState("");
-  const [barangay, setBarangay] = useState("");
+  const [barangaySelect, setBarangaySelect] = useState("");
+  const [barangayOther, setBarangayOther] = useState("");
   const [phone, setPhone] = useState("");
   const [socials, setSocials] = useState<Record<string, string>>({});
+  const [socialOpen, setSocialOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ tone: "ok" | "err"; msg: string } | null>(
     null,
@@ -36,15 +45,54 @@ export function ProfilePanel() {
   useEffect(() => {
     if (!profile) return;
     setUsername(profile.username ?? "");
-    setBarangay(profile.barangay ?? "");
+    const savedBarangay = profile.barangay ?? "";
+    if (savedBarangay && NAGA_BARANGAYS.includes(savedBarangay)) {
+      setBarangaySelect(savedBarangay);
+      setBarangayOther("");
+    } else if (savedBarangay) {
+      setBarangaySelect(OTHER_BARANGAY);
+      setBarangayOther(savedBarangay);
+    } else {
+      setBarangaySelect("");
+      setBarangayOther("");
+    }
     setPhone(profile.phone ?? "");
     setSocials(profile.socials ?? {});
+    if (profile.socials && Object.keys(profile.socials).length > 0) {
+      setSocialOpen(true);
+    }
   }, [profile]);
+
+  const resolvedBarangay = useMemo(
+    () =>
+      barangaySelect === OTHER_BARANGAY
+        ? barangayOther.trim()
+        : barangaySelect.trim(),
+    [barangaySelect, barangayOther],
+  );
 
   const progress = useMemo(
     () => levelProgress(profile?.xp ?? 0),
     [profile?.xp],
   );
+
+  const hasSocial = useMemo(
+    () => Object.values(socials).some((v) => v.trim().length > 0),
+    [socials],
+  );
+
+  // Profile-completion checklist drives the "more fields, more XP" hint.
+  const completion = useMemo(() => {
+    const items = [
+      { key: "barangay", label: "Barangay", done: resolvedBarangay.length > 0, xp: FIELD_XP.barangay },
+      { key: "phone", label: "Phone number", done: phone.trim().length > 0, xp: FIELD_XP.phone },
+      { key: "social", label: "A social link", done: hasSocial, xp: FIELD_XP.social },
+    ];
+    const earned = items.filter((i) => i.done).reduce((sum, i) => sum + i.xp, 0);
+    const total = items.reduce((sum, i) => sum + i.xp, 0);
+    const doneCount = items.filter((i) => i.done).length;
+    return { items, earned, total, doneCount };
+  }, [resolvedBarangay, phone, hasSocial]);
 
   if (loading && !profile) {
     return (
@@ -83,7 +131,7 @@ export function ProfilePanel() {
     );
     const result = await updateProfile({
       username: username.trim(),
-      barangay: barangay.trim() || null,
+      barangay: resolvedBarangay || null,
       phone: phone.trim() || null,
       socials: cleanedSocials,
     });
@@ -98,19 +146,38 @@ export function ProfilePanel() {
   return (
     <div className="flex h-full flex-col overflow-y-auto p-3">
       {/* Identity + level */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-aeris-accent/30 bg-aeris-accent/10 text-body-lg font-semibold text-aeris-accent">
           {profile.username.slice(0, 1).toUpperCase()}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="truncate text-body-sm font-semibold text-aeris-text">
             {profile.username}
           </div>
           <div className="truncate text-xs text-aeris-muted">
             {profile.email ?? "No email linked"}
           </div>
+          {profile.proxyWalletAddress ? (
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              className="mt-0.5 flex items-center gap-1.5 font-mono text-xs text-aeris-muted hover:text-aeris-accent"
+              title="Copy wallet address"
+            >
+              <span className="truncate">
+                {shortenAddress(profile.proxyWalletAddress)}
+              </span>
+              <span className="shrink-0 opacity-70">
+                {copied ? "Copied" : "Copy"}
+              </span>
+            </button>
+          ) : (
+            <div className="mt-0.5 text-xs text-aeris-muted">
+              Wallet provisioning…
+            </div>
+          )}
         </div>
-        <div className="ml-auto">
+        <div className="shrink-0">
           <Pill tone="accent">Lv {profile.level}</Pill>
         </div>
       </div>
@@ -136,31 +203,45 @@ export function ProfilePanel() {
         </div>
       </div>
 
-      {/* Proxy wallet */}
+      {/* Profile completion → XP hint */}
       <div className="mt-3 rounded-md border border-aeris-border bg-aeris-bg/60 p-2">
-        <div className="chrome-label text-aeris-muted">Proxy wallet (SKALE-Base)</div>
-        {profile.proxyWalletAddress ? (
-          <button
-            type="button"
-            onClick={() => void handleCopy()}
-            className="mt-1 flex w-full items-center justify-between gap-2 text-left font-mono text-xs text-aeris-text hover:text-aeris-accent"
-            title="Copy wallet address"
-          >
-            <span className="truncate">
-              {shortenAddress(profile.proxyWalletAddress)}
-            </span>
-            <span className="shrink-0 text-aeris-muted">
-              {copied ? "Copied" : "Copy"}
-            </span>
-          </button>
-        ) : (
-          <div className="mt-1 text-xs text-aeris-muted">
-            Provisioning… reload after your wallet is created.
-          </div>
-        )}
+        <div className="flex items-center justify-between">
+          <span className="chrome-label text-aeris-muted">Complete your profile</span>
+          <span className="font-mono text-xs text-aeris-accent">
+            +{completion.earned}/{completion.total} XP
+          </span>
+        </div>
+        <ul className="mt-1.5 space-y-1">
+          {completion.items.map((item) => (
+            <li
+              key={item.key}
+              className="flex items-center justify-between text-xs"
+            >
+              <span
+                className={clsx(
+                  "flex items-center gap-1.5",
+                  item.done ? "text-aeris-text" : "text-aeris-muted",
+                )}
+              >
+                <span
+                  className={clsx(
+                    "inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border text-[9px] leading-none",
+                    item.done
+                      ? "border-aeris-ok/50 bg-aeris-ok/15 text-aeris-ok"
+                      : "border-aeris-border text-transparent",
+                  )}
+                >
+                  ✓
+                </span>
+                {item.label}
+              </span>
+              <span className="font-mono text-aeris-muted">+{item.xp}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
-      {/* Editable details */}
+      {/* Editable basics */}
       <div className="mt-3 space-y-2.5">
         <Field label="Username">
           <input
@@ -171,15 +252,32 @@ export function ProfilePanel() {
             placeholder="username"
           />
         </Field>
+
         <Field label="Barangay">
-          <input
-            value={barangay}
-            onChange={(e) => setBarangay(e.target.value)}
+          <select
+            value={barangaySelect}
+            onChange={(e) => setBarangaySelect(e.target.value)}
             className={inputClass}
-            maxLength={120}
-            placeholder="Barangay, City"
-          />
+          >
+            <option value="">Select barangay…</option>
+            {NAGA_BARANGAYS.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+            <option value={OTHER_BARANGAY}>Other…</option>
+          </select>
+          {barangaySelect === OTHER_BARANGAY && (
+            <input
+              value={barangayOther}
+              onChange={(e) => setBarangayOther(e.target.value)}
+              className={clsx(inputClass, "mt-2")}
+              maxLength={120}
+              placeholder="Enter your barangay / locality"
+            />
+          )}
         </Field>
+
         <Field label="Phone">
           <input
             value={phone}
@@ -191,26 +289,40 @@ export function ProfilePanel() {
           />
         </Field>
 
-        <div className="pt-1">
-          <div className="chrome-label mb-1 text-aeris-muted">Social links</div>
-          <div className="grid grid-cols-1 gap-2">
-            {SOCIAL_FIELDS.map((field) => (
-              <Field key={field.key} label={field.label} compact>
-                <input
-                  value={socials[field.key] ?? ""}
-                  onChange={(e) =>
-                    setSocials((prev) => ({
-                      ...prev,
-                      [field.key]: e.target.value,
-                    }))
-                  }
-                  className={inputClass}
-                  maxLength={200}
-                  placeholder={field.placeholder}
-                />
-              </Field>
-            ))}
-          </div>
+        {/* Optional collapsible social links */}
+        <div className="rounded-md border border-aeris-border bg-aeris-bg/40">
+          <button
+            type="button"
+            onClick={() => setSocialOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-2 py-2 text-left"
+            aria-expanded={socialOpen}
+          >
+            <span className="chrome-label text-aeris-muted">
+              Social{" "}
+              <span className="text-aeris-muted/70">(optional)</span>
+            </span>
+            <span className="text-xs text-aeris-muted">{socialOpen ? "▲" : "▼"}</span>
+          </button>
+          {socialOpen && (
+            <div className="grid grid-cols-1 gap-2 px-2 pb-2">
+              {SOCIAL_FIELDS.map((field) => (
+                <Field key={field.key} label={field.label} compact>
+                  <input
+                    value={socials[field.key] ?? ""}
+                    onChange={(e) =>
+                      setSocials((prev) => ({
+                        ...prev,
+                        [field.key]: e.target.value,
+                      }))
+                    }
+                    className={inputClass}
+                    maxLength={200}
+                    placeholder={field.placeholder}
+                  />
+                </Field>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

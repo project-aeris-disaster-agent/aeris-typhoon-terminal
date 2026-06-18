@@ -125,10 +125,24 @@ export async function PATCH(request: Request) {
     return jsonError("Failed to update profile.", 502);
   }
 
-  // Reward completing a richer profile once (barangay + phone + a social link).
+  // Reward profile completion incrementally: each field filled in grants XP
+  // once (more completed fields → more XP). Per-field dedupe keys keep every
+  // award idempotent, and the full-profile bonus is granted when all are set.
   const p = result.profile;
-  const hasSocials = p.socials && Object.keys(p.socials).length > 0;
-  if (p.barangay && p.phone && hasSocials) {
+  const hasSocials = Boolean(p.socials && Object.keys(p.socials).length > 0);
+  const fieldAwards: Array<{ key: string; filled: boolean; points: number }> = [
+    { key: "barangay", filled: Boolean(p.barangay), points: 10 },
+    { key: "phone", filled: Boolean(p.phone), points: 10 },
+    { key: "social", filled: hasSocials, points: 5 },
+  ];
+  for (const award of fieldAwards) {
+    if (!award.filled) continue;
+    await awardXp(userId, "profile_completed", {
+      points: award.points,
+      dedupeKey: `profile_field:${award.key}:${userId}`,
+    });
+  }
+  if (fieldAwards.every((a) => a.filled)) {
     await awardXp(userId, "profile_completed", {
       dedupeKey: `profile_completed:${userId}`,
     });

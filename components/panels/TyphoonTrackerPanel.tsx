@@ -20,12 +20,14 @@ import {
   type TyphoonFocusDetail,
   type ParStormsDetail,
 } from "@/services/live-weather-overlay";
+import { PdfOverlay, type PdfOverlayConfig } from "@/components/PdfOverlay";
 
 export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
   const [storms, setStorms] = useState<Typhoon[]>([]);
   const [outsidePar, setOutsidePar] = useState<OutsideParAdvisory | null>(null);
   const [outsideParGdacs, setOutsideParGdacs] = useState<Typhoon[]>([]);
   const [bulletins, setBulletins] = useState<PagasaBulletinItem[]>([]);
+  const [pdfPreview, setPdfPreview] = useState<PdfOverlayConfig | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const isFirstRun = useRef(true);
@@ -260,10 +262,28 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
             </span>
           </div>
           {bulletins.map((b) => (
-            <BulletinRow key={`${b.name}-${b.number}`} {...b} />
+            <BulletinRow
+              key={`${b.name}-${b.number}`}
+              {...b}
+              onOpen={() =>
+                setPdfPreview({
+                  url: b.pdfUrl,
+                  title: `${b.name} — Bulletin #${b.number}`,
+                  subtitle: b.final
+                    ? "PAGASA Tropical Cyclone Bulletin · Final"
+                    : "PAGASA Tropical Cyclone Bulletin",
+                })
+              }
+            />
           ))}
         </div>
       )}
+
+      <PdfOverlay
+        open={pdfPreview !== null}
+        onClose={() => setPdfPreview(null)}
+        config={pdfPreview}
+      />
 
       <FreshnessTag source="typhoons" />
 
@@ -344,16 +364,21 @@ function OutsideParThreatRow({
 }
 
 /**
- * One-line link to an official PAGASA Tropical Cyclone Bulletin PDF.
- * "final" bulletins are dimmed and tagged; active ones get an accent dot.
+ * One-line row that opens an official PAGASA Tropical Cyclone Bulletin PDF in
+ * an in-app popup. "final" bulletins are dimmed and tagged; active ones get an
+ * accent dot.
  */
-function BulletinRow({ name, number, final, pdfUrl }: PagasaBulletinItem) {
+function BulletinRow({
+  name,
+  number,
+  final,
+  onOpen,
+}: PagasaBulletinItem & { onOpen: () => void }) {
   return (
-    <a
-      href={pdfUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex items-center gap-2 rounded-md border border-aeris-border bg-aeris-bg/35 px-2 py-1.5 transition-colors hover:bg-aeris-accent/10 hover:border-aeris-accent/50"
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-2 rounded-md border border-aeris-border bg-aeris-bg/35 px-2 py-1.5 text-left transition-colors hover:bg-aeris-accent/10 hover:border-aeris-accent/50"
     >
       <span
         className={`inline-block h-2 w-2 shrink-0 rounded-full ${
@@ -373,9 +398,9 @@ function BulletinRow({ name, number, final, pdfUrl }: PagasaBulletinItem) {
         </div>
       </div>
       <span className="shrink-0 font-mono text-chrome uppercase tracking-wider text-aeris-accent">
-        PDF ↗
+        View PDF
       </span>
-    </a>
+    </button>
   );
 }
 

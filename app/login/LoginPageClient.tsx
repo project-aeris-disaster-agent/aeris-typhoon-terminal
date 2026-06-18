@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLogin, useLoginWithOAuth, usePrivy } from "@privy-io/react-auth";
 import { useTheme } from "@/components/providers/ThemeProvider";
@@ -34,16 +34,12 @@ export default function LoginPageClient() {
   const sessionError = searchParams.get("session_error");
   const { theme, toggleTheme } = useTheme();
   const privyEnabled = isPrivyConfigured();
-  const { ready, authenticated } = usePrivy();
+  const { ready, authenticated, getAccessToken } = usePrivy();
+  const redirectingRef = useRef(false);
   const [loadingPhase, setLoadingPhase] = useState<LoadingPhase>(
     privyEnabled ? "preparing" : null,
   );
   const [status, setStatus] = useState<string | null>(sessionError);
-  const [origin, setOrigin] = useState<string | null>(null);
-
-  useEffect(() => {
-    setOrigin(window.location.origin);
-  }, []);
 
   useEffect(() => {
     const rawNext = searchParams.get("next");
@@ -63,11 +59,25 @@ export default function LoginPageClient() {
     router.replace(query ? `/login?${query}` : "/login");
   }, [router, searchParams]);
 
-  const redirectToDashboard = useCallback(() => {
+  const redirectToDashboard = useCallback(async () => {
+    if (redirectingRef.current) return;
+    redirectingRef.current = true;
     setLoadingPhase("redirecting");
-    router.refresh();
-    router.replace(nextPath);
-  }, [router, nextPath]);
+
+    try {
+      if (privyEnabled) {
+        await Promise.race([
+          getAccessToken(),
+          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8_000)),
+        ]);
+      }
+      window.location.assign(nextPath);
+    } catch {
+      redirectingRef.current = false;
+      setLoadingPhase(null);
+      setStatus("Sign-in succeeded but redirect failed. Please try again.");
+    }
+  }, [nextPath, privyEnabled, getAccessToken]);
 
   const loginCallbacks = {
     onComplete: () => {
@@ -76,7 +86,7 @@ export default function LoginPageClient() {
       void fetch("/api/user/sync", { method: "POST", cache: "no-store" }).catch(
         () => undefined,
       );
-      redirectToDashboard();
+      void redirectToDashboard();
     },
     onError: () => {
       setLoadingPhase(null);
@@ -86,19 +96,7 @@ export default function LoginPageClient() {
 
   const { login } = useLogin(loginCallbacks);
 
-  const { initOAuth, loading: oauthLoading } = useLoginWithOAuth({
-    ...loginCallbacks,
-    onError: (errorCode) => {
-      setLoadingPhase(null);
-      const isOriginError =
-        typeof errorCode === "string" && errorCode.toLowerCase().includes("origin");
-      setStatus(
-        isOriginError
-          ? `Origin not allowed — add ${origin ?? window.location.origin} to Privy Dashboard → Configuration → App settings → Domains → Allowed Origins.`
-          : "Sign-in failed. Please try again.",
-      );
-    },
-  });
+  const { initOAuth, loading: oauthLoading } = useLoginWithOAuth(loginCallbacks);
 
   useEffect(() => {
     if (privyEnabled && ready && loadingPhase === "preparing") {
@@ -111,26 +109,24 @@ export default function LoginPageClient() {
     const timeout = window.setTimeout(() => {
       setLoadingPhase(null);
       setStatus(
-        (current) =>
-          current ??
-          `Privy could not initialize. Add ${origin ?? "this site's URL"} to Allowed Origins in the Privy Dashboard.`,
+        (current) => current ?? "Sign-in is temporarily unavailable. Please try again.",
       );
     }, 12_000);
     return () => window.clearTimeout(timeout);
-  }, [privyEnabled, ready, origin]);
+  }, [privyEnabled, ready]);
 
   useEffect(() => {
     fetch("/api/auth/role", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.userId) redirectToDashboard();
+        if (data?.userId) void redirectToDashboard();
       })
       .catch(() => undefined);
   }, [redirectToDashboard]);
 
   useEffect(() => {
     if (privyEnabled && ready && authenticated) {
-      redirectToDashboard();
+      void redirectToDashboard();
     }
   }, [privyEnabled, ready, authenticated, redirectToDashboard]);
 
@@ -175,16 +171,16 @@ export default function LoginPageClient() {
           </div>
         )}
 
-        <AerisLoadingLogo
-          variant="logo"
-          size="md"
-          className="mx-auto mb-4 max-h-12"
+        <img
+          src="/assets/Bagyo%20Logo%405x.png"
+          alt="bagyo.app"
+          className="mx-auto mb-6 h-14 w-auto"
         />
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-body-lg font-semibold text-aeris-text">AERIS Dashboard</h1>
+            <h1 className="text-body-lg font-semibold text-aeris-text">Sign in</h1>
             <p className="mt-2 text-body-sm text-aeris-muted">
-              Sign in to view live disaster intelligence for the Philippines.
+              Live disaster intelligence for the Philippines.
             </p>
           </div>
           <button
@@ -204,17 +200,12 @@ export default function LoginPageClient() {
         </div>
 
         {privyEnabled && (
-          <div className="mt-6 border-t border-aeris-border/70 pt-6">
-            <p className="text-label text-aeris-muted">Primary sign-in</p>
-            <p className="mt-1 text-body-sm text-aeris-muted">
-              Google uses a full-page redirect (works in Cursor&apos;s browser). Wallet connect may
-              require Chrome or Firefox.
-            </p>
+          <div className="mt-6 space-y-2 border-t border-aeris-border/70 pt-6">
             <button
               type="button"
               disabled={!ready || authenticated || loadingPhase !== null || oauthLoading}
               onClick={() => void handleGoogleLogin()}
-              className="mt-4 w-full rounded border border-aeris-accent/40 bg-aeris-accent/15 px-3 py-2.5 text-body-sm font-semibold text-aeris-accent disabled:opacity-40 min-h-[44px]"
+              className="w-full rounded border border-aeris-accent/40 bg-aeris-accent/15 px-3 py-2.5 text-body-sm font-semibold text-aeris-accent disabled:opacity-40 min-h-[44px]"
             >
               Continue with Google
             </button>
@@ -222,17 +213,10 @@ export default function LoginPageClient() {
               type="button"
               disabled={!ready || authenticated || loadingPhase !== null}
               onClick={handleWalletLogin}
-              className="mt-2 w-full rounded border border-aeris-border bg-aeris-bg/70 px-3 py-2.5 text-body-sm font-semibold text-aeris-text disabled:opacity-40 min-h-[44px]"
+              className="w-full rounded border border-aeris-border bg-aeris-bg/70 px-3 py-2.5 text-body-sm font-semibold text-aeris-text disabled:opacity-40 min-h-[44px]"
             >
               Connect wallet
             </button>
-            {origin && (
-              <p className="mt-3 text-xs text-aeris-muted/80">
-                If you see &ldquo;Origin not allowed&rdquo;, add{" "}
-                <code className="text-aeris-text">{origin}</code> in Privy Dashboard →
-                Configuration → App settings → Domains → Allowed Origins.
-              </p>
-            )}
           </div>
         )}
 
