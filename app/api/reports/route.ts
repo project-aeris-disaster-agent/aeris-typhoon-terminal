@@ -9,6 +9,8 @@ import {
   listSupabaseReports,
   supabaseReportsEnabled,
 } from "@/lib/supabase-reports";
+import { resolveSessionUserId } from "@/lib/session-user";
+import { awardXp } from "@/lib/gamification";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -106,6 +108,10 @@ export async function POST(req: NextRequest) {
   const validated = validate(body);
   if (!validated.ok) return jsonError(validated.error, 400);
 
+  // Optional: award the reporter XP when they are signed in (anonymous reports
+  // simply skip the award). Resolved up front so both storage paths can use it.
+  const reporterId = await resolveSessionUserId();
+
   const { category, description, position, photoUrl, locationAccuracyM, metadata } = validated.data;
   const ipHash = await hashIp(ip);
   const reportMetadata = {
@@ -137,7 +143,14 @@ export async function POST(req: NextRequest) {
         locationAccuracyM,
         ipHash: report.ipHash,
         metadata: reportMetadata,
+        reporterUserId: reporterId ?? undefined,
       });
+      if (reporterId) {
+        await awardXp(reporterId, "submit_report", {
+          refId: publicReport.id,
+          dedupeKey: `submit_report:${publicReport.id}`,
+        });
+      }
       return NextResponse.json(
         { report: publicReport },
         {
@@ -153,6 +166,13 @@ export async function POST(req: NextRequest) {
 
   await store.lpush(REPORTS_KEY, JSON.stringify(report));
   await store.ltrim(REPORTS_KEY, 0, MAX_RETENTION - 1);
+
+  if (reporterId) {
+    await awardXp(reporterId, "submit_report", {
+      refId: report.id,
+      dedupeKey: `submit_report:${report.id}`,
+    });
+  }
 
   const { ipHash: _ip, metadata: _metadata, ...publicReport } = report;
   return NextResponse.json(

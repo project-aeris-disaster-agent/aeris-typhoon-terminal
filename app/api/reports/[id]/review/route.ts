@@ -7,6 +7,7 @@ import {
 } from "@/lib/supabase-reports";
 import { jsonError } from "@/lib/api-response";
 import { authorizeReportReview } from "@/lib/review-auth";
+import { awardXp } from "@/lib/gamification";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +64,32 @@ export async function POST(
         requestSource: "aeris-dashboard-api",
       },
     });
+
+    // Gamification (idempotent per report; AI/system actors and the dev
+    // placeholder operator are excluded):
+    if (validated.data.action === "verify") {
+      //  • reward the human operator for verifying the report
+      const operatorId = validated.data.actorId ?? auth.actorId;
+      if (
+        validated.data.actorType === "human_operator" &&
+        operatorId &&
+        operatorId !== "dashboard-operator"
+      ) {
+        await awardXp(operatorId, "review_report", {
+          refId: reportId,
+          dedupeKey: `review_report:${reportId}`,
+        });
+      }
+
+      //  • reward the original reporter (Privy DID) once their report is verified
+      if (report.reporterUserId) {
+        await awardXp(report.reporterUserId, "report_verified", {
+          refId: reportId,
+          dedupeKey: `report_verified:${reportId}`,
+        });
+      }
+    }
+
     return NextResponse.json(
       { report },
       {

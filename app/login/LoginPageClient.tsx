@@ -71,6 +71,11 @@ export default function LoginPageClient() {
 
   const loginCallbacks = {
     onComplete: () => {
+      // Fire-and-forget: create/refresh the Supabase profile for this Privy
+      // user. The ProfileProvider also re-syncs on app load as a safety net.
+      void fetch("/api/user/sync", { method: "POST", cache: "no-store" }).catch(
+        () => undefined,
+      );
       redirectToDashboard();
     },
     onError: () => {

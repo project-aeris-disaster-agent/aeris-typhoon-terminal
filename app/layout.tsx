@@ -6,6 +6,7 @@ import { SWRegister } from "@/components/SWRegister";
 import { PrivyProviders } from "@/components/providers/PrivyProviders";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { RoleProvider } from "@/services/role-context";
+import { ProfileProvider } from "@/services/profile-context";
 import { THEME_COLOR_LIGHT, THEME_INIT_SCRIPT } from "@/lib/theme-storage";
 
 const inter = Inter({
@@ -55,7 +56,9 @@ export default function RootLayout({
       <body className={inter.className}>
         <ThemeProvider>
           <PrivyProviders>
-            <RoleProvider>{children}</RoleProvider>
+            <RoleProvider>
+              <ProfileProvider>{children}</ProfileProvider>
+            </RoleProvider>
           </PrivyProviders>
         </ThemeProvider>
         <SWRegister />

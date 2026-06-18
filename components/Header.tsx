@@ -8,7 +8,9 @@ import { Pill } from "./ui/Card";
 import { useConnectionStatus } from "@/services/connection-status";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useAerisRole } from "@/services/role-context";
+import { useUserProfile } from "@/services/profile-context";
 import { HeaderSignOut } from "@/components/HeaderSignOut";
+import { ProfileOverlay } from "@/components/ProfileOverlay";
 import { NewsTicker } from "@/components/NewsTicker";
 
 function AlertTriangleIcon(props: React.SVGProps<SVGSVGElement>) {
@@ -73,8 +75,11 @@ export const Header = memo(function Header({
   const online = useConnectionStatus();
   const { theme, toggleTheme } = useTheme();
   const { role, authDisabled, userId } = useAerisRole();
+  const { profile } = useUserProfile();
   const [time, setTime] = useState(formatManilaClock);
+  const [profileOpen, setProfileOpen] = useState(false);
   const showAuthControls = !authDisabled && Boolean(userId);
+  const showProfile = showAuthControls || authDisabled;
 
   useEffect(() => {
     const tick = () => setTime(formatManilaClock());
@@ -102,6 +107,7 @@ export const Header = memo(function Header({
   }, [liveReportsOpen, toggleLiveReports, closeLiveReports]);
 
   return (
+    <>
     <header className="relative z-40 h-12 px-3 flex items-center justify-between border-b border-aeris-border bg-aeris-surface/98 max-md:backdrop-blur-none md:bg-aeris-surface/95 md:backdrop-blur-md shrink-0 shadow-sm">
       <div className="flex items-center gap-3">
         <div className="relative z-10 flex items-center gap-2 min-w-0">
@@ -163,6 +169,28 @@ export const Header = memo(function Header({
           </button>
         </div>
 
+        {showProfile && (
+          <button
+            type="button"
+            onClick={() => setProfileOpen((v) => !v)}
+            className={clsx(
+              "flex h-8 items-center gap-1.5 rounded border px-2 transition-colors",
+              profileOpen
+                ? "border-aeris-accent/40 bg-aeris-accent/10 text-aeris-accent"
+                : "border-aeris-border text-aeris-muted hover:border-aeris-accent/30 hover:text-aeris-text",
+            )}
+            aria-expanded={profileOpen}
+            aria-label="Open profile"
+            title="Profile & level"
+          >
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-aeris-accent/15 text-[10px] font-semibold text-aeris-accent">
+              {(profile?.username ?? "A").slice(0, 1).toUpperCase()}
+            </span>
+            <span className="text-body-sm tabular-nums">
+              Lv {profile?.level ?? 0}
+            </span>
+          </button>
+        )}
         {showAuthControls && <HeaderSignOut role={role} />}
         {online ? (
           <Pill tone="ok">LIVE</Pill>
@@ -172,5 +200,9 @@ export const Header = memo(function Header({
         <span className="chrome-label text-aeris-muted tabular-nums hidden sm:inline">{time}</span>
       </div>
     </header>
+    {showProfile && (
+      <ProfileOverlay open={profileOpen} onClose={() => setProfileOpen(false)} />
+    )}
+    </>
   );
 });

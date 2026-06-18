@@ -34,6 +34,7 @@ type SupabaseReportRow = {
   ai_triage_rationale: string | null;
   ai_triage_confidence: number | null;
   dedupe_hash: string | null;
+  reporter_user_id: string | null;
   metadata?: Record<string, unknown> | null;
   created_at: string;
 };
@@ -62,6 +63,7 @@ export type PublicReport = {
   aiTriageRationale?: string;
   aiTriageConfidence?: number;
   dedupeHash?: string;
+  reporterUserId?: string;
   sessionId?: string;
   anonymousId?: string;
   metadata?: Record<string, unknown>;
@@ -94,6 +96,8 @@ export type ReportInsert = {
   sourceApp?: string;
   sourceChannel?: string;
   anonymousId?: string;
+  /** Privy DID of the authenticated reporter, when signed in. */
+  reporterUserId?: string;
 };
 
 export type ReportReviewAction =
@@ -149,6 +153,7 @@ const REPORT_COLUMNS = [
   "ai_triage_rationale",
   "ai_triage_confidence",
   "dedupe_hash",
+  "reporter_user_id",
   "created_at",
 ].join(",");
 
@@ -200,6 +205,7 @@ const REPORT_COLUMNS_WITHOUT_AI = [
   "onchain_tx_hash",
   "onchain_token_id",
   "onchain_minted_at",
+  "reporter_user_id",
   "created_at",
 ].join(",");
 
@@ -301,6 +307,7 @@ export async function createSupabaseReport(
     onchain_mint_status: "not_started",
     ai_priority: "pending",
     dedupe_hash: dedupeHash,
+    reporter_user_id: input.reporterUserId ?? null,
     metadata: {
       ...input.metadata,
       messageId: reportMessageId,
@@ -602,6 +609,7 @@ function toPublicReport(row: SupabaseReportRow): PublicReport {
     aiTriageRationale: row.ai_triage_rationale ?? undefined,
     aiTriageConfidence: row.ai_triage_confidence ?? undefined,
     dedupeHash: row.dedupe_hash ?? undefined,
+    reporterUserId: row.reporter_user_id ?? undefined,
     sessionId:
       typeof metadata.sessionId === "string" && metadata.sessionId.length > 0
         ? (metadata.sessionId as string)
@@ -774,6 +782,7 @@ function toLegacyInsertPayload(payload: Record<string, unknown>) {
     onchain_tx_hash,
     onchain_token_id,
     onchain_minted_at,
+    reporter_user_id,
     ...legacyPayload
   } = payload;
 
