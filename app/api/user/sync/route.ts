@@ -1,6 +1,8 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { fetchPrivyUserInfo } from "@/lib/privy-users";
 import { resolveSessionUserId, DEV_USER_ID } from "@/lib/session-user";
+import { touchUserLastActive } from "@/lib/storm-watch/recipients";
+import { maybeRunStormWatchOnSync } from "@/services/storm-watch-runner";
 import {
   ensureUserProfile,
   toClientProfile,
@@ -36,6 +38,16 @@ export async function POST() {
 
   if (!profile) {
     return jsonError("Failed to sync user profile.", 502);
+  }
+
+  await touchUserLastActive(userId);
+
+  if (process.env.STORM_WATCH_ON_SYNC !== "false") {
+    void maybeRunStormWatchOnSync().catch((error) => {
+      console.error(
+        `[storm-watch] sync hook failed: ${(error as Error).message}`,
+      );
+    });
   }
 
   return jsonOkNoStore({ profile: toClientProfile(profile) });

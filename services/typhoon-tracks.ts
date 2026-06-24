@@ -3,6 +3,7 @@
 import type { Map as MLMap } from "maplibre-gl";
 import { layerBeforeDynamicOverlays } from "@/config/map-layers";
 import type { LngLat } from "@/config/region";
+import { buildForecastCone, circlePolygon } from "@/lib/tc-geometry";
 import { recordFailure, recordSuccess } from "@/services/data-freshness";
 
 export type TyphoonPoint = {
@@ -152,7 +153,7 @@ export function renderTyphoonOnMap(map: MLMap, storm: Typhoon) {
   });
   setOrUpdateGeoJson(map, trackSourceId(storm.id, "cone"), {
     type: "Feature",
-    geometry: { type: "Polygon", coordinates: [buildCone(storm.forecast)] },
+    geometry: { type: "Polygon", coordinates: [buildForecastCone(storm.forecast)] },
     properties: {},
   });
   setOrUpdateGeoJson(map, trackSourceId(storm.id, "point"), {
@@ -254,19 +255,6 @@ function ensureLayer(map: MLMap, id: string, spec: maplibregl.AddLayerObject) {
   map.addLayer(spec, layerBeforeDynamicOverlays(map));
 }
 
-function buildCone(forecast: TyphoonPoint[]): LngLat[] {
-  if (forecast.length === 0) return [];
-  const left: LngLat[] = [];
-  const right: LngLat[] = [];
-  for (let i = 0; i < forecast.length; i++) {
-    const p = forecast[i];
-    const widening = 0.15 + i * 0.12;
-    left.push([p.position[0] - widening, p.position[1] + widening * 0.5]);
-    right.push([p.position[0] + widening, p.position[1] - widening * 0.5]);
-  }
-  return [...left, ...right.reverse(), left[0]];
-}
-
 function buildWindRings(storm: Typhoon): GeoJSON.Feature[] {
   const [lng, lat] = storm.position;
   const rings: GeoJSON.Feature[] = [];
@@ -290,18 +278,3 @@ function buildWindRings(storm: Typhoon): GeoJSON.Feature[] {
   return rings;
 }
 
-function circlePolygon(center: LngLat, radiusKm: number, steps = 64): LngLat[] {
-  const [lng, lat] = center;
-  const coords: LngLat[] = [];
-  const earth = 6371;
-  for (let i = 0; i <= steps; i++) {
-    const bearing = (i * 2 * Math.PI) / steps;
-    const dLat = (radiusKm / earth) * Math.cos(bearing);
-    const dLng =
-      (radiusKm / earth) *
-      Math.sin(bearing) /
-      Math.cos((lat * Math.PI) / 180);
-    coords.push([lng + (dLng * 180) / Math.PI, lat + (dLat * 180) / Math.PI]);
-  }
-  return coords;
-}

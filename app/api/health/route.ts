@@ -4,9 +4,19 @@ import {
   isProductionDeploy,
   supabaseAuthEnvMissing,
 } from "@/lib/auth-config";
+import {
+  getMindsAerisMindId,
+  getMindsBuilderApiKey,
+  isMindsNotifyEnabled,
+} from "@/lib/minds-config";
 import packageJson from "../../../package.json";
 
 export const runtime = "edge";
+
+function isMindsNotifyMisconfigured(): boolean {
+  if (!isMindsNotifyEnabled()) return false;
+  return !getMindsBuilderApiKey() || !getMindsAerisMindId();
+}
 
 const PROD_KV = ["KV_REST_API_URL", "KV_REST_API_TOKEN"] as const;
 const PROD_AUTH = [
@@ -42,6 +52,12 @@ export async function GET() {
     if (missing(PROD_CRON).length > 0) {
       warnings.push("CRON_SECRET not set (cron routes will 401)");
     }
+  }
+
+  if (isMindsNotifyMisconfigured()) {
+    warnings.push(
+      "MINDS_NOTIFY_ENABLED is true but MINDS_BUILDER_API_KEY or MINDS_AERIS_MIND_ID is missing",
+    );
   }
 
   const ok = required.length === 0;

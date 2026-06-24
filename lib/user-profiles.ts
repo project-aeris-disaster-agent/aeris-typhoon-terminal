@@ -21,12 +21,14 @@ export type UserProfileRow = {
   avatar_url: string | null;
   xp: number;
   level: number;
+  storm_email_enabled?: boolean;
+  last_active_at?: string | null;
   created_at: string;
   updated_at: string;
 };
 
 const PROFILE_COLUMNS =
-  "user_id,email,username,proxy_wallet_address,wallet_chain,barangay,phone,socials,avatar_url,xp,level,created_at,updated_at";
+  "user_id,email,username,proxy_wallet_address,wallet_chain,barangay,phone,socials,avatar_url,xp,level,storm_email_enabled,last_active_at,created_at,updated_at";
 
 export function userProfilesEnabled(): boolean {
   return supabaseRestConfig() !== null;
@@ -164,6 +166,7 @@ export type EditableProfileFields = {
   phone?: string | null;
   socials?: Record<string, string>;
   avatar_url?: string | null;
+  storm_email_enabled?: boolean;
 };
 
 export type UpdateProfileResult =
@@ -184,6 +187,9 @@ export async function updateUserProfile(
   if (fields.phone !== undefined) patch.phone = fields.phone;
   if (fields.socials !== undefined) patch.socials = fields.socials;
   if (fields.avatar_url !== undefined) patch.avatar_url = fields.avatar_url;
+  if (fields.storm_email_enabled !== undefined) {
+    patch.storm_email_enabled = fields.storm_email_enabled;
+  }
 
   if (Object.keys(patch).length === 0) {
     const current = await getUserProfile(userId);
@@ -232,6 +238,7 @@ export type ClientUserProfile = {
   phone: string | null;
   socials: Record<string, string>;
   avatarUrl: string | null;
+  stormEmailEnabled: boolean;
   xp: number;
   level: number;
   createdAt: string;
@@ -249,6 +256,7 @@ export function toClientProfile(row: UserProfileRow): ClientUserProfile {
     phone: row.phone,
     socials: row.socials ?? {},
     avatarUrl: row.avatar_url,
+    stormEmailEnabled: row.storm_email_enabled !== false,
     xp: row.xp,
     level: row.level,
     createdAt: row.created_at,

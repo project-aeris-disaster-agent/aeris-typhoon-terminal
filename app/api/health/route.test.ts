@@ -57,6 +57,19 @@ describe("/api/health", () => {
     expect(body.checks.missing).toContain("CRON_SECRET");
   });
 
+  it("warns when MINDS_NOTIFY_ENABLED without builder credentials", async () => {
+    process.env.MINDS_NOTIFY_ENABLED = "true";
+    delete process.env.MINDS_BUILDER_API_KEY;
+    delete process.env.MINDS_AERIS_MIND_ID;
+    const { GET } = await import("./route");
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(
+      body.checks.warnings.some((w: string) => w.includes("MINDS_NOTIFY_ENABLED")),
+    ).toBe(true);
+  });
+
   it("returns 200 in non-production even when KV is missing", async () => {
     delete process.env.KV_REST_API_URL;
     delete process.env.KV_REST_API_TOKEN;

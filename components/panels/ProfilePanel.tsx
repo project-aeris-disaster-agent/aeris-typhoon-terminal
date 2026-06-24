@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { Pill } from "@/components/ui/Card";
 import { NAGA_BARANGAYS } from "@/config/barangays";
@@ -17,6 +17,7 @@ const SOCIAL_FIELDS: { key: string; label: string; placeholder: string }[] = [
 ];
 
 const OTHER_BARANGAY = "__other__";
+const MINDS_LOGO = "/assets/minds_logo.svg";
 
 // Per-field XP awarded once when a field is first completed. Mirrors the
 // per-field awards in app/api/user/profile/route.ts so the UI can preview them.
@@ -41,6 +42,7 @@ export function ProfilePanel() {
     null,
   );
   const [copied, setCopied] = useState(false);
+  const stormEmailToggleInFlight = useRef(false);
 
   useEffect(() => {
     if (!profile) return;
@@ -119,6 +121,24 @@ export function ProfilePanel() {
     } catch {
       // ignore
     }
+  };
+
+  const handleStormEmailToggle = async (enabled: boolean) => {
+    if (stormEmailToggleInFlight.current) return;
+    stormEmailToggleInFlight.current = true;
+    setStatus(null);
+    const result = await updateProfile({ storm_email_enabled: enabled });
+    stormEmailToggleInFlight.current = false;
+    setStatus(
+      result.ok
+        ? {
+            tone: "ok",
+            msg: enabled
+              ? "AERIS-PAGASA email alerts enabled."
+              : "AERIS-PAGASA email alerts disabled.",
+          }
+        : { tone: "err", msg: result.error },
+    );
   };
 
   const handleSave = async () => {
@@ -203,7 +223,79 @@ export function ProfilePanel() {
         </div>
       </div>
 
-      {/* Profile completion → XP hint */}
+      {/* AERIS-PAGASA storm email alerts (Anomica Minds) */}
+      <div
+        className={clsx(
+          "minds-integration-card mt-3 shrink-0 rounded-md border bg-aeris-bg/60 p-2.5 relative",
+          profile.stormEmailEnabled && "minds-integration-card--active",
+        )}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
+        >
+          <div
+            className={clsx(
+              "minds-integration-card__wipe absolute inset-0",
+              profile.stormEmailEnabled && "minds-integration-card__wipe--on",
+            )}
+          />
+        </div>
+        <div className="relative z-[1] flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={MINDS_LOGO}
+                alt=""
+                aria-hidden
+                decoding="async"
+                className="h-7 w-auto shrink-0 object-contain object-left opacity-90"
+              />
+              <span className="chrome-label text-aeris-muted">
+                Anomica Minds™
+              </span>
+            </div>
+            <div className="mt-1.5 text-body-sm font-medium leading-snug text-aeris-text">
+              Automated Email Alerts for Tropical Cyclones (AERIS-PAGASA)
+            </div>
+            {profile.stormEmailEnabled ? (
+              <p className="mt-1 text-xs leading-relaxed text-aeris-muted">
+                PAGASA tropical cyclone bulletins sent to your profile email via
+                Minds.
+              </p>
+            ) : null}
+            {!profile.email && (
+              <p className="mt-1 text-xs text-aeris-warn">
+                Link an email via your login provider to receive alerts.
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={profile.stormEmailEnabled}
+            aria-label="Automated Email Alerts for Tropical Cyclones (AERIS-PAGASA)"
+            disabled={!profile.email}
+            onClick={() =>
+              void handleStormEmailToggle(!profile.stormEmailEnabled)
+            }
+            className={clsx(
+              "relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40",
+              profile.stormEmailEnabled
+                ? "border-aeris-accent/50 bg-aeris-accent/30"
+                : "border-aeris-border bg-aeris-elev",
+            )}
+          >
+            <span
+              className={clsx(
+                "absolute top-0.5 h-5 w-5 rounded-full bg-aeris-text shadow transition-[left] duration-150",
+                profile.stormEmailEnabled ? "left-[1.35rem]" : "left-0.5",
+              )}
+            />
+          </button>
+        </div>
+      </div>
       <div className="mt-3 rounded-md border border-aeris-border bg-aeris-bg/60 p-2">
         <div className="flex items-center justify-between">
           <span className="chrome-label text-aeris-muted">Complete your profile</span>

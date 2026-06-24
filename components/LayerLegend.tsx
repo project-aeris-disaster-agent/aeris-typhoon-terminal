@@ -42,6 +42,11 @@ import {
   ensureNagaBarangayLayers,
   setNagaBarangayVisibility,
 } from "@/services/admin-boundaries";
+import { useFloodAutomation } from "@/components/providers/FloodAutomationProvider";
+import {
+  defaultFloodVisualization,
+  mergeFloodVisualization,
+} from "@/lib/flood-automation";
 
 export function LayerLegend({
   map,
@@ -50,7 +55,13 @@ export function LayerLegend({
   map: MLMap | null;
   mode: MapMode;
 }) {
-  const [activePeriod, setActivePeriod] = useState<string | null>(null);
+  const {
+    plan: floodPlan,
+    manualOverride: floodManualOverride,
+    setManualOverride: setFloodManualOverride,
+    isAutoControlled: floodAutoControlled,
+    setAvailablePeriods,
+  } = useFloodAutomation();
   const [sceneSummary, setSceneSummary] = useState<SceneSummary | null>(null);
   const [sceneStatus, setSceneStatus] = useState<SceneStatus>(null);
   const [expanded, setExpanded] = useState(true);
@@ -79,6 +90,38 @@ export function LayerLegend({
     [floodPacks],
   );
   const hazardReadyPeriod = returnPeriods[0] ?? null;
+
+  useEffect(() => {
+    setAvailablePeriods(returnPeriods);
+  }, [returnPeriods, setAvailablePeriods]);
+
+  const activePeriod = useMemo(() => {
+    const fallback = floodPlan.returnPeriod ?? hazardReadyPeriod;
+    if (floodManualOverride === "off") return null;
+    if (floodManualOverride === "on") return fallback;
+    if (floodPlan.enabled) return fallback;
+    return null;
+  }, [
+    floodManualOverride,
+    floodPlan.enabled,
+    floodPlan.returnPeriod,
+    hazardReadyPeriod,
+  ]);
+
+  useEffect(() => {
+    if (!floodAutoControlled) return;
+    setFloodVizSettings(
+      mergeFloodVisualization(
+        defaultFloodVisualization(),
+        floodPlan.visualization,
+      ),
+    );
+  }, [floodAutoControlled, floodPlan.visualization]);
+
+  useEffect(() => {
+    if (!map || activePeriod === null) return;
+    setFloodLevelFilter(map, floodPlan.visibleLevels);
+  }, [map, activePeriod, floodPlan.visibleLevels]);
 
   useEffect(() => {
     if (!map) return;
@@ -287,15 +330,21 @@ export function LayerLegend({
             </div>
             <div className="space-y-0.5">
               <LayerRadio
-                label="Flood Projections"
-                checked={activePeriod !== null}
-                onClick={() =>
-                  setActivePeriod((current) =>
-                    current === null ? hazardReadyPeriod : null,
-                  )
+                label={
+                  floodAutoControlled && activePeriod !== null
+                    ? "Flood Projections (auto)"
+                    : "Flood Projections"
                 }
+                checked={activePeriod !== null}
+                onClick={() => {
+                  if (activePeriod !== null) {
+                    setFloodManualOverride("off");
+                  } else {
+                    setFloodManualOverride("on");
+                  }
+                }}
                 disabled={!hazardReadyPeriod}
-                swatch={FLOOD_LEVEL_STYLE.medium.color}
+                swatch={floodPlan.visualization.waterColor}
               />
               <LayerRadio
                 label="Water Levels"
@@ -333,9 +382,7 @@ export function LayerLegend({
               ) : null}
             </div>
             {activePeriod && (
-              <FloodHazardDetails
-                map={map}
-              />
+              <FloodHazardDetails plan={floodPlan} autoControlled={floodAutoControlled} />
             )}
           </div>
 
@@ -457,49 +504,46 @@ function LayerRadio({
 }
 
 function FloodHazardDetails({
-  map,
+  plan,
+  autoControlled,
 }: {
-  map: MLMap | null;
+  plan: {
+    scenarioLabel: string;
+    returnPeriod: string | null;
+    rainfallLevelIndex: 0 | 1 | 2;
+    reason: string;
+  };
+  autoControlled: boolean;
 }) {
   const rainfallSteps = ["low", "medium", "high"] as const;
-  const [rainfallLevelIndex, setRainfallLevelIndex] = useState(1);
-  const selectedRainfallLevel = rainfallSteps[rainfallLevelIndex];
-
-  const visibleLevels = useMemo(
-    () => ({
-      low: rainfallLevelIndex >= 0,
-      medium: rainfallLevelIndex >= 1,
-      high: rainfallLevelIndex >= 2,
-    }),
-    [rainfallLevelIndex],
-  );
-
-  useEffect(() => {
-    if (!map) return;
-    setFloodLevelFilter(map, visibleLevels);
-  }, [map, visibleLevels]);
+  const selectedRainfallLevel = rainfallSteps[plan.rainfallLevelIndex];
 
   return (
     <div className="mt-2 pt-2 space-y-2 border-t border-aeris-border/60">
       <div className="space-y-0.5">
         <div className="text-body-sm text-aeris-muted uppercase tracking-wider">
-          Rainfall
+          Hazard scenario
         </div>
-        <div className="rounded border border-aeris-border/60 bg-aeris-bg/35 p-2 space-y-1.5">
-          <div className="flex items-center justify-between text-body-sm uppercase tracking-wider text-aeris-muted">
-            <span>Level</span>
+        <div className="rounded border border-aeris-border/60 bg-aeris-bg/35 p-2 space-y-1">
+          <div className="flex items-center justify-between text-body-sm">
+            <span className="text-aeris-muted uppercase tracking-wider">
+              Return period
+            </span>
+            <span className="font-mono text-aeris-text">
+              {plan.returnPeriod ?? "5yr"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-body-sm">
+            <span className="text-aeris-muted uppercase tracking-wider">
+              Susceptibility
+            </span>
             <span>{FLOOD_LEVEL_STYLE[selectedRainfallLevel].label}</span>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={2}
-            step={1}
-            value={rainfallLevelIndex}
-            onChange={(event) => setRainfallLevelIndex(Number(event.target.value))}
-            className="w-full accent-aeris-accent"
-            aria-label="Rainfall level"
-          />
+          <p className="text-[10.5px] text-aeris-muted leading-snug pt-0.5">
+            {autoControlled
+              ? plan.reason
+              : `${plan.scenarioLabel} — manual override active.`}
+          </p>
         </div>
       </div>
     </div>

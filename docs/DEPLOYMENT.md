@@ -30,7 +30,7 @@ Uptime probes should fail on status **503** or `"ok": false`.
 - Crons require `CRON_SECRET` (Vercel injects for scheduled invocations). All
   privileged routes (`/api/cron/*`, `/api/internal/*`) are secure-by-default:
   with no secret configured they return **401**, never run open.
-- Node **20.x** on Vercel (`package.json` engines).
+- Node **22.x** on Vercel (`package.json` engines).
 - E2E smoke runs with `DASHBOARD_AUTH_DISABLED=true`. With auth enabled, `/`
   redirects to `/login`, so the map-canvas assertion only holds when auth is off.
 

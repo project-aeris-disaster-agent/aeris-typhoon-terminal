@@ -10,6 +10,8 @@ const customJestConfig = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
     "^@vercel/kv$": "<rootDir>/test/mocks/vercel-kv.ts",
+    "^@animocabrands/minds-client-lib$":
+      "<rootDir>/test/mocks/minds-client-lib.ts",
   },
   testPathIgnorePatterns: [
     "<rootDir>/.next/",

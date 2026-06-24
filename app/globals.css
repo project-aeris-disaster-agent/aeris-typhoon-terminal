@@ -271,6 +271,46 @@ body > div {
   }
 }
 
+.minds-integration-card {
+  border-color: rgb(var(--aeris-accent) / 0.42);
+  box-shadow: 0 0 0 1px rgb(var(--aeris-accent) / 0.14);
+  transition:
+    border-color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.minds-integration-card--active {
+  border-color: rgb(var(--aeris-accent) / 0.72);
+  box-shadow:
+    0 0 0 1px rgb(var(--aeris-accent) / 0.28),
+    0 0 14px rgb(var(--aeris-accent) / 0.14);
+}
+
+.minds-integration-card__wipe {
+  pointer-events: none;
+  background: rgb(var(--aeris-accent) / 0.22);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.minds-integration-card__wipe--on {
+  transform: scaleX(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .minds-integration-card__wipe {
+    transition: opacity 180ms ease;
+    transform: none;
+    opacity: 0;
+  }
+
+  .minds-integration-card__wipe--on {
+    opacity: 1;
+  }
+}
+
 .aeris-loading-glyph-spin {
   display: inline-flex;
   align-items: center;

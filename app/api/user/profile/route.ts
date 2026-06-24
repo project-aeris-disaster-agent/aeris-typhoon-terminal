@@ -11,6 +11,7 @@ import {
   updateUserProfile,
   userProfilesEnabled,
 } from "@/lib/user-profiles";
+import { touchUserLastActive } from "@/lib/storm-watch/recipients";
 import { awardXp } from "@/lib/gamification";
 
 export const runtime = "nodejs";
@@ -110,6 +111,13 @@ export async function PATCH(request: Request) {
     fields.socials = socials;
   }
 
+  if (record.storm_email_enabled !== undefined) {
+    if (typeof record.storm_email_enabled !== "boolean") {
+      return jsonError("storm_email_enabled must be a boolean.", 400);
+    }
+    fields.storm_email_enabled = record.storm_email_enabled;
+  }
+
   if (Object.keys(fields).length === 0) {
     return jsonError("No editable fields provided.", 400);
   }
@@ -125,27 +133,41 @@ export async function PATCH(request: Request) {
     return jsonError("Failed to update profile.", 502);
   }
 
-  // Reward profile completion incrementally: each field filled in grants XP
-  // once (more completed fields → more XP). Per-field dedupe keys keep every
-  // award idempotent, and the full-profile bonus is granted when all are set.
-  const p = result.profile;
-  const hasSocials = Boolean(p.socials && Object.keys(p.socials).length > 0);
-  const fieldAwards: Array<{ key: string; filled: boolean; points: number }> = [
-    { key: "barangay", filled: Boolean(p.barangay), points: 10 },
-    { key: "phone", filled: Boolean(p.phone), points: 10 },
-    { key: "social", filled: hasSocials, points: 5 },
-  ];
-  for (const award of fieldAwards) {
-    if (!award.filled) continue;
-    await awardXp(userId, "profile_completed", {
-      points: award.points,
-      dedupeKey: `profile_field:${award.key}:${userId}`,
-    });
+  if (fields.storm_email_enabled === true) {
+    void touchUserLastActive(userId);
   }
-  if (fieldAwards.every((a) => a.filled)) {
-    await awardXp(userId, "profile_completed", {
-      dedupeKey: `profile_completed:${userId}`,
-    });
+
+  const stormEmailOnly =
+    Object.keys(fields).length === 1 &&
+    fields.storm_email_enabled !== undefined;
+
+  if (!stormEmailOnly) {
+    // Reward profile completion incrementally: each field filled in grants XP
+    // once (more completed fields → more XP). Per-field dedupe keys keep every
+    // award idempotent, and the full-profile bonus is granted when all are set.
+    const p = result.profile;
+    const hasSocials = Boolean(p.socials && Object.keys(p.socials).length > 0);
+    const fieldAwards: Array<{ key: string; filled: boolean; points: number }> = [
+      { key: "barangay", filled: Boolean(p.barangay), points: 10 },
+      { key: "phone", filled: Boolean(p.phone), points: 10 },
+      { key: "social", filled: hasSocials, points: 5 },
+    ];
+    for (const award of fieldAwards) {
+      if (!award.filled) continue;
+      await awardXp(userId, "profile_completed", {
+        points: award.points,
+        dedupeKey: `profile_field:${award.key}:${userId}`,
+      });
+    }
+    if (fieldAwards.every((a) => a.filled)) {
+      await awardXp(userId, "profile_completed", {
+        dedupeKey: `profile_completed:${userId}`,
+      });
+    }
+  }
+
+  if (stormEmailOnly) {
+    return jsonOkNoStore({ profile: toClientProfile(result.profile) });
   }
 
   const refreshed = (await getUserProfile(userId)) ?? result.profile;

@@ -22,6 +22,7 @@ export type ClientUserProfile = {
   phone: string | null;
   socials: Record<string, string>;
   avatarUrl: string | null;
+  stormEmailEnabled: boolean;
   xp: number;
   level: number;
   createdAt: string;
@@ -34,6 +35,7 @@ export type ProfileUpdateInput = {
   phone?: string | null;
   socials?: Record<string, string>;
   avatar_url?: string | null;
+  storm_email_enabled?: boolean;
 };
 
 export type ProfileUpdateResult =
@@ -52,6 +54,23 @@ const ProfileContext = createContext<ProfileState | null>(null);
 // Usage-time heartbeat cadence. The server only awards once per 15-min bucket,
 // so pinging more often just keeps totals current without farming XP.
 const HEARTBEAT_MS = 3 * 60 * 1000;
+
+function applyProfilePatch(
+  prev: ClientUserProfile,
+  input: ProfileUpdateInput,
+): ClientUserProfile {
+  return {
+    ...prev,
+    ...(input.username !== undefined && { username: input.username }),
+    ...(input.barangay !== undefined && { barangay: input.barangay }),
+    ...(input.phone !== undefined && { phone: input.phone }),
+    ...(input.socials !== undefined && { socials: input.socials }),
+    ...(input.avatar_url !== undefined && { avatarUrl: input.avatar_url }),
+    ...(input.storm_email_enabled !== undefined && {
+      stormEmailEnabled: input.storm_email_enabled,
+    }),
+  };
+}
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const { userId, authDisabled, loading: roleLoading } = useAerisRole();
@@ -107,6 +126,13 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   const updateProfile = useCallback(
     async (input: ProfileUpdateInput): Promise<ProfileUpdateResult> => {
+      let snapshot: ClientUserProfile | null = null;
+      setProfile((prev) => {
+        if (!prev) return prev;
+        snapshot = prev;
+        return applyProfilePatch(prev, input);
+      });
+
       try {
         const res = await fetch("/api/user/profile", {
           method: "PATCH",
@@ -118,11 +144,13 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
           error?: string;
         };
         if (!res.ok || !data.profile) {
+          if (snapshot) setProfile(snapshot);
           return { ok: false, error: data.error ?? "Failed to update profile." };
         }
         setProfile(data.profile);
         return { ok: true, profile: data.profile };
       } catch {
+        if (snapshot) setProfile(snapshot);
         return { ok: false, error: "Network error. Please try again." };
       }
     },

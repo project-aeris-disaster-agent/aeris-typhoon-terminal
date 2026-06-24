@@ -129,7 +129,7 @@ export const Header = memo(function Header({
             A.E.R.I.S.
           </span>
           <span className="hud-text hidden text-aeris-muted lg:inline">
-            Emergency reporting for the Philippines
+            {"// EARLY ACCESS // Emergency reporting for the Philippines"}
           </span>
         </div>
       </div>
@@ -189,9 +189,21 @@ export const Header = memo(function Header({
             <span className="hidden text-body-sm tabular-nums sm:inline">
               Lv {profile?.level ?? 0}
             </span>
+            {showAuthControls && (
+              <span
+                className={clsx(
+                  "hidden rounded-full border px-1.5 py-0 text-[10px] font-medium leading-4 md:inline",
+                  role === "admin"
+                    ? "border-aeris-ok/30 bg-aeris-ok/10 text-aeris-ok"
+                    : "border-aeris-warn/30 bg-aeris-warn/10 text-aeris-warn",
+                )}
+              >
+                {role}
+              </span>
+            )}
           </button>
         )}
-        {showAuthControls && <HeaderSignOut role={role} />}
+        {showAuthControls && <HeaderSignOut />}
         {online ? (
           <Pill tone="ok" className="hidden sm:inline-flex">
             LIVE

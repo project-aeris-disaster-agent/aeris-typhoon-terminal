@@ -3,12 +3,15 @@ import {
   persistWeatherReportBundle,
   supabaseAgentEnabled,
 } from "@/lib/supabase-agent";
+import { notifyWatchOfficer } from "@/lib/minds-watch-officer";
 import {
   composeWeatherReport,
   formatAgentWeatherMessage,
 } from "@/services/weather-report-compose";
 import {
   evaluateNationalReportTriggers,
+  evaluateVerdictChangeAlert,
+  extractVerdictLabelFromHeadline,
   type StoredWeatherReportMeta,
   type WeatherReportType,
 } from "@/services/weather-report-triggers";
@@ -21,6 +24,7 @@ export type WeatherReportRunResult = {
   reportId?: string;
   messageId?: string;
   severityScore?: number;
+  mindsNotified?: boolean;
 };
 
 export async function runNationalWeatherReportCycle(options?: {
@@ -82,11 +86,42 @@ export async function runNationalWeatherReportCycle(options?: {
   }
 
   if (!decision.shouldGenerate || !decision.reportType) {
+    const change = evaluateVerdictChangeAlert(
+      snapshot,
+      metaFrom(latestAny),
+      latestAny?.headline ?? null,
+      decision.triggerReason,
+    );
+
+    let mindsNotified = false;
+    if (change.shouldNotify) {
+      mindsNotified = await notifyWatchOfficer({
+        kind: "verdict_change",
+        digest: {
+          snapshot,
+          previousSeverityScore: latestAny?.severityScore ?? 0,
+          previousVerdictLabel: latestAny
+            ? extractVerdictLabelFromHeadline(latestAny.headline)
+            : null,
+          triggerReason: decision.triggerReason,
+          changeReason: change.reason,
+        },
+      }).catch((error) => {
+        console.error(
+          `[minds-watch] verdict change notify failed: ${(error as Error).message}`,
+        );
+        return false;
+      });
+    }
+
     return {
       generated: false,
       reportType: null,
-      triggerReason: decision.triggerReason,
+      triggerReason: change.shouldNotify
+        ? `verdict_change:${change.reason}`
+        : decision.triggerReason,
       severityScore: snapshot.severityScore,
+      mindsNotified,
     };
   }
 
@@ -106,6 +141,22 @@ export async function runNationalWeatherReportCycle(options?: {
     agentMessage,
   });
 
+  const mindsNotified = await notifyWatchOfficer({
+    kind: "weather_report",
+    digest: {
+      reportType: decision.reportType,
+      triggerReason: decision.triggerReason,
+      composed,
+      snapshot,
+      reportId: report.id,
+    },
+  }).catch((error) => {
+    console.error(
+      `[minds-watch] weather report notify failed: ${(error as Error).message}`,
+    );
+    return false;
+  });
+
   return {
     generated: true,
     reportType: decision.reportType,
@@ -113,5 +164,6 @@ export async function runNationalWeatherReportCycle(options?: {
     reportId: report.id,
     messageId: message.id,
     severityScore: snapshot.severityScore,
+    mindsNotified,
   };
 }

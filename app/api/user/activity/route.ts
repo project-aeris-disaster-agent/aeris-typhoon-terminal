@@ -2,6 +2,7 @@ import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveSessionUserId } from "@/lib/session-user";
 import { awardXp } from "@/lib/gamification";
+import { touchUserLastActive } from "@/lib/storm-watch/recipients";
 import { userProfilesEnabled } from "@/lib/user-profiles";
 
 export const runtime = "nodejs";
@@ -38,6 +39,8 @@ export async function POST() {
   const result = await awardXp(userId, "usage_time", {
     dedupeKey: `usage:${userId}:${bucket}`,
   });
+
+  await touchUserLastActive(userId);
 
   return jsonOkNoStore({
     awarded: result?.awarded ?? false,

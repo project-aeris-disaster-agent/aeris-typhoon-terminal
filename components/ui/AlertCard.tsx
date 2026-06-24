@@ -64,7 +64,14 @@ function normalizeText(text: string) {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-export function AlertCard({ alert }: { alert: Alert }) {
+export function AlertCard({
+  alert,
+  context,
+}: {
+  alert: Alert;
+  /** Optional relevance line (e.g. distance to selected map point). */
+  context?: string;
+}) {
   const tone = alertTone(alert.severity);
   const Icon = ALERT_SEVERITY_ICON[alert.severity];
   const showSummary =
@@ -108,6 +115,12 @@ export function AlertCard({ alert }: { alert: Alert }) {
       <p className="text-body-sm font-semibold text-aeris-text mb-0.5">
         {alert.title}
       </p>
+
+      {context ? (
+        <p className="text-[10.5px] text-aeris-muted leading-snug mb-0.5">
+          {context}
+        </p>
+      ) : null}
 
       {showSummary ? (
         <p className="text-body-sm text-aeris-text line-clamp-4">

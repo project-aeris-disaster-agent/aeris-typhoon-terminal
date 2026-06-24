@@ -14,6 +14,8 @@ export type GdacsAlert = {
   summary: string;
   issuedAt: string | null;
   url?: string;
+  lat?: number;
+  lon?: number;
 };
 
 const PH_RE =
@@ -98,6 +100,8 @@ function parseTcBlock(
     summary: `${windKph > 0 ? `${windKph} km/h` : "Intensity n/a"} · Active in PAR · ${severityText || "GDACS track"}`,
     issuedAt: dateModified ?? pubDate ?? null,
     url: link ?? `https://www.gdacs.org/report.aspx?eventtype=TC&eventid=${id}`,
+    lat,
+    lon: lng,
   };
 }
 

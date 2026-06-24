@@ -15,6 +15,12 @@ HTTP contract documented in the chat repo at
 There is intentionally **no** `NVIDIA_API_KEY` or `LLM_MODEL` in this repo —
 those live only on AERIS CHAT.
 
+## Minds (async layer)
+
+For **proactive** operator alerts (weather digests, urgent triage batches) and
+read-only live context for external Mind Skills, see [`MINDS_INTEGRATION.md`](MINDS_INTEGRATION.md).
+Minds does **not** replace the sync call sites below — it complements them.
+
 ## Call sites
 
 Every place in the dashboard that consumes the agent contract:

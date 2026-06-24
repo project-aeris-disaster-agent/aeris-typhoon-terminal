@@ -117,5 +117,7 @@ describe("buildAlertsFromGdacsRss", () => {
     expect(tc).toBeDefined();
     expect(tc?.issuedAt).toBe(lastAdvisory);
     expect(tc?.issuedAt).not.toBe(created);
+    expect(tc?.lat).toBe(14.5);
+    expect(tc?.lon).toBe(125.0);
   });
 });

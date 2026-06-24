@@ -20,6 +20,9 @@ export type TriageRunResult = {
   autoRejected?: boolean;
   broadcasted?: boolean;
   error?: string;
+  /** Present when triage succeeded — used by Minds Watch Officer digests. */
+  category?: string;
+  description?: string;
 };
 
 export type TriageBatchOptions = {
@@ -174,6 +177,8 @@ async function applyTriage(report: PublicReport): Promise<TriageRunResult> {
       result,
       autoRejected,
       broadcasted,
+      category: report.category,
+      description: report.description,
     };
   } catch (error) {
     const message = (error as Error).message;

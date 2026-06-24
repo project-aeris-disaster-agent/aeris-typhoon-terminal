@@ -49,8 +49,15 @@ import {
   type Alert,
   type AlertSeverity,
 } from "@/services/alerts";
+import { fetchActiveTyphoons, type Typhoon } from "@/services/typhoon-tracks";
+import {
+  filterAlertsForLocation,
+  worstLocationAlertSeverity,
+  type LocationAlert,
+} from "@/lib/location-alerts";
 import { FLOOD_LEVEL_STYLE, type FloodLevel } from "@/config/flood-colors";
 import { focusAddress3DContext } from "@/services/map-scene";
+import { useFloodAutomation } from "@/components/providers/FloodAutomationProvider";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -336,15 +343,13 @@ function useAsyncResource<T>(
 
 type SectionId = "storm" | "flood" | "alerts" | "help";
 
-const SECTION_IDS: SectionId[] = ["storm", "flood", "alerts", "help"];
+const SECTION_IDS: SectionId[] = ["storm", "alerts", "help", "flood"];
 
 function shouldOpenAlerts(
-  alertCount: number,
+  localAlertCount: number,
   worstAlertSeverity: AlertSeverity | null,
-  urgentVerdict: boolean,
 ): boolean {
-  if (urgentVerdict) return true;
-  if (alertCount > 0) return true;
+  if (localAlertCount > 0) return true;
   if (
     worstAlertSeverity &&
     SEVERITY_RANK[worstAlertSeverity] >= SEVERITY_RANK.watch
@@ -365,6 +370,8 @@ export function LocationInfoPanel({
   location: SelectedLocation | null;
   onClose: () => void;
 }) {
+  const { plan: floodAutomation, isAutoControlled: floodAutoControlled } =
+    useFloodAutomation();
   const key = location ? `${location.lat},${location.lon}` : null;
   const lat = location?.lat;
   const lon = location?.lon;
@@ -381,6 +388,24 @@ export function LocationInfoPanel({
     () => alertsResult?.alerts ?? [],
     [alertsResult],
   );
+  const { data: typhoonTracks, loading: typhoonsLoading } = useAsyncResource(
+    "active-typhoons",
+    async () => {
+      const result = await fetchActiveTyphoons();
+      return [...result.storms, ...result.outsideParGdacs] as Typhoon[];
+    },
+  );
+  const typhoons = typhoonTracks ?? [];
+
+  const { alerts: localAlerts } = useMemo(() => {
+    if (!location) return { alerts: [] as LocationAlert[], reasons: {} };
+    return filterAlertsForLocation(
+      location.lat,
+      location.lon,
+      alerts,
+      typhoons,
+    );
+  }, [location, alerts, typhoons]);
 
   const { data: osm, loading: osmLoading } = useAsyncResource<OsmContextPayload>(
     key,
@@ -458,15 +483,8 @@ export function LocationInfoPanel({
   );
 
   const worstAlertSeverity = useMemo<AlertSeverity | null>(
-    () =>
-      alerts.reduce<AlertSeverity | null>(
-        (acc, a) =>
-          !acc || SEVERITY_RANK[a.severity] > SEVERITY_RANK[acc]
-            ? a.severity
-            : acc,
-        null,
-      ),
-    [alerts],
+    () => worstLocationAlertSeverity(localAlerts),
+    [localAlerts],
   );
 
   const verdict = useMemo(
@@ -495,8 +513,10 @@ export function LocationInfoPanel({
 
   // First-paint "assessing" state: nothing has resolved yet.
   const isAssessing =
-    forecast === null && alerts.length === 0 && floodHits.length === 0 &&
-    (forecastLoading || alertsLoading || !map);
+    forecast === null &&
+    localAlerts.length === 0 &&
+    floodHits.length === 0 &&
+    (forecastLoading || alertsLoading || typhoonsLoading || !map);
 
   // ─── Actions ──────────────────────────────────────────────────────────────
 
@@ -579,7 +599,7 @@ export function LocationInfoPanel({
       }
       if (
         !userToggledRef.current.has("alerts") &&
-        shouldOpenAlerts(alerts.length, worstAlertSeverity, urgentVerdict)
+        shouldOpenAlerts(localAlerts.length, worstAlertSeverity)
       ) {
         next.alerts = true;
       }
@@ -588,7 +608,7 @@ export function LocationInfoPanel({
       }
       return next;
     });
-  }, [key, floodHits.length, alerts.length, worstAlertSeverity, urgentVerdict]);
+  }, [key, floodHits.length, localAlerts.length, worstAlertSeverity, urgentVerdict]);
 
   const toggleSection = useCallback((id: SectionId) => {
     userToggledRef.current.add(id);
@@ -630,11 +650,20 @@ export function LocationInfoPanel({
   }, [floodHits]);
 
   const alertsSummary = useMemo(() => {
-    if (alertsLoading) return "Loading…";
-    if (alerts.length === 0) return "None";
+    if (alertsLoading || typhoonsLoading) return "Loading…";
+    if (localAlerts.length === 0) return "None nearby";
     const sev = worstAlertSeverity ?? "info";
-    return `${alerts.length} active · ${sev}`;
-  }, [alertsLoading, alerts.length, worstAlertSeverity]);
+    const top = localAlerts[0];
+    if (localAlerts.length === 1 && top) {
+      return `${top.relevanceReason} · ${sev}`;
+    }
+    return `${localAlerts.length} nearby · ${sev}`;
+  }, [
+    alertsLoading,
+    typhoonsLoading,
+    localAlerts,
+    worstAlertSeverity,
+  ]);
 
   const helpSummary = useMemo(() => {
     if (osmLoading) return "Loading…";
@@ -724,54 +753,37 @@ export function LocationInfoPanel({
         </CollapsibleSection>
 
         <CollapsibleSection
-          id="flood"
-          title="Flood-hazard exposure"
-          Icon={Waves}
-          summary={floodSummary}
-          open={openSections.flood}
-          onToggle={() => toggleSection("flood")}
-        >
-          {floodHits.length === 0 ? (
-            <Hint>
-              No mapped flood pack covers this point, or the flood layer is
-              hidden. Toggle a return period in the legend to probe.
-            </Hint>
-          ) : (
-            <ul className="space-y-1">
-              {floodHits.map((h) => (
-                <FloodRow key={h.returnPeriod} hit={h} />
-              ))}
-            </ul>
-          )}
-        </CollapsibleSection>
-
-        <CollapsibleSection
           id="alerts"
-          title="Active national alerts"
+          title="Alerts near this point"
           Icon={Radio}
           summary={alertsSummary}
           open={openSections.alerts}
           onToggle={() => toggleSection("alerts")}
           trailing={
-            alertsLoading ? (
+            alertsLoading || typhoonsLoading ? (
               <Pill>loading</Pill>
             ) : (
-              <Pill tone={alerts.length > 0 ? "warn" : "ok"}>
-                {alerts.length}
+              <Pill tone={localAlerts.length > 0 ? "warn" : "ok"}>
+                {localAlerts.length}
               </Pill>
             )
           }
         >
-          {!alertsLoading && alerts.length === 0 ? (
-            <div className="flex items-center gap-1.5 text-body-sm text-aeris-ok">
-              <CheckCircle2 size={14} />
-              <span>No GDACS or PAGASA bulletins in effect.</span>
+          {!alertsLoading && !typhoonsLoading && localAlerts.length === 0 ? (
+            <div className="space-y-1.5 text-body-sm">
+              <div className="flex items-center gap-1.5 text-aeris-ok">
+                <CheckCircle2 size={14} />
+                <span>No advisories appear to affect this location.</span>
+              </div>
+              <p className="text-[10.5px] text-aeris-muted leading-snug pl-5">
+                View all national alerts in the Alerts Feed sidebar →
+              </p>
             </div>
           ) : (
             <ul className="space-y-2">
-              {alerts.slice(0, 3).map((a) => (
+              {localAlerts.slice(0, 3).map((a) => (
                 <li key={a.id}>
-                  <AlertCard alert={a} />
+                  <AlertCard alert={a} context={a.relevanceReason} />
                 </li>
               ))}
             </ul>
@@ -806,6 +818,41 @@ export function LocationInfoPanel({
               className="max-h-52 -mx-1 px-1"
               render={(nf) => <FacilityRow item={nf} />}
             />
+          )}
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          id="flood"
+          title="Flood-hazard exposure"
+          Icon={Waves}
+          summary={floodSummary}
+          open={openSections.flood}
+          onToggle={() => toggleSection("flood")}
+          trailing={
+            floodAutoControlled && floodAutomation.enabled ? (
+              <Pill tone="accent">auto</Pill>
+            ) : undefined
+          }
+        >
+          {floodHits.length === 0 ? (
+            <Hint>
+              {floodAutomation.enabled
+                ? floodAutomation.reason
+                : "No mapped flood pack covers this point yet. Flood projections turn on automatically when rainfall or typhoon risk is anticipated."}
+            </Hint>
+          ) : (
+            <>
+              {floodAutoControlled && floodAutomation.enabled ? (
+                <p className="text-[10.5px] text-aeris-muted leading-snug mb-1.5">
+                  {floodAutomation.reason}
+                </p>
+              ) : null}
+              <ul className="space-y-1">
+                {floodHits.map((h) => (
+                  <FloodRow key={h.returnPeriod} hit={h} />
+                ))}
+              </ul>
+            </>
           )}
         </CollapsibleSection>
       </div>

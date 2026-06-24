@@ -1,4 +1,8 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
+import {
+  notifyWatchOfficer,
+  type TriageDigestItem,
+} from "@/lib/minds-watch-officer";
 import { triagePendingBatchDetailed } from "@/services/triage-runner";
 
 export const runtime = "nodejs";
@@ -52,6 +56,27 @@ export async function GET(request: Request) {
     safetyMarginMs,
   });
 
+  const triageDigestItems: TriageDigestItem[] = summary.results
+    .filter((row) => row.triaged && row.result)
+    .map((row) => ({
+      reportId: row.reportId,
+      category: row.category ?? "unknown",
+      description: row.description ?? "",
+      priority: row.result!.priority,
+      rationale: row.result!.rationale,
+      confidence: row.result!.confidence,
+    }));
+
+  const mindsNotified = await notifyWatchOfficer({
+    kind: "triage_batch",
+    items: triageDigestItems,
+  }).catch((error) => {
+    console.error(
+      `[minds-watch] triage notify failed: ${(error as Error).message}`,
+    );
+    return false;
+  });
+
   const elapsedMs = Date.now() - startedAt;
   return jsonOkNoStore({
     ok: true,
@@ -62,6 +87,7 @@ export async function GET(request: Request) {
     broadcasted: summary.results.filter((r) => r.broadcasted).length,
     stoppedEarly: summary.stoppedEarly,
     remaining: summary.remaining,
+    mindsNotified,
     elapsedMs,
     limit,
     maxDuration,

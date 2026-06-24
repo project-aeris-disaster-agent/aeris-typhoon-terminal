@@ -29,6 +29,7 @@ import {
   type AgentExplainDetail,
   type AgentExplainRequest,
 } from "@/lib/help/agent-explain";
+import { FloodAutomationProvider } from "@/components/providers/FloodAutomationProvider";
 
 export default function HomePage() {
   const [map, setMap] = useState<MLMap | null>(null);
@@ -127,6 +128,7 @@ export default function HomePage() {
 
   return (
     <YouTubeFeedsProvider>
+    <FloodAutomationProvider selectedLocation={selectedLocation}>
     <BootScreen />
     <div className="h-screen [@supports(height:100dvh)]:h-[100dvh] w-screen flex flex-col">
       <Header
@@ -247,6 +249,7 @@ export default function HomePage() {
       </div>
       <MobileTabBar active={mobileTab} onChange={setMobileTab} />
     </div>
+    </FloodAutomationProvider>
     </YouTubeFeedsProvider>
   );
 }

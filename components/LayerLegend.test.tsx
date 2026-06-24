@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LayerLegend, QuickViewsPanel } from "./LayerLegend";
+import { FloodAutomationProvider } from "@/components/providers/FloodAutomationProvider";
 
 // Mock the manifest + pack fetches so the dynamic hazard radios render.
 // Two packs (Cebu + Metro Manila) lets us prove setActiveFloodPeriod flips
@@ -40,7 +41,25 @@ beforeAll(() => {
   const emptyCollection = { type: "FeatureCollection", features: [] };
   global.fetch = jest.fn(async (url: RequestInfo | URL) => {
     const href = typeof url === "string" ? url : url.toString();
-    const body = href.endsWith("index.json") ? manifest : emptyCollection;
+    if (href.endsWith("index.json")) {
+      return {
+        ok: true,
+        json: async () => manifest,
+      } as Response;
+    }
+    if (href.includes("/api/alerts")) {
+      return {
+        ok: true,
+        json: async () => ({ alerts: [] }),
+      } as Response;
+    }
+    if (href.includes("/api/jtwc")) {
+      return {
+        ok: true,
+        json: async () => ({ storms: [], outsideParGdacs: [] }),
+      } as Response;
+    }
+    const body = emptyCollection;
     return {
       ok: true,
       json: async () => body,
@@ -60,7 +79,19 @@ function createMapStub() {
     setFilter: jest.fn(),
     flyTo: jest.fn(),
     getZoom: jest.fn(() => 9),
+    on: jest.fn(),
+    off: jest.fn(),
+    once: jest.fn(),
+    getStyle: jest.fn(() => ({ layers: [] })),
   };
+}
+
+function renderLayerLegend(map: ReturnType<typeof createMapStub>, mode: "2d" | "3d") {
+  return render(
+    <FloodAutomationProvider selectedLocation={null}>
+      <LayerLegend map={map as never} mode={mode} />
+    </FloodAutomationProvider>,
+  );
 }
 
 describe("LayerLegend", () => {
@@ -71,13 +102,15 @@ describe("LayerLegend", () => {
     render(
       <>
         <QuickViewsPanel map={map as never} />
-        <LayerLegend map={map as never} mode="3d" />
+        <FloodAutomationProvider selectedLocation={null}>
+          <LayerLegend map={map as never} mode="3d" />
+        </FloodAutomationProvider>
       </>,
     );
 
-    // Wait for the manifest to resolve and render the 5-yr radio.
+    // Wait for the manifest to resolve and render the flood toggle.
     const floodButton = await screen.findByRole("button", {
-      name: "Flood Projections",
+      name: /Flood Projections/i,
     });
 
     map.setLayoutProperty.mockClear();
@@ -154,10 +187,10 @@ describe("LayerLegend", () => {
     const user = userEvent.setup();
     const map = createMapStub();
 
-    render(<LayerLegend map={map as never} mode="2d" />);
+    renderLayerLegend(map, "2d");
 
     const floodButton = await screen.findByRole("button", {
-      name: "Flood Projections",
+      name: /Flood Projections/i,
     });
     map.setLayoutProperty.mockClear();
     await user.click(floodButton);
@@ -191,7 +224,7 @@ describe("LayerLegend", () => {
   });
 
   it("shows a scene warning message when the 3D context pack fails", async () => {
-    render(<LayerLegend map={createMapStub() as never} mode="3d" />);
+    renderLayerLegend(createMapStub(), "3d");
 
     fireEvent(
       window,
@@ -205,7 +238,7 @@ describe("LayerLegend", () => {
 
   it("collapses and expands the control panel", async () => {
     const user = userEvent.setup();
-    render(<LayerLegend map={createMapStub() as never} mode="2d" />);
+    renderLayerLegend(createMapStub(), "2d");
 
     const toggle = screen.getByRole("button", { name: /Layers/ });
     expect(screen.getByText("Hazard")).toBeInTheDocument();

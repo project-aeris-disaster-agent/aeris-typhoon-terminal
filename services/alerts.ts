@@ -13,6 +13,8 @@ export type Alert = {
   issuedAt: string | null;
   url?: string;
   region?: string;
+  lat?: number;
+  lon?: number;
 };
 
 export type AlertsFetchResult = {

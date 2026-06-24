@@ -22,6 +22,70 @@ const BREAKING_DEBOUNCE_HOURS = 4;
 const DAILY_INTERVAL_HOURS = 24;
 const BREAKING_SCORE_DELTA = 8;
 const BREAKING_MIN_SCORE = 28;
+/** Lighter Minds ping when conditions shift but no full brief is warranted. */
+export const VERDICT_CHANGE_SCORE_DELTA = 5;
+export const VERDICT_CHANGE_DEBOUNCE_HOURS = 2;
+
+export type VerdictChangeDecision = {
+  shouldNotify: boolean;
+  reason: string;
+};
+
+export function extractVerdictLabelFromHeadline(headline: string): string | null {
+  const match = headline.match(/:\s*(.+?)\s*—\s*Philippines/i);
+  return match?.[1]?.trim() ?? null;
+}
+
+export function evaluateVerdictChangeAlert(
+  snapshot: NationalWeatherSnapshot,
+  latestAny: StoredWeatherReportMeta | null,
+  latestHeadline: string | null,
+  triggerReason: string,
+): VerdictChangeDecision {
+  if (!latestAny || !latestHeadline) {
+    return { shouldNotify: false, reason: "no_baseline" };
+  }
+
+  if (
+    triggerReason !== "no_trigger" &&
+    triggerReason !== "breaking_debounced"
+  ) {
+    return { shouldNotify: false, reason: "report_or_other_trigger" };
+  }
+
+  const hours = hoursSince(latestAny.createdAt);
+  const prevScore = latestAny.severityScore;
+  const scoreDelta = snapshot.severityScore - prevScore;
+  const absDelta = Math.abs(scoreDelta);
+
+  const prevLabel = extractVerdictLabelFromHeadline(latestHeadline);
+  const labelChanged =
+    Boolean(prevLabel) && prevLabel !== snapshot.verdict.label;
+
+  const signatureChanged = snapshot.alertSignature !== latestAny.alertSignature;
+
+  const reasons: string[] = [];
+  if (labelChanged) reasons.push(`verdict_${prevLabel}_to_${snapshot.verdict.label}`);
+  if (absDelta >= VERDICT_CHANGE_SCORE_DELTA) {
+    reasons.push(`severity_delta_${scoreDelta >= 0 ? "+" : ""}${scoreDelta}`);
+  }
+  if (signatureChanged && snapshot.severityScore >= BREAKING_MIN_SCORE) {
+    reasons.push("alert_signature_shift");
+  }
+
+  if (reasons.length === 0) {
+    return { shouldNotify: false, reason: "no_material_change" };
+  }
+
+  if (
+    hours < VERDICT_CHANGE_DEBOUNCE_HOURS &&
+    absDelta < BREAKING_SCORE_DELTA
+  ) {
+    return { shouldNotify: false, reason: "verdict_change_debounced" };
+  }
+
+  return { shouldNotify: true, reason: reasons.join(",") };
+}
 
 export function evaluateNationalReportTriggers(
   snapshot: NationalWeatherSnapshot,

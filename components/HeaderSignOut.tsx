@@ -1,13 +1,7 @@
 "use client";
 
 import { usePrivy } from "@privy-io/react-auth";
-import { Pill } from "./ui/Card";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
-import type { AerisRole } from "@/lib/aeris-roles";
-
-type HeaderSignOutProps = {
-  role: AerisRole;
-};
 
 function LogOutIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -17,15 +11,9 @@ function LogOutIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function SignOutControls({
-  role,
-  onSignOut,
-}: HeaderSignOutProps & { onSignOut: () => void | Promise<void> }) {
+function SignOutControls({ onSignOut }: { onSignOut: () => void | Promise<void> }) {
   return (
     <>
-      <Pill tone={role === "admin" ? "ok" : "warn"} className="hidden md:inline-flex">
-        {role}
-      </Pill>
       <button
         type="button"
         onClick={() => void onSignOut()}
@@ -40,7 +28,7 @@ function SignOutControls({
   );
 }
 
-function SupabaseSignOutButton({ role }: HeaderSignOutProps) {
+function SupabaseSignOutButton() {
   const signOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" });
     const supabase = createSupabaseBrowserClient();
@@ -48,10 +36,10 @@ function SupabaseSignOutButton({ role }: HeaderSignOutProps) {
     window.location.href = "/login";
   };
 
-  return <SignOutControls role={role} onSignOut={signOut} />;
+  return <SignOutControls onSignOut={signOut} />;
 }
 
-function PrivySignOutButton({ role }: HeaderSignOutProps) {
+function PrivySignOutButton() {
   const { logout, authenticated } = usePrivy();
 
   const signOut = async () => {
@@ -64,13 +52,13 @@ function PrivySignOutButton({ role }: HeaderSignOutProps) {
     window.location.href = "/login";
   };
 
-  return <SignOutControls role={role} onSignOut={signOut} />;
+  return <SignOutControls onSignOut={signOut} />;
 }
 
-export function HeaderSignOut({ role }: HeaderSignOutProps) {
+export function HeaderSignOut() {
   const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim();
   if (!privyAppId) {
-    return <SupabaseSignOutButton role={role} />;
+    return <SupabaseSignOutButton />;
   }
-  return <PrivySignOutButton role={role} />;
+  return <PrivySignOutButton />;
 }

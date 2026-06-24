@@ -1,4 +1,8 @@
-import { evaluateNationalReportTriggers } from "@/services/weather-report-triggers";
+import {
+  evaluateNationalReportTriggers,
+  evaluateVerdictChangeAlert,
+  extractVerdictLabelFromHeadline,
+} from "@/services/weather-report-triggers";
 import type { NationalWeatherSnapshot } from "@/services/weather-snapshot";
 
 function baseSnapshot(overrides: Partial<NationalWeatherSnapshot> = {}): NationalWeatherSnapshot {
@@ -94,5 +98,51 @@ describe("evaluateNationalReportTriggers", () => {
     );
     expect(decision.shouldGenerate).toBe(false);
     expect(decision.triggerReason).toBe("breaking_debounced");
+  });
+});
+
+describe("evaluateVerdictChangeAlert", () => {
+  const baseline = {
+    id: "d1",
+    reportType: "daily" as const,
+    severityScore: 20,
+    alertSignature: "sig-a",
+    triggerReason: "daily_floor",
+    createdAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
+  };
+
+  it("extracts verdict label from headline", () => {
+    expect(
+      extractVerdictLabelFromHeadline("Daily situational brief: Monitor — Philippines"),
+    ).toBe("Monitor");
+  });
+
+  it("notifies on verdict label change without full report", () => {
+    const snapshot = baseSnapshot({
+      severityScore: 22,
+      verdict: { tone: "warn", label: "Caution", reasons: ["Rain band"] },
+    });
+    const decision = evaluateVerdictChangeAlert(
+      snapshot,
+      baseline,
+      "Daily situational brief: Monitor — Philippines",
+      "no_trigger",
+    );
+    expect(decision.shouldNotify).toBe(true);
+    expect(decision.reason).toContain("verdict_Monitor_to_Caution");
+  });
+
+  it("skips when change is below thresholds", () => {
+    const snapshot = baseSnapshot({
+      severityScore: 21,
+      verdict: { tone: "ok", label: "Monitor", reasons: [] },
+    });
+    const decision = evaluateVerdictChangeAlert(
+      snapshot,
+      baseline,
+      "Daily situational brief: Monitor — Philippines",
+      "no_trigger",
+    );
+    expect(decision.shouldNotify).toBe(false);
   });
 });
