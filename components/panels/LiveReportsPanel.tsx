@@ -22,6 +22,7 @@ import {
 import { FreshnessTag } from "../ui/FreshnessTag";
 import { useAerisRole } from "@/services/role-context";
 import { mintExplorerTxUrl, shortTxHash } from "@/lib/onchain/explorer-links";
+import { formatAerisRoleLabel } from "@/lib/aeris-roles";
 
 const AI_PRIORITY_ORDER: Record<string, number> = {
   urgent: 0,
@@ -537,7 +538,7 @@ export function LiveReportsPanel({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {embedded && (
-            <Pill tone={canReview ? "ok" : "warn"}>{role}</Pill>
+            <Pill tone={canReview ? "ok" : "warn"}>{formatAerisRoleLabel(role)}</Pill>
           )}
           <FreshnessTag source="reports" />
         </div>

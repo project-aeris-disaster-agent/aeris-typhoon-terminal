@@ -60,6 +60,17 @@ describe("reduceBulletins", () => {
     expect(reduceBulletins(allFinal)!.hasActive).toBe(false);
   });
 
+  it("parses upstream index age seconds", () => {
+    const out = reduceBulletins({ ...FIXTURE, age: 742 });
+    expect(out!.indexAgeSeconds).toBe(742);
+  });
+
+  it("leaves indexAgeSeconds null when upstream age is missing or invalid", () => {
+    const { age: _age, ...withoutAge } = FIXTURE;
+    expect(reduceBulletins(withoutAge)!.indexAgeSeconds).toBeNull();
+    expect(reduceBulletins({ ...FIXTURE, age: -1 })!.indexAgeSeconds).toBeNull();
+  });
+
   it("returns an empty list (not null) when no bulletins are active", () => {
     const out = reduceBulletins({ error: false, bulletins: [] });
     expect(out).not.toBeNull();

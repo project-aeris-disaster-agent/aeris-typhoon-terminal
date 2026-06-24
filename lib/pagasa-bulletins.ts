@@ -20,9 +20,9 @@
  *         "link": "https://pubfiles.pagasa.dost.gov.ph/.../TCB%231_ester.pdf" }
  *   ], "age": 0 }
  *
- * Defensive throughout: any failure or shape drift yields null and the caller
- * treats bulletins as "not loaded" rather than breaking the request. Wrapped in
- * a circuit breaker and cached in-process for 15 minutes.
+ * Defensive throughout: upstream failures fall back to the last healthy snapshot
+ * when available. Wrapped in a circuit breaker with adaptive in-process TTL
+ * (shorter during active cyclones).
  */
 
 import { withBreaker } from "@/lib/circuit-breaker";
@@ -30,7 +30,10 @@ import { withBreaker } from "@/lib/circuit-breaker";
 const PAGASA_BULLETIN_LIST_URL = "https://pagasa.chlod.net/api/v1/bulletin/list";
 const PROVIDER_NOTE =
   "Index via pagasa-parser (pagasa.chlod.net); bulletins are PAGASA public-domain PDFs.";
-const CACHE_TTL_MS = 15 * 60 * 1000;
+const CACHE_TTL_QUIET_MS = 15 * 60 * 1000;
+const CACHE_TTL_ACTIVE_MS = 3 * 60 * 1000;
+const ERROR_BACKOFF_MS = 60 * 1000;
+const STALE_SERVE_MS = 20 * 60 * 1000;
 
 export type PagasaBulletin = {
   /** Cyclone name, title-cased (e.g. "Ester"). */
@@ -49,6 +52,12 @@ export type PagasaBulletins = {
   source: "pagasa-bulletins";
   via: string;
   fetchedAt: string;
+  /** Seconds since pagasa-parser last scraped PAGASA (upstream `age` field). */
+  indexAgeSeconds?: number | null;
+  /** True when serving a cached snapshot after a live fetch failure. */
+  stale?: boolean;
+  /** Human-readable note when data is degraded or cached. */
+  warning?: string;
   /** Any cyclone whose latest bulletin is not yet final. */
   hasActive: boolean;
   /** Latest bulletin per cyclone, active (non-final) first, then by name. */
@@ -66,9 +75,21 @@ type UpstreamBulletin = {
 type UpstreamResponse = {
   error?: unknown;
   bulletins?: unknown;
+  age?: unknown;
 };
 
-let cache: { at: number; value: PagasaBulletins | null } | null = null;
+export type FetchPagasaBulletinsOptions = {
+  bypassCache?: boolean;
+};
+
+type CacheEntry = {
+  at: number;
+  value: PagasaBulletins | null;
+  isError: boolean;
+};
+
+let cache: CacheEntry | null = null;
+let lastHealthy: { at: number; value: PagasaBulletins } | null = null;
 let inFlight: Promise<PagasaBulletins | null> | null = null;
 
 function titleCase(name: string): string {
@@ -85,6 +106,35 @@ function toNumber(v: unknown): number | null {
     if (Number.isFinite(n)) return n;
   }
   return null;
+}
+
+function parseIndexAge(v: unknown): number | null {
+  const n = toNumber(v);
+  if (n === null || n < 0) return null;
+  return Math.round(n);
+}
+
+function cacheTtlMs(value: PagasaBulletins | null): number {
+  if (value?.hasActive) return CACHE_TTL_ACTIVE_MS;
+  return CACHE_TTL_QUIET_MS;
+}
+
+function upstreamRevalidateSeconds(value: PagasaBulletins | null | undefined): number {
+  if (value?.hasActive) return 180;
+  return 900;
+}
+
+function staleSnapshotWarning(): string {
+  return "Live bulletin index unavailable; showing most recent successful snapshot.";
+}
+
+function buildStalePayload(base: PagasaBulletins): PagasaBulletins {
+  return {
+    ...base,
+    stale: true,
+    warning: staleSnapshotWarning(),
+    fetchedAt: new Date().toISOString(),
+  };
 }
 
 /**
@@ -128,38 +178,77 @@ export function reduceBulletins(payload: unknown): PagasaBulletins | null {
     source: "pagasa-bulletins",
     via: PROVIDER_NOTE,
     fetchedAt: new Date().toISOString(),
+    indexAgeSeconds: parseIndexAge(body.age),
     hasActive: bulletins.some((b) => !b.final),
     bulletins,
   };
 }
 
-export async function fetchPagasaBulletins(): Promise<PagasaBulletins | null> {
+async function fetchUpstream(
+  bypassCache: boolean,
+  hint: PagasaBulletins | null | undefined,
+): Promise<PagasaBulletins | null> {
+  return withBreaker(
+    "pagasa-bulletins",
+    async () => {
+      const res = await fetch(PAGASA_BULLETIN_LIST_URL, {
+        headers: {
+          "user-agent":
+            "AERIS-Dashboard/1.0 (+disaster-resilience; contact via repo)",
+          accept: "application/json",
+        },
+        ...(bypassCache
+          ? { cache: "no-store" as RequestCache }
+          : { next: { revalidate: upstreamRevalidateSeconds(hint) } }),
+      });
+      if (!res.ok) throw new Error(`PAGASA bulletins ${res.status}`);
+      return reduceBulletins(await res.json());
+    },
+    { cooldownMs: 300_000, timeoutMs: 8_000 },
+  );
+}
+
+export async function fetchPagasaBulletins(
+  options?: FetchPagasaBulletinsOptions,
+): Promise<PagasaBulletins | null> {
+  const bypass = options?.bypassCache === true;
   const now = Date.now();
-  if (cache && now - cache.at < CACHE_TTL_MS) return cache.value;
+
+  if (!bypass && cache) {
+    const ttl = cache.isError ? ERROR_BACKOFF_MS : cacheTtlMs(cache.value);
+    if (now - cache.at < ttl) {
+      return cache.value;
+    }
+  }
+
   if (inFlight) return inFlight;
 
   inFlight = (async () => {
     try {
-      const value = await withBreaker(
-        "pagasa-bulletins",
-        async () => {
-          const res = await fetch(PAGASA_BULLETIN_LIST_URL, {
-            headers: {
-              "user-agent":
-                "AERIS-Dashboard/1.0 (+disaster-resilience; contact via repo)",
-              accept: "application/json",
-            },
-            next: { revalidate: 900 },
-          });
-          if (!res.ok) throw new Error(`PAGASA bulletins ${res.status}`);
-          return reduceBulletins(await res.json());
-        },
-        { cooldownMs: 300_000, timeoutMs: 8_000 },
-      );
-      cache = { at: Date.now(), value };
-      return value;
+      const hint = cache?.value ?? lastHealthy?.value ?? null;
+      const value = await fetchUpstream(bypass, hint);
+      if (value) {
+        lastHealthy = { at: Date.now(), value };
+        cache = { at: Date.now(), value, isError: false };
+        return value;
+      }
+
+      if (lastHealthy && Date.now() - lastHealthy.at < STALE_SERVE_MS) {
+        const staleValue = buildStalePayload(lastHealthy.value);
+        cache = { at: Date.now(), value: staleValue, isError: true };
+        return staleValue;
+      }
+
+      cache = { at: Date.now(), value: null, isError: true };
+      return null;
     } catch {
-      cache = { at: Date.now(), value: null };
+      if (lastHealthy && Date.now() - lastHealthy.at < STALE_SERVE_MS) {
+        const staleValue = buildStalePayload(lastHealthy.value);
+        cache = { at: Date.now(), value: staleValue, isError: true };
+        return staleValue;
+      }
+
+      cache = { at: Date.now(), value: null, isError: true };
       return null;
     } finally {
       inFlight = null;
@@ -172,5 +261,6 @@ export async function fetchPagasaBulletins(): Promise<PagasaBulletins | null> {
 /** Test-only: reset the in-memory cache between unit tests. */
 export function __resetPagasaBulletinsCache() {
   cache = null;
+  lastHealthy = null;
   inFlight = null;
 }

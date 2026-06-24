@@ -113,6 +113,9 @@ export type AgentLiveContext = {
     waterLevels: string | null;
     pagasaDaily: string | null;
     pagasaBulletins: string | null;
+    pagasaBulletinsIndexAgeSeconds: number | null;
+    pagasaBulletinsStale: boolean;
+    pagasaBulletinsWarning: string | null;
     snapshot: string;
   };
 };
@@ -281,6 +284,9 @@ export async function buildAgentLiveContext(
       waterLevels: snapshot.sourcesFreshness.waterLevels,
       pagasaDaily: pagasaDaily?.fetchedAt ?? null,
       pagasaBulletins: pagasaBulletins?.fetchedAt ?? null,
+      pagasaBulletinsIndexAgeSeconds: pagasaBulletins?.indexAgeSeconds ?? null,
+      pagasaBulletinsStale: pagasaBulletins?.stale === true,
+      pagasaBulletinsWarning: pagasaBulletins?.warning ?? null,
       snapshot: snapshot.generatedAt,
     },
   };

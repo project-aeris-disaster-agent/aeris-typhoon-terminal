@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { lookupAerisRoleByUserId } from "@/lib/aeris-role-lookup";
 import { productionAuthMisconfigured } from "@/lib/auth-config";
+import { isMobileUserAgent } from "@/lib/mobile-access";
 import { verifyPrivyAccessToken } from "@/lib/privy-server";
 import { safePostLoginPath } from "@/lib/safe-redirect";
 
@@ -38,6 +40,31 @@ function misconfiguredResponse(pathname: string) {
 
 function hasPrivyOAuthParam(request: NextRequest) {
   return PRIVY_OAUTH_PARAMS.some((param) => request.nextUrl.searchParams.has(param));
+}
+
+function isMobileAccessExemptApi(pathname: string) {
+  return (
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/health") ||
+    pathname.startsWith("/api/user/sync")
+  );
+}
+
+async function blockMobileNonAdminApi(
+  request: NextRequest,
+  userId: string,
+): Promise<NextResponse | null> {
+  if (!isMobileUserAgent(request.headers.get("user-agent"))) return null;
+  if (!request.nextUrl.pathname.startsWith("/api/")) return null;
+  if (isMobileAccessExemptApi(request.nextUrl.pathname)) return null;
+
+  const role = await lookupAerisRoleByUserId(userId);
+  if (role === "admin") return null;
+
+  return NextResponse.json(
+    { error: "This application is best used on desktop. Visit bagyo.app on mobile." },
+    { status: 403 },
+  );
 }
 
 async function getSupabaseUserId(request: NextRequest): Promise<string | null> {
@@ -103,6 +130,9 @@ export async function middleware(request: NextRequest) {
   if (privyToken) {
     const verified = await verifyPrivyAccessToken(privyToken);
     if (verified) {
+      const mobileBlock = await blockMobileNonAdminApi(request, verified.userId);
+      if (mobileBlock) return mobileBlock;
+
       const response = NextResponse.next({
         request: { headers: request.headers },
       });
@@ -120,6 +150,9 @@ export async function middleware(request: NextRequest) {
 
   const supabaseUserId = await getSupabaseUserId(request);
   if (supabaseUserId) {
+    const mobileBlock = await blockMobileNonAdminApi(request, supabaseUserId);
+    if (mobileBlock) return mobileBlock;
+
     const response = NextResponse.next({
       request: { headers: request.headers },
     });

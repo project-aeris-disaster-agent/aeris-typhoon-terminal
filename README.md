@@ -41,7 +41,7 @@ incident reporting in one live terminal.
 | Open-Meteo | Wind/pressure/rainfall forecast | 1-6 hrs |
 | GDACS | Typhoon tracks + disaster alerts | ~5 min |
 | PAGASA | Daily weather / outside-PAR TC text (`/api/pagasa-daily`) | Daily |
-| PAGASA TCB | Active in-PAR Tropical Cyclone Bulletin index + official PDF links (`/api/pagasa-bulletins`, via pagasa-parser) | Per bulletin |
+| PAGASA TCB | Active in-PAR Tropical Cyclone Bulletin index + official PDF links (`/api/pagasa-bulletins`, via pagasa-parser) | 3–5 min during active TCs; 15 min otherwise |
 | Project NOAH | Flood + landslide hazard rasters | Static |
 | OpenStreetMap | Base tiles, roads, boundaries | Static |
 | Philippine RSS | Google News (PH weather/disaster), Rappler, Inquirer, GMA, PhilStar | 10 min |

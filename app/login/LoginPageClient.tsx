@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useLogin, useLoginWithOAuth, usePrivy } from "@privy-io/react-auth";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { AerisLoadingLogo } from "@/components/ui/AerisLoadingLogo";
+import { MobileDesktopGate } from "@/components/MobileDesktopGate";
+import { isMobileDeviceClient } from "@/lib/mobile-access";
 import { isPrivyConfigured } from "@/lib/privy-config";
 import { safePostLoginPath } from "@/lib/safe-redirect";
 
@@ -40,6 +42,16 @@ export default function LoginPageClient() {
     privyEnabled ? "preparing" : null,
   );
   const [status, setStatus] = useState<string | null>(sessionError);
+  const [mobile, setMobile] = useState(false);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMobile(isMobileDeviceClient());
+  }, []);
+
+  const mobileBlocked =
+    mobile && sessionRole !== null && sessionRole !== "admin";
+  const showMobileGate = mobile && (!authenticated || mobileBlocked);
 
   useEffect(() => {
     const rawNext = searchParams.get("next");
@@ -61,6 +73,25 @@ export default function LoginPageClient() {
 
   const redirectToDashboard = useCallback(async () => {
     if (redirectingRef.current) return;
+
+    if (mobile) {
+      try {
+        const res = await fetch("/api/auth/role", { cache: "no-store" });
+        const data = res.ok ? ((await res.json()) as { role?: string }) : null;
+        if (data?.role !== "admin") {
+          setSessionRole(data?.role ?? "guest_viewer");
+          redirectingRef.current = false;
+          setLoadingPhase(null);
+          setStatus("Mobile access is limited to admin wallet login.");
+          return;
+        }
+      } catch {
+        setLoadingPhase(null);
+        setStatus("Could not verify access. Please try again.");
+        return;
+      }
+    }
+
     redirectingRef.current = true;
     setLoadingPhase("redirecting");
 
@@ -77,7 +108,7 @@ export default function LoginPageClient() {
       setLoadingPhase(null);
       setStatus("Sign-in succeeded but redirect failed. Please try again.");
     }
-  }, [nextPath, privyEnabled, getAccessToken]);
+  }, [nextPath, privyEnabled, getAccessToken, mobile]);
 
   const loginCallbacks = {
     onComplete: () => {
@@ -119,10 +150,14 @@ export default function LoginPageClient() {
     fetch("/api/auth/role", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.userId) void redirectToDashboard();
+        if (!data?.userId) return;
+        setSessionRole(data.role ?? "guest_viewer");
+        if (!mobile || data.role === "admin") {
+          void redirectToDashboard();
+        }
       })
       .catch(() => undefined);
-  }, [redirectToDashboard]);
+  }, [redirectToDashboard, mobile]);
 
   useEffect(() => {
     if (privyEnabled && ready && authenticated) {
@@ -159,6 +194,14 @@ export default function LoginPageClient() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-aeris-bg px-4">
+      {showMobileGate && (
+        <MobileDesktopGate
+          showWalletLogin={privyEnabled && !mobileBlocked}
+          onWalletLogin={handleWalletLogin}
+          walletLoginDisabled={!ready || authenticated || loadingPhase !== null}
+        />
+      )}
+
       <div className="relative w-full max-w-md overflow-hidden rounded-lg border border-aeris-border bg-aeris-surface p-6 shadow-xl">
         {loadingMessage && (
           <div
@@ -199,7 +242,7 @@ export default function LoginPageClient() {
           </button>
         </div>
 
-        {privyEnabled && (
+        {privyEnabled && !mobile && (
           <div className="mt-6 space-y-2 border-t border-aeris-border/70 pt-6">
             <button
               type="button"

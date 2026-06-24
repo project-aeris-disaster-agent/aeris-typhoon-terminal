@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 import { memo, useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { AERIS_BRAND } from "@/lib/aeris-brand-assets";
+import { formatAerisRoleLabel, getAerisRoleDescription } from "@/lib/aeris-roles";
 import { Pill } from "./ui/Card";
 import { useConnectionStatus } from "@/services/connection-status";
 import { useTheme } from "@/components/providers/ThemeProvider";
@@ -12,6 +13,7 @@ import { useUserProfile } from "@/services/profile-context";
 import { HeaderSignOut } from "@/components/HeaderSignOut";
 import { ProfileOverlay } from "@/components/ProfileOverlay";
 import { NewsTicker } from "@/components/NewsTicker";
+import { useUnreadLiveReports } from "@/hooks/useUnreadLiveReports";
 
 function AlertTriangleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -80,6 +82,8 @@ export const Header = memo(function Header({
   const [profileOpen, setProfileOpen] = useState(false);
   const showAuthControls = !authDisabled && Boolean(userId);
   const showProfile = showAuthControls || authDisabled;
+  const unreadReports = useUnreadLiveReports(liveReportsOpen);
+  const hasUnreadReports = unreadReports > 0;
 
   useEffect(() => {
     const tick = () => setTime(formatManilaClock());
@@ -132,6 +136,18 @@ export const Header = memo(function Header({
             {"// EARLY ACCESS // Emergency reporting for the Philippines"}
           </span>
         </div>
+        {online ? (
+          <Pill tone="ok" className="hidden shrink-0 sm:inline-flex">
+            LIVE
+          </Pill>
+        ) : (
+          <Pill tone="warn" className="hidden max-w-[5.5rem] shrink-0 truncate sm:inline-flex">
+            OFFLINE
+          </Pill>
+        )}
+        <span className="chrome-label hidden shrink-0 tabular-nums text-aeris-muted md:inline">
+          {time}
+        </span>
       </div>
 
       <div className="relative z-10 flex min-w-0 shrink-0 items-center justify-end gap-1 sm:gap-2">
@@ -139,7 +155,7 @@ export const Header = memo(function Header({
         <button
           type="button"
           onClick={toggleTheme}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-aeris-border bg-aeris-bg/70 text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-text sm:w-auto sm:gap-1.5 sm:px-2"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-aeris-border bg-aeris-bg/70 text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-text"
           aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
           title="Toggle light/dark theme"
         >
@@ -148,24 +164,41 @@ export const Header = memo(function Header({
           ) : (
             <MoonIcon className="h-3.5 w-3.5" />
           )}
-          <span className="hidden text-body-sm sm:inline">{theme === "dark" ? "Dark" : "Light"}</span>
         </button>
         <div className="relative" ref={liveReportsTriggerRef}>
           <button
             type="button"
             onClick={toggleLiveReports}
             className={clsx(
-              "flex h-8 w-8 shrink-0 items-center justify-center rounded border transition-colors",
+              "flex h-8 shrink-0 items-center gap-1.5 rounded border px-2 transition-colors sm:px-2.5",
               liveReportsOpen
                 ? "border-aeris-accent/40 bg-aeris-accent/10 text-aeris-accent"
-                : "border-aeris-border text-aeris-muted hover:border-aeris-accent/30 hover:text-aeris-text",
+                : hasUnreadReports
+                  ? "border-aeris-danger/40 bg-aeris-danger/10 text-aeris-danger hover:border-aeris-danger/50"
+                  : "border-aeris-border text-aeris-muted hover:border-aeris-accent/30 hover:text-aeris-text",
             )}
             aria-expanded={liveReportsOpen}
             aria-controls="live-reports-popover"
-            aria-label="Live reports"
-            title="Live reports (shortcut 6)"
+            aria-label={
+              hasUnreadReports
+                ? `Live reports, ${unreadReports} unread`
+                : "Live reports"
+            }
+            title={
+              hasUnreadReports
+                ? `Live reports — ${unreadReports} unread (shortcut 6)`
+                : "Live reports (shortcut 6)"
+            }
           >
-            <AlertTriangleIcon className="h-4 w-4" />
+            <span className="relative shrink-0">
+              <AlertTriangleIcon className="h-4 w-4" />
+              {hasUnreadReports && !liveReportsOpen ? (
+                <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-aeris-danger px-0.5 text-[9px] font-bold leading-none text-white">
+                  {unreadReports > 99 ? "99+" : unreadReports}
+                </span>
+              ) : null}
+            </span>
+            <span className="hidden text-body-sm sm:inline">Reports</span>
           </button>
         </div>
 
@@ -197,23 +230,14 @@ export const Header = memo(function Header({
                     ? "border-aeris-ok/30 bg-aeris-ok/10 text-aeris-ok"
                     : "border-aeris-warn/30 bg-aeris-warn/10 text-aeris-warn",
                 )}
+                title={getAerisRoleDescription(role)}
               >
-                {role}
+                {formatAerisRoleLabel(role)}
               </span>
             )}
           </button>
         )}
         {showAuthControls && <HeaderSignOut />}
-        {online ? (
-          <Pill tone="ok" className="hidden sm:inline-flex">
-            LIVE
-          </Pill>
-        ) : (
-          <Pill tone="warn" className="hidden max-w-[5.5rem] truncate sm:inline-flex">
-            OFFLINE
-          </Pill>
-        )}
-        <span className="chrome-label hidden tabular-nums text-aeris-muted md:inline">{time}</span>
       </div>
     </header>
     {showProfile && (

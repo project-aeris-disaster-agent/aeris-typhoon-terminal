@@ -59,26 +59,76 @@ export type PagasaBulletinItem = {
   pdfUrl: string;
 };
 
+export type PagasaBulletinsFetchResult = {
+  bulletins: PagasaBulletinItem[];
+  fetchedAt: string | null;
+  indexAgeSeconds: number | null;
+  hasActive: boolean;
+  stale: boolean;
+  warning: string | null;
+};
+
+const EMPTY_BULLETINS: PagasaBulletinsFetchResult = {
+  bulletins: [],
+  fetchedAt: null,
+  indexAgeSeconds: null,
+  hasActive: false,
+  stale: false,
+  warning: null,
+};
+
 /**
  * Fetch the official PAGASA Tropical Cyclone Bulletin index from
- * `/api/pagasa-bulletins`. Returns [] on any failure — this is a supplementary
+ * `/api/pagasa-bulletins`. Returns empty metadata on failure — supplementary
  * link list, so it must never break the tracker.
  */
-export async function fetchPagasaBulletins(): Promise<PagasaBulletinItem[]> {
+export async function fetchPagasaBulletins(options?: {
+  refresh?: boolean;
+}): Promise<PagasaBulletinsFetchResult> {
   try {
-    const res = await fetch("/api/pagasa-bulletins", {
+    const url = options?.refresh
+      ? "/api/pagasa-bulletins?refresh=1"
+      : "/api/pagasa-bulletins";
+    const res = await fetch(url, {
       headers: { accept: "application/json" },
       cache: "no-store",
     });
-    if (!res.ok) return [];
     const data = (await res.json().catch(() => ({}))) as {
       ok?: boolean;
-      pagasaBulletins?: { bulletins?: PagasaBulletinItem[] } | null;
+      pagasaBulletins?: {
+        bulletins?: PagasaBulletinItem[];
+        fetchedAt?: string;
+        indexAgeSeconds?: number | null;
+        hasActive?: boolean;
+        stale?: boolean;
+        warning?: string;
+      } | null;
     };
-    const bulletins = data.pagasaBulletins?.bulletins;
-    return Array.isArray(bulletins) ? bulletins : [];
-  } catch {
-    return [];
+
+    if (!res.ok || !data.ok || !data.pagasaBulletins) {
+      recordFailure(
+        "pagasa-bulletins",
+        data.ok === false ? "index unavailable" : `HTTP ${res.status}`,
+      );
+      return EMPTY_BULLETINS;
+    }
+
+    recordSuccess("pagasa-bulletins");
+    const payload = data.pagasaBulletins;
+    return {
+      bulletins: Array.isArray(payload.bulletins) ? payload.bulletins : [],
+      fetchedAt: payload.fetchedAt ?? null,
+      indexAgeSeconds:
+        typeof payload.indexAgeSeconds === "number"
+          ? payload.indexAgeSeconds
+          : null,
+      hasActive: payload.hasActive === true,
+      stale: payload.stale === true,
+      warning: payload.warning ?? null,
+    };
+  } catch (error) {
+    recordFailure("pagasa-bulletins", (error as Error).message);
+    return EMPTY_BULLETINS;
   }
 }
 

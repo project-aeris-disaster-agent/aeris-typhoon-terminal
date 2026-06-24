@@ -55,6 +55,9 @@ export const ReportPingsSync = memo(function ReportPingsSync({
 
         latestReportsRef.current = reports;
         renderReportsOnMap(map, reports);
+        window.dispatchEvent(
+          new CustomEvent("aeris:reports-updated", { detail: { reports } }),
+        );
 
         // Confirm to the boot screen that the report-pings overlay is wired up
         // (feed reachable + layer rendered) before the terminal is revealed.

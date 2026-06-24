@@ -5,6 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { SWRegister } from "@/components/SWRegister";
 import { PrivyProviders } from "@/components/providers/PrivyProviders";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { MobileAccessGate } from "@/components/MobileAccessGate";
 import { RoleProvider } from "@/services/role-context";
 import { ProfileProvider } from "@/services/profile-context";
 import { THEME_COLOR_LIGHT, THEME_INIT_SCRIPT } from "@/lib/theme-storage";
@@ -57,7 +58,9 @@ export default function RootLayout({
         <ThemeProvider>
           <PrivyProviders>
             <RoleProvider>
-              <ProfileProvider>{children}</ProfileProvider>
+              <ProfileProvider>
+                <MobileAccessGate>{children}</MobileAccessGate>
+              </ProfileProvider>
             </RoleProvider>
           </PrivyProviders>
         </ThemeProvider>

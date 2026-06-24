@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { CardHeader, Pill } from "../ui/Card";
 import { usePanelHeaderBadge } from "@/components/panel-header-badge";
@@ -12,6 +12,7 @@ import {
   clearTyphoonFromMap,
   type OutsideParAdvisory,
   type PagasaBulletinItem,
+  type PagasaBulletinsFetchResult,
   type Typhoon,
 } from "@/services/typhoon-tracks";
 import {
@@ -27,6 +28,15 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
   const [outsidePar, setOutsidePar] = useState<OutsideParAdvisory | null>(null);
   const [outsideParGdacs, setOutsideParGdacs] = useState<Typhoon[]>([]);
   const [bulletins, setBulletins] = useState<PagasaBulletinItem[]>([]);
+  const [bulletinMeta, setBulletinMeta] = useState<PagasaBulletinsFetchResult>({
+    bulletins: [],
+    fetchedAt: null,
+    indexAgeSeconds: null,
+    hasActive: false,
+    stale: false,
+    warning: null,
+  });
+  const [bulletinRefreshing, setBulletinRefreshing] = useState(false);
   const [pdfPreview, setPdfPreview] = useState<PdfOverlayConfig | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,21 +113,44 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
     };
   }, []);
 
+  const loadBulletins = useCallback(async (refresh?: boolean) => {
+    const result = await fetchPagasaBulletins({ refresh });
+    setBulletins(result.bulletins);
+    setBulletinMeta(result);
+  }, []);
+
+  const handleRefreshBulletins = useCallback(async () => {
+    setBulletinRefreshing(true);
+    try {
+      await loadBulletins(true);
+    } finally {
+      setBulletinRefreshing(false);
+    }
+  }, [loadBulletins]);
+
   // Official PAGASA bulletins are supplementary PDF links; fetch them on their
   // own cadence so a slow JTWC feed never holds back (or is held back by) them.
   useEffect(() => {
     let cancelled = false;
-    const loadBulletins = async () => {
-      const list = await fetchPagasaBulletins();
-      if (!cancelled) setBulletins(list);
+    const pollMs =
+      bulletinMeta.hasActive || storms.length > 0
+        ? 3 * 60 * 1000
+        : 15 * 60 * 1000;
+
+    const run = async () => {
+      const result = await fetchPagasaBulletins();
+      if (cancelled) return;
+      setBulletins(result.bulletins);
+      setBulletinMeta(result);
     };
-    loadBulletins();
-    const id = window.setInterval(loadBulletins, 15 * 60 * 1000);
+
+    run();
+    const id = window.setInterval(run, pollMs);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [storms.length, bulletinMeta.hasActive]);
 
   useEffect(() => {
     if (focusedId && !storms.some((s) => s.id === focusedId)) {
@@ -251,16 +284,42 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
         </div>
       )}
 
-      {bulletins.length > 0 && (
+      {(bulletins.length > 0 || bulletinMeta.stale || bulletinMeta.warning) && (
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between px-0.5">
+          <div className="flex items-center justify-between gap-2 px-0.5">
             <span className="text-chrome uppercase tracking-wider text-aeris-muted">
               Official PAGASA bulletins
             </span>
-            <span className="text-chrome tracking-wider text-aeris-muted/80">
-              {bulletins.length}
-            </span>
+            <div className="flex items-center gap-2">
+              {bulletins.length > 0 && (
+                <span className="text-chrome tracking-wider text-aeris-muted/80">
+                  {bulletins.length}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleRefreshBulletins()}
+                disabled={bulletinRefreshing}
+                className="font-mono text-chrome uppercase tracking-wider text-aeris-accent transition-colors hover:text-aeris-text disabled:opacity-50"
+                aria-label="Refresh PAGASA bulletins"
+              >
+                {bulletinRefreshing ? "…" : "Refresh"}
+              </button>
+            </div>
           </div>
+          {bulletinMeta.warning && (
+            <div className="px-0.5 text-body-sm text-aeris-warn">
+              {bulletinMeta.warning}
+            </div>
+          )}
+          {bulletinMeta.indexAgeSeconds != null &&
+            bulletinMeta.indexAgeSeconds > 900 &&
+            bulletinMeta.hasActive && (
+              <div className="px-0.5 text-body-sm text-aeris-warn">
+                Parser index is {Math.round(bulletinMeta.indexAgeSeconds / 60)}m
+                old — new bulletins may not appear yet.
+              </div>
+            )}
           {bulletins.map((b) => (
             <BulletinRow
               key={`${b.name}-${b.number}`}
@@ -276,6 +335,11 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
               }
             />
           ))}
+          <FreshnessTag
+            source="pagasa-bulletins"
+            label="Bulletins"
+            hideWhenEmpty={false}
+          />
         </div>
       )}
 

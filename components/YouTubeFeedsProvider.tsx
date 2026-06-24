@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -20,7 +21,8 @@ import {
   type YtVideo,
 } from "@/services/youtube-feeds";
 
-const REFRESH_MS = 90 * 1000;
+const REFRESH_MS_ACTIVE = 90 * 1000;
+const REFRESH_MS_IDLE = 5 * 60 * 1000;
 
 type YouTubeFeedsState = YtFeedResult & {
   loading: boolean;
@@ -39,7 +41,14 @@ const YouTubeFeedsContext = createContext<YouTubeFeedsContextValue | null>(
   null,
 );
 
-export function YouTubeFeedsProvider({ children }: { children: ReactNode }) {
+export function YouTubeFeedsProvider({
+  children,
+  feedsExpanded = true,
+}: {
+  children: ReactNode;
+  /** When false (Intel Feeds collapsed), poll less often for map pings only. */
+  feedsExpanded?: boolean;
+}) {
   const [state, setState] = useState<YouTubeFeedsState>({
     videos: [],
     errors: [],
@@ -67,9 +76,38 @@ export function YouTubeFeedsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void refresh();
-    const id = window.setInterval(() => void refresh(), REFRESH_MS);
-    return () => window.clearInterval(id);
   }, [refresh]);
+
+  const prevFeedsExpandedRef = useRef(feedsExpanded);
+  useEffect(() => {
+    if (!prevFeedsExpandedRef.current && feedsExpanded) {
+      void refresh();
+    }
+    prevFeedsExpandedRef.current = feedsExpanded;
+  }, [feedsExpanded, refresh]);
+
+  useEffect(() => {
+    const intervalMs = feedsExpanded ? REFRESH_MS_ACTIVE : REFRESH_MS_IDLE;
+
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      void refresh();
+    };
+
+    const id = window.setInterval(tick, intervalMs);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [feedsExpanded, refresh]);
 
   const videosForNews = useMemo(
     () =>

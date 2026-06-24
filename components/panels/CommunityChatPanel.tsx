@@ -32,9 +32,11 @@ function toAgentLocation(location: SelectedLocation | null) {
 export function CommunityChatPanel({
   selectedLocation,
   explainRequest,
+  isActive = true,
 }: {
   selectedLocation: SelectedLocation | null;
   explainRequest?: AgentExplainRequest | null;
+  isActive?: boolean;
 }) {
   return (
     <div className="relative flex flex-col h-full min-h-0">
@@ -46,7 +48,7 @@ export function CommunityChatPanel({
       </div>
       <AgentAerisPanel
         selectedLocation={toAgentLocation(selectedLocation)}
-        isActive
+        isActive={isActive}
         explainRequest={explainRequest}
       />
     </div>

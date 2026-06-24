@@ -147,44 +147,43 @@ export function BottomPanel({
         </div>
       </div>
 
-      {/* Sub-panel grid — always mounted to preserve stream state */}
-      <div
-        className={clsx(
-          "h-[calc(100%-2rem)] overflow-hidden",
-          collapsed && "invisible",
-        )}
-        aria-hidden={collapsed}
-      >
-        {/* Desktop: horizontal columns; Mobile: vertical stack with overflow scroll */}
-        <div className="flex flex-col md:flex-row h-full md:divide-x md:divide-aeris-border overflow-y-auto md:overflow-hidden">
-          {SUB_PANELS.map((sp) => (
-            <div
-              key={sp.id}
-              className={clsx(
-                "flex flex-col transition-[opacity,width] duration-200 overflow-hidden",
-                "md:flex-1 md:min-w-0",
-                !openPanels[sp.id] && "md:w-0 md:flex-none",
-                openPanels[sp.id]
-                  ? "border-b border-aeris-border md:border-b-0"
-                  : "hidden md:block",
-              )}
-            >
-              {openPanels[sp.id] && (
-                <div className="flex-1 overflow-y-auto p-2 min-h-0 md:h-full">
-                  {sp.id === "webcams" && <LiveWebcamsPanel map={map ?? null} />}
-                  {sp.id === "news" && <NewsLivestreamsPanel />}
-                  {sp.id === "location" && (
-                    <CommunityChatPanel
-                      selectedLocation={selectedLocation}
-                      explainRequest={explainRequest}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+      {/* Sub-panel grid — unmounted when collapsed to avoid idle iframes/polling */}
+      {!collapsed && (
+        <div className="h-[calc(100%-2rem)] overflow-hidden">
+          {/* Desktop: horizontal columns; Mobile: vertical stack with overflow scroll */}
+          <div className="flex flex-col md:flex-row h-full md:divide-x md:divide-aeris-border overflow-y-auto md:overflow-hidden">
+            {SUB_PANELS.map((sp) => (
+              <div
+                key={sp.id}
+                className={clsx(
+                  "flex flex-col transition-[opacity,width] duration-200 overflow-hidden",
+                  "md:flex-1 md:min-w-0",
+                  !openPanels[sp.id] && "md:w-0 md:flex-none",
+                  openPanels[sp.id]
+                    ? "border-b border-aeris-border md:border-b-0"
+                    : "hidden md:block",
+                )}
+              >
+                {openPanels[sp.id] && (
+                  <div className="flex-1 overflow-y-auto p-2 min-h-0 md:h-full">
+                    {sp.id === "webcams" && (
+                      <LiveWebcamsPanel map={map ?? null} />
+                    )}
+                    {sp.id === "news" && <NewsLivestreamsPanel />}
+                    {sp.id === "location" && (
+                      <CommunityChatPanel
+                        selectedLocation={selectedLocation}
+                        explainRequest={explainRequest}
+                        isActive={openPanels.location}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -116,7 +116,32 @@ describe("buildAgentLiveContext", () => {
     expect(ctx.pagasaBulletins?.hasActive).toBe(true);
     expect(ctx.pagasaBulletins?.bulletins[0].name).toBe("Ester");
     expect(ctx.freshness.pagasaBulletins).toBe(NOW_ISO);
+    expect(ctx.freshness.pagasaBulletinsStale).toBe(false);
+    expect(ctx.freshness.pagasaBulletinsWarning).toBeNull();
     expect(ctx.selectedLocation).toBeNull();
+  });
+
+  it("surfaces stale bulletin metadata in freshness", async () => {
+    (buildNationalWeatherSnapshot as jest.Mock).mockResolvedValue(
+      fakeSnapshot(),
+    );
+    (fetchPagasaDailyWeather as jest.Mock).mockResolvedValue(null);
+    (fetchPagasaBulletins as jest.Mock).mockResolvedValue({
+      source: "pagasa-bulletins",
+      via: "pagasa-parser",
+      fetchedAt: NOW_ISO,
+      indexAgeSeconds: 1200,
+      stale: true,
+      warning: "Live bulletin index unavailable; showing most recent successful snapshot.",
+      hasActive: true,
+      bulletins: [],
+    });
+
+    const ctx = await buildAgentLiveContext(null);
+
+    expect(ctx.freshness.pagasaBulletinsIndexAgeSeconds).toBe(1200);
+    expect(ctx.freshness.pagasaBulletinsStale).toBe(true);
+    expect(ctx.freshness.pagasaBulletinsWarning).toContain("unavailable");
   });
 
   it("computes nearest region and nearest typhoon for a selected location", async () => {

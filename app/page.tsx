@@ -127,7 +127,7 @@ export default function HomePage() {
   }, []);
 
   return (
-    <YouTubeFeedsProvider>
+    <YouTubeFeedsProvider feedsExpanded={!intelFeedsCollapsed}>
     <FloodAutomationProvider selectedLocation={selectedLocation}>
     <BootScreen />
     <div className="h-screen [@supports(height:100dvh)]:h-[100dvh] w-screen flex flex-col">

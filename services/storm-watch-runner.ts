@@ -45,7 +45,7 @@ export async function runStormWatchCycle(options?: {
   const meta = await getStormWatchMeta();
   const minPollMs = parseMinPollMs();
 
-  const payload = await fetchPagasaBulletins();
+  const payload = await fetchPagasaBulletins({ bypassCache: true });
   const signature = payload ? bulletinSignature(payload.bulletins) : "";
 
   if (
