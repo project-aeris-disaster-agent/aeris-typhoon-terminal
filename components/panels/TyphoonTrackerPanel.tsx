@@ -564,27 +564,28 @@ function StormHero({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="font-mono text-base font-semibold text-aeris-warn truncate">
-            {name}
-          </div>
-          {subName && (
-            <div className="font-mono text-body-sm uppercase tracking-wider text-aeris-muted truncate">
-              {subName}
-            </div>
-          )}
+      <div className="min-w-0">
+        <div className="font-mono text-base font-semibold text-aeris-warn truncate">
+          {name}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {status && <Pill tone={tone}>{status}</Pill>}
+        {subName && (
+          <div className="font-mono text-body-sm uppercase tracking-wider text-aeris-muted truncate">
+            {subName}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-chrome uppercase tracking-wider text-aeris-muted">
+          Sustained wind
+        </div>
+        <div className="flex flex-col items-end gap-1 shrink-0">
           <Pill tone={threat.tone}>{threat.label} threat</Pill>
+          {status && <Pill tone={tone}>{status}</Pill>}
         </div>
       </div>
 
       <div className="min-w-0">
-        <div className="text-chrome uppercase tracking-wider text-aeris-muted">
-          Sustained wind
-        </div>
         <div className="font-mono leading-none">
           <span className="text-xl font-semibold text-aeris-text">
             {windKph > 0 ? windKph : "—"}

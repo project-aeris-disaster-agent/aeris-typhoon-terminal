@@ -330,11 +330,7 @@ export function LayerLegend({
             </div>
             <div className="space-y-0.5">
               <LayerRadio
-                label={
-                  floodAutoControlled && activePeriod !== null
-                    ? "Flood Projections (auto)"
-                    : "Flood Projections"
-                }
+                label="Flood Projections"
                 checked={activePeriod !== null}
                 onClick={() => {
                   if (activePeriod !== null) {
@@ -347,7 +343,7 @@ export function LayerLegend({
                 swatch={floodPlan.visualization.waterColor}
               />
               <LayerRadio
-                label="Water Levels"
+                label="Water Levels (IOT)"
                 checked={waterLevelsActive}
                 onClick={() => setWaterLevelsActive((current) => !current)}
                 swatch="rgb(var(--aeris-accent))"
@@ -517,34 +513,25 @@ function FloodHazardDetails({
 }) {
   const rainfallSteps = ["low", "medium", "high"] as const;
   const selectedRainfallLevel = rainfallSteps[plan.rainfallLevelIndex];
+  const rainfallLabel = plan.scenarioLabel.replace(/ rainfall$/, "");
 
   return (
-    <div className="mt-2 pt-2 space-y-2 border-t border-aeris-border/60">
-      <div className="space-y-0.5">
-        <div className="text-body-sm text-aeris-muted uppercase tracking-wider">
-          Hazard scenario
+    <div className="mt-2 pt-2 border-t border-aeris-border/60">
+      <div className="rounded border border-aeris-border/60 bg-aeris-bg/35 p-2 space-y-1.5">
+        <div className="flex items-center justify-between text-body-sm">
+          <span className="text-aeris-muted">Rainfall</span>
+          <span className="text-aeris-text">{rainfallLabel}</span>
         </div>
-        <div className="rounded border border-aeris-border/60 bg-aeris-bg/35 p-2 space-y-1">
-          <div className="flex items-center justify-between text-body-sm">
-            <span className="text-aeris-muted uppercase tracking-wider">
-              Return period
-            </span>
-            <span className="font-mono text-aeris-text">
-              {plan.returnPeriod ?? "5yr"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-body-sm">
-            <span className="text-aeris-muted uppercase tracking-wider">
-              Susceptibility
-            </span>
-            <span>{FLOOD_LEVEL_STYLE[selectedRainfallLevel].label}</span>
-          </div>
-          <p className="text-[10.5px] text-aeris-muted leading-snug pt-0.5">
-            {autoControlled
-              ? plan.reason
-              : `${plan.scenarioLabel} — manual override active.`}
-          </p>
+        <div className="flex items-center justify-between text-body-sm">
+          <span className="text-aeris-muted">Flood level</span>
+          <span>{FLOOD_LEVEL_STYLE[selectedRainfallLevel].label}</span>
         </div>
+        <p className="text-[10.5px] text-aeris-muted leading-snug">
+          {autoControlled ? plan.reason : "Turned on manually."}
+        </p>
+        <p className="text-[10.5px] text-aeris-muted/80 leading-snug">
+          Based on Project NOAH hazard data.
+        </p>
       </div>
     </div>
   );

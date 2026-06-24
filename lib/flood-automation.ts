@@ -244,11 +244,11 @@ export function computeFloodAutomation(args: {
 
   let reason: string;
   if (!enabled) {
-    reason = "Flood projections stay off until rainfall or typhoon risk rises.";
+    reason = "Off until rain or typhoon risk rises.";
   } else if (reasons.length === 0) {
-    reason = "Flood projections enabled for hazard monitoring.";
+    reason = "Monitoring current conditions.";
   } else {
-    reason = `Auto-enabled: ${reasons.join("; ")}.`;
+    reason = `Auto on: ${reasons.join(" · ")}.`;
   }
 
   const scenarioLabel = returnPeriod
