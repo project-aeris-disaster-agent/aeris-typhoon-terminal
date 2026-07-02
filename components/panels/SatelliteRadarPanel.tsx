@@ -43,7 +43,6 @@ function freshnessKeyFor(source: LiveImagerySource): string {
 
 export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
   const [source, setSource] = useState<LiveImagerySource>("radar");
-  const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<LiveWeatherStatusDetail | null>(null);
   const [frame, setFrame] = useState<LiveWeatherFrameDetail | null>(null);
 
@@ -74,16 +73,15 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
     setStatus(null);
     setFrame(null);
     setLiveWeatherImagerySource(map, source);
-    setError(null);
   }, [map, source]);
 
   const contract = getLiveWeatherSourceContract(source);
   const healthTone =
     status?.health === "fallback"
-      ? "text-amber-300 border-amber-500/35 bg-amber-500/10"
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
       : status?.health === "delayed"
-        ? "text-yellow-300 border-yellow-500/35 bg-yellow-500/10"
-        : "text-emerald-300 border-emerald-500/35 bg-emerald-500/10";
+        ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"
+        : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
   const healthLabel =
     status?.health === "fallback"
       ? "Fallback"
@@ -115,27 +113,20 @@ export function SatelliteRadarPanel({ map }: { map: MLMap | null }) {
         )}
         {isForecastFrame && (
           <span
-            className="rounded border border-orange-500/40 bg-orange-500/10 px-1 py-px font-semibold uppercase tracking-wide text-orange-300"
+            className="rounded border border-orange-500/40 bg-orange-500/10 px-1 py-px font-semibold uppercase tracking-wide text-orange-700 dark:text-orange-300"
             title="Model nowcast — forecast precipitation, not an observed scan"
           >
             Forecast
           </span>
         )}
-        {!error && (
-          <FreshnessTag
-            source={freshnessKeyFor(source)}
-            className="text-aeris-muted/80"
-          />
-        )}
+        <FreshnessTag
+          source={freshnessKeyFor(source)}
+          className="text-aeris-muted/80"
+        />
       </div>
 
-      {error && (
-        <p className="rounded border border-aeris-danger/40 bg-aeris-danger/10 px-1.5 py-1 text-body-sm leading-snug text-aeris-danger">
-          {error}
-        </p>
-      )}
-      {!error && status?.message && (
-        <p className="rounded border border-amber-500/35 bg-amber-500/10 px-1.5 py-1 text-body-sm leading-snug text-amber-300">
+      {status?.message && (
+        <p className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-1 text-body-sm leading-snug text-amber-800 dark:text-amber-300">
           {status.message}
         </p>
       )}

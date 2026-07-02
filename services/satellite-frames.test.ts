@@ -6,6 +6,7 @@ import {
   buildGibsTileUrl,
   formatGibsTimeParam,
   gibsAnimationFrames,
+  parseGibsDomainTimes,
   RADAR_TILE_MAX_ZOOM,
   gibsRasterMaxZoom,
   getGibsRequestDiagnostics,
@@ -16,11 +17,11 @@ import {
 } from "./satellite-frames";
 
 describe("buildRadarTileUrl", () => {
-  it("appends the RainViewer tile suffix and routes through the same-origin proxy", () => {
+  it("appends the 512px (@2x) RainViewer tile suffix and routes through the same-origin proxy", () => {
     expect(
       buildRadarTileUrl("https://tilecache.rainviewer.com/v2/radar/abc123"),
     ).toBe(
-      "/api/rainviewer/tiles/v2/radar/abc123/256/{z}/{x}/{y}/2/1_1.png",
+      "/api/rainviewer/tiles/v2/radar/abc123/512/{z}/{x}/{y}/2/1_1.png",
     );
   });
 
@@ -79,6 +80,27 @@ describe("GIBS time and URLs", () => {
     expect(buildGibsTileUrl("himawari-true", t)).toBe(
       buildGibsTileUrl("himawari-airmass", t),
     );
+  });
+});
+
+describe("parseGibsDomainTimes", () => {
+  it("expands DescribeDomains period ranges and preserves gaps between them", () => {
+    const times = parseGibsDomainTimes(
+      "2026-07-02T05:10:00Z/2026-07-02T05:30:00Z/PT10M,2026-07-02T06:40:00Z/2026-07-02T06:50:00Z/PT10M",
+    );
+    expect(times.map((ms) => new Date(ms).toISOString())).toEqual([
+      "2026-07-02T05:10:00.000Z",
+      "2026-07-02T05:20:00.000Z",
+      "2026-07-02T05:30:00.000Z",
+      "2026-07-02T06:40:00.000Z",
+      "2026-07-02T06:50:00.000Z",
+    ]);
+  });
+
+  it("accepts bare instants and ignores malformed segments", () => {
+    expect(parseGibsDomainTimes("2026-07-02T05:10:00Z,garbage")).toEqual([
+      Date.parse("2026-07-02T05:10:00Z"),
+    ]);
   });
 });
 
