@@ -87,7 +87,6 @@ type Compass = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const MINDS_LOGO = "/assets/minds_logo.svg";
 const EARTH_RADIUS_M = 6_371_000;
 const COMPASS: Compass[] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 const FLOOD_PERIOD_ORDER = ["5yr", "25yr", "100yr"] as const;
@@ -913,24 +912,14 @@ function Header({
           )}
         </button>
       </div>
-      <div className="shrink-0 flex flex-col items-end justify-between self-stretch gap-1">
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close location info"
-          className="text-aeris-muted/70 hover:text-aeris-text transition-colors p-1 -m-1 rounded-md hover:bg-aeris-elev/50"
-        >
-          <X size={16} />
-        </button>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={MINDS_LOGO}
-          alt=""
-          aria-hidden
-          decoding="async"
-          className="h-10 w-auto object-contain object-right opacity-90"
-        />
-      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close location info"
+        className="shrink-0 text-aeris-muted/70 hover:text-aeris-text transition-colors p-1 -m-1 rounded-md hover:bg-aeris-elev/50"
+      >
+        <X size={16} />
+      </button>
     </div>
   );
 }

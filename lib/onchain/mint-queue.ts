@@ -273,6 +273,11 @@ export type MintTransitionUpdate = {
   tokenId?: string | null;
   mintedAt?: string | null;
   reason?: string | null;
+  /** Phase 7 privacy commitments - only set (and persisted) on a successful mint. */
+  geoSalt?: string;
+  geoCommitment?: string;
+  descriptionCommitment?: string;
+  photoCommitment?: string;
 };
 
 export async function applyMintTransition(
@@ -289,6 +294,12 @@ export async function applyMintTransition(
   if (update.txHash !== undefined) payload.onchain_tx_hash = update.txHash;
   if (update.tokenId !== undefined) payload.onchain_token_id = update.tokenId;
   if (update.mintedAt !== undefined) payload.onchain_minted_at = update.mintedAt;
+  if (update.geoSalt !== undefined) payload.geo_salt = update.geoSalt;
+  if (update.geoCommitment !== undefined) payload.geo_commitment = update.geoCommitment;
+  if (update.descriptionCommitment !== undefined)
+    payload.description_commitment = update.descriptionCommitment;
+  if (update.photoCommitment !== undefined)
+    payload.photo_commitment = update.photoCommitment;
 
   // We also stamp a small JSON note inside metadata for failure reasons /
   // attempt counts, without overwriting the rest of metadata.

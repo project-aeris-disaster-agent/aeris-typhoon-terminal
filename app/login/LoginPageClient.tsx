@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useLogin, useLoginWithOAuth, usePrivy } from "@privy-io/react-auth";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { AerisLoadingLogo } from "@/components/ui/AerisLoadingLogo";
+import { AuroraBackground } from "@/components/ui/AuroraBackground";
 import { MobileDesktopGate } from "@/components/MobileDesktopGate";
 import { isMobileDeviceClient } from "@/lib/mobile-access";
 import { isPrivyConfigured } from "@/lib/privy-config";
@@ -193,7 +194,7 @@ export default function LoginPageClient() {
           : null;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-aeris-bg px-4">
+    <div className="flex min-h-screen items-center justify-center bg-white px-4">
       {showMobileGate && (
         <MobileDesktopGate
           showWalletLogin={privyEnabled && !mobileBlocked}

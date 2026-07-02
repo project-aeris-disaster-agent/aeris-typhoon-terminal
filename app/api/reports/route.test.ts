@@ -172,6 +172,7 @@ describe("/api/reports", () => {
         category: "flood",
         description: "Fresh report",
         position: [120.9842, 14.5995],
+        photoUrl: "https://example.com/evidence.jpg",
         createdAt: new Date().toISOString(),
         confirmations: 2,
         ipHash: "deadbeefdeadbeef",
@@ -195,7 +196,11 @@ describe("/api/reports", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe(
+      "public, s-maxage=20, stale-while-revalidate=60",
+    );
+    // photoUrl and exact position are retained (operator map/panel needs them;
+    // the endpoint is auth-gated). ipHash is stripped as a re-identification vector.
     expect(body).toEqual({
       reports: [
         {
@@ -203,10 +208,12 @@ describe("/api/reports", () => {
           category: "flood",
           description: "Fresh report",
           position: [120.9842, 14.5995],
+          photoUrl: "https://example.com/evidence.jpg",
           createdAt: expect.any(String),
           confirmations: 2,
         },
       ],
     });
+    expect(body.reports[0].ipHash).toBeUndefined();
   });
 });

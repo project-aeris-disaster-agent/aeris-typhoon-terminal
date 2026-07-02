@@ -248,7 +248,7 @@ export function computeFloodAutomation(args: {
   } else if (reasons.length === 0) {
     reason = "Monitoring current conditions.";
   } else {
-    reason = `Auto on: ${reasons.join(" · ")}.`;
+    reason = `Automated: ${reasons.join(" · ")}.`;
   }
 
   const scenarioLabel = returnPeriod

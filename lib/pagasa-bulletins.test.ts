@@ -1,4 +1,4 @@
-import { reduceBulletins } from "@/lib/pagasa-bulletins";
+import { reduceBulletins, filterSupersededBulletins } from "@/lib/pagasa-bulletins";
 
 const FIXTURE = {
   error: false,
@@ -97,5 +97,75 @@ describe("reduceBulletins", () => {
     expect(out!.bulletins).toHaveLength(1);
     expect(out!.bulletins[0].name).toBe("Agaton");
     expect(out!.bulletins[0].number).toBe(3);
+  });
+});
+
+describe("filterSupersededBulletins", () => {
+  it("drops stale cyclones when one active system is far ahead", () => {
+    const filtered = filterSupersededBulletins([
+      {
+        name: "Francisco",
+        number: 16,
+        final: false,
+        file: "TCB#16_francisco.pdf",
+        pdfUrl: "https://x/francisco.pdf",
+      },
+      {
+        name: "Ester",
+        number: 6,
+        final: false,
+        file: "TCB#6_ester.pdf",
+        pdfUrl: "https://x/ester.pdf",
+      },
+    ]);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].name).toBe("Francisco");
+  });
+
+  it("keeps multiple active cyclones when bulletin numbers are close", () => {
+    const filtered = filterSupersededBulletins([
+      {
+        name: "Agaton",
+        number: 4,
+        final: false,
+        file: "a.pdf",
+        pdfUrl: "https://x/a.pdf",
+      },
+      {
+        name: "Bising",
+        number: 6,
+        final: false,
+        file: "b.pdf",
+        pdfUrl: "https://x/b.pdf",
+      },
+    ]);
+    expect(filtered).toHaveLength(2);
+  });
+});
+
+describe("reduceBulletins with superseded filter", () => {
+  it("removes laggard cyclones from real upstream-shaped payloads", () => {
+    const out = reduceBulletins({
+      error: false,
+      age: 0,
+      bulletins: [
+        {
+          name: "francisco",
+          count: 16,
+          final: false,
+          file: "TCB#16_francisco.pdf",
+          link: "https://pubfiles.pagasa.dost.gov.ph/x/TCB%2316_francisco.pdf",
+        },
+        {
+          name: "ester",
+          count: 6,
+          final: false,
+          file: "TCB#6_ester.pdf",
+          link: "https://pubfiles.pagasa.dost.gov.ph/x/TCB%236_ester.pdf",
+        },
+      ],
+    });
+    expect(out!.bulletins).toHaveLength(1);
+    expect(out!.bulletins[0].name).toBe("Francisco");
   });
 });

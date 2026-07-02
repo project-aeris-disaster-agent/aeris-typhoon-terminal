@@ -40,16 +40,38 @@ type StoredReport = {
   metadata?: Record<string, unknown>;
 };
 
+// Strips reporter-identity fields that no map/panel consumer needs and that
+// are re-identification vectors: reporterUserId (Privy DID) and metadata
+// (carries raw ipAddress/userAgent on the Supabase-backed path). Exact
+// position and photoUrl are intentionally retained — /api/reports is
+// auth-gated (see middleware.ts; it is NOT in PUBLIC_PATHS, so unauthenticated
+// callers get 401), and the operator map/review panel needs both for incident
+// triage and dispatch. On-chain data minimization is handled separately at
+// mint time (lib/onchain/commitments.ts), which is the only truly-public sink.
+function stripReporterIdentity<
+  T extends {
+    reporterUserId?: string;
+    metadata?: Record<string, unknown>;
+  },
+>(report: T): Omit<T, "reporterUserId" | "metadata"> {
+  const { reporterUserId: _reporterUserId, metadata: _metadata, ...rest } = report;
+  return rest;
+}
+
 export async function GET() {
   if (supabaseReportsEnabled()) {
     try {
       const reports = await listSupabaseReports();
       return NextResponse.json(
-        { reports },
+        { reports: reports.map(stripReporterIdentity) },
         {
           status: 200,
           headers: {
-            "cache-control": "no-store",
+            // Shared CDN edge cache collapses the per-client 30s ping poll into
+            // ~1 origin invocation per window; SWR keeps stale data flowing
+            // while a single refresh runs. The payload is identical for every
+            // authenticated viewer (reporter identity stripped, safe to share).
+            "cache-control": "public, s-maxage=20, stale-while-revalidate=60",
           },
         },
       );
@@ -78,7 +100,7 @@ export async function GET() {
     {
       status: 200,
       headers: {
-        "cache-control": "no-store",
+        "cache-control": "public, s-maxage=20, stale-while-revalidate=60",
       },
     },
   );

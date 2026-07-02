@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 import { Pill } from "../ui/Card";
 import { usePanelHeaderBadge } from "@/components/panel-header-badge";
@@ -40,19 +41,7 @@ export function AlertsFeedPanel() {
     }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      if (cancelled) return;
-      await load();
-    };
-    void run();
-    const id = window.setInterval(run, 5 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [load]);
+  useVisiblePolling(() => void load(), 5 * 60 * 1000);
 
   const { activeSystems, bulletins, activeCount, hazardCount } = useMemo(() => {
     const active: Alert[] = [];
@@ -87,7 +76,7 @@ export function AlertsFeedPanel() {
           onClick={() => void load()}
           disabled={loading}
           className="ml-auto shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
-          aria-label="Refresh alerts"
+          aria-label="Sync alerts"
         >
           <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
           Sync

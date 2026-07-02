@@ -39,7 +39,8 @@ operator verify in Dashboard
 |---|---|
 | `contracts/src/AerisReports.sol` | ERC-1155 + AccessControl; `MINTER_ROLE` mints one token per verified report. |
 | `lib/onchain/skale-base.ts` | Network constants for SKALE Base mainnet/testnet. |
-| `lib/onchain/hypercert-metadata.ts` | Builds Hypercerts-shaped ERC-1155 metadata + maps report UUID → uint256 tokenId. |
+| `lib/onchain/hypercert-metadata.ts` | Builds Hypercerts-shaped ERC-1155 metadata (v2: coarse position + commitments, see below) + maps report UUID → uint256 tokenId. |
+| `lib/onchain/commitments.ts` | Phase 7: coarsens position and computes salted SHA-256 commitments (geo/description/photo) so exact PII never gets minted. |
 | `lib/onchain/ipfs.ts` | Pinata client with a `dev-skip` fallback (no JWT required for testing). |
 | `lib/onchain/mint-client.ts` | viem-based wrapper that talks to `AerisReports`. SKALE-correct (legacy tx, live `eth_gasPrice`). |
 | `lib/onchain/mint-queue.ts` | Supabase helpers: list queued/stale rows, transition state, fetch by id. |
@@ -68,23 +69,36 @@ CRON_SECRET=...                                   # set by Vercel for cron auth
 ONCHAIN_MINT_BATCH_LIMIT=10                       # default 5 for manual, 10 for cron
 ONCHAIN_MINT_STALE_SECONDS=120                    # cron only picks rows older than this
 PINATA_JWT=...                                    # optional, falls back to dev-skip
-MINT_PIN_EVIDENCE_IMAGE=                          # optional: 1/true to pin the citizen photo to IPFS
 ```
 
-## Token image (evidence photo)
+## Privacy-minimized metadata (v2, Phase 7)
 
-By default the token metadata `image` points at the citizen evidence photo
-(`disaster_reports.photo_url`, a Supabase public URL) when the report has one
-and has passed moderation (`verification_status = 'verified'` and
-`moderation_status` not `hidden`/`needs_review`). Reports without an approved
-photo fall back to the static badge `https://aeris.bagyo.app/badge/report.png`.
+The token metadata never contains exact GPS, the citizen's free-text
+description, or an evidence photo — those are precisely the fields most
+likely to re-identify a person under the Philippine Data Privacy Act, and a
+public chain can't honor a correction/erasure request once they're minted.
+Instead the metadata carries:
 
-Set `MINT_PIN_EVIDENCE_IMAGE=1` (requires `PINATA_JWT`) to make the on-chain
-image **immutable**: the worker pins the photo file to IPFS first, then pins the
-metadata JSON referencing the resulting `ipfs://` image. If the file pin fails
-the mint still proceeds using the mutable Supabase URL — pinning never blocks a
-mint. Because IPFS pinning is effectively irreversible, photos are only pinned
-**after** a report is approved.
+- `coarse_lat` / `coarse_lng` — position rounded to ~111m.
+- `geo_commitment` — `sha256(exact lng|exact lat|salt)`.
+- `description_commitment` — `sha256(description|salt)`.
+- `photo_commitment` — `sha256(sha256(photo bytes)|salt)`, only present when
+  the report has an approved evidence photo.
+
+The token metadata `image` is always the static badge
+(`https://aeris.bagyo.app/badge/report.png`) — raw evidence photos are never
+pinned to IPFS or referenced on-chain.
+
+The salt and the exact position/description are persisted server-side on the
+report row (`geo_salt`, `geo_commitment`, `description_commitment`,
+`photo_commitment` columns) at mint time — see
+`supabase/migrations/20260701000000_report_privacy_commitments.sql`. This is
+what makes the commitment revealable to an authorized party later (Phase D's
+gated data API), and what makes it *unopenable* — a practical right-to-be-forgotten
+— once the row/salt is deleted on an erasure request. It is not literal
+deletion of the on-chain hash bytes, which remain forever; it is deletion of
+the only thing that lets anyone match those bytes back to a real place, photo,
+or description.
 
 ## Enabling the push path
 

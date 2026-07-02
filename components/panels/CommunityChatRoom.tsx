@@ -298,13 +298,31 @@ export function CommunityChatRoom({ isActive }: { isActive: boolean }) {
   }, [isActive]);
 
   // Poll fallback while realtime isn't connected yet (or if the socket drops).
-  // Kept short so messages still flow even if the websocket fails to attach.
+  // Starts fast so messages still flow if the websocket fails to attach, then
+  // backs off exponentially (with jitter) toward a 30s cap. Supabase realtime
+  // drops are exactly when load is high, so a fixed 4s poll across every viewer
+  // would amplify the outage; backoff + jitter avoids that stampede. The effect
+  // tears down when `live` flips true, so reconnecting resets the delay to 4s.
   useEffect(() => {
     if (!isActive || live) return;
-    const interval = window.setInterval(() => {
+    const BASE_MS = 4000;
+    const MAX_MS = 30000;
+    let stopped = false;
+    let timer = 0;
+    let delay = BASE_MS;
+
+    const tick = () => {
+      if (stopped) return;
       void loadHistory();
-    }, 4000);
-    return () => window.clearInterval(interval);
+      delay = Math.min(delay * 2, MAX_MS);
+      timer = window.setTimeout(tick, delay + Math.random() * 1000);
+    };
+
+    timer = window.setTimeout(tick, BASE_MS);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
   }, [isActive, live, loadHistory]);
 
   useEffect(() => {

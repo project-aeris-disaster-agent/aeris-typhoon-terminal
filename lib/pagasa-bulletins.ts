@@ -114,6 +114,28 @@ function parseIndexAge(v: unknown): number | null {
   return Math.round(n);
 }
 
+/** Gap between latest bulletin numbers that suggests a stale index entry. */
+const SUPERSEDED_BULLETIN_GAP = 5;
+
+/**
+ * pagasa-parser often keeps dissipated cyclones in the index with outdated
+ * non-final bulletins (e.g. Ester #6 beside Francisco #16). Drop laggards when
+ * one active system has moved well ahead.
+ */
+export function filterSupersededBulletins(
+  bulletins: PagasaBulletin[],
+): PagasaBulletin[] {
+  const active = bulletins.filter((b) => !b.final);
+  if (active.length <= 1) return bulletins;
+
+  const maxNum = Math.max(...active.map((b) => b.number));
+  const minNum = Math.min(...active.map((b) => b.number));
+  if (maxNum - minNum <= SUPERSEDED_BULLETIN_GAP) return bulletins;
+
+  const cutoff = maxNum - 2;
+  return bulletins.filter((b) => b.number >= cutoff);
+}
+
 function cacheTtlMs(value: PagasaBulletins | null): number {
   if (value?.hasActive) return CACHE_TTL_ACTIVE_MS;
   return CACHE_TTL_QUIET_MS;
@@ -169,10 +191,12 @@ export function reduceBulletins(payload: unknown): PagasaBulletins | null {
     }
   }
 
-  const bulletins = [...latest.values()].sort((a, b) => {
-    if (a.final !== b.final) return a.final ? 1 : -1;
-    return a.name.localeCompare(b.name);
-  });
+  const bulletins = filterSupersededBulletins(
+    [...latest.values()].sort((a, b) => {
+      if (a.final !== b.final) return a.final ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    }),
+  );
 
   return {
     source: "pagasa-bulletins",

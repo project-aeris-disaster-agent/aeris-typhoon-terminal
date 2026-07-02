@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .transition-bg {
+    transition: background-color 0.3s ease;
+  }
+}
+
 :root {
   color-scheme: light;
   --aeris-bg: 244 248 252;

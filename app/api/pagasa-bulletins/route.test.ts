@@ -1,6 +1,15 @@
 /** @jest-environment node */
 export {};
 
+// This suite covers the route's bulletin plumbing (reduction + refresh bypass).
+// The storm-watch staleness filter it now applies is disabled here so fetch
+// accounting stays about the upstream call; the filter has its own unit tests
+// in lib/pagasa-bulletin-staleness.test.ts.
+jest.mock("@/lib/storm-watch/state", () => ({
+  stormWatchStateEnabled: () => false,
+  listStormWatchCycles: async () => [],
+}));
+
 const originalFetch = global.fetch;
 
 describe("/api/pagasa-bulletins", () => {

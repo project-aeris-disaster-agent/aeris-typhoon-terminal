@@ -33,13 +33,20 @@ function makeReport(overrides: Partial<PublicReport> = {}): PublicReport {
   };
 }
 
+const BASE_INPUT = {
+  contributorAddress: "0x1111111111111111111111111111111111111111",
+  verifiedAtUnix: 1779843600,
+  coarsePosition: [121.106, 14.643] as [number, number],
+  geoCommitment: "geo".padEnd(64, "0"),
+  descriptionCommitment: "desc".padEnd(64, "0"),
+};
+
 describe("buildAerisReportHypercert", () => {
   it("emits the Hypercerts-shaped envelope with all dimensions", () => {
     const report = makeReport();
     const md = buildAerisReportHypercert({
       report,
-      contributorAddress: "0x1111111111111111111111111111111111111111",
-      verifiedAtUnix: 1779843600,
+      ...BASE_INPUT,
     });
 
     expect(md.schema).toBe(AERIS_REPORT_HYPERCERT_VERSION);
@@ -55,21 +62,23 @@ describe("buildAerisReportHypercert", () => {
     );
   });
 
-  it("clamps long descriptions to <=280 chars", () => {
-    const long = "x".repeat(600);
+  it("never includes the citizen's free-text description", () => {
     const md = buildAerisReportHypercert({
-      report: makeReport({ description: long }),
-      contributorAddress: "0xabc",
-      verifiedAtUnix: Math.floor(Date.now() / 1000),
+      report: makeReport({
+        description: "Flooding right outside my house at 123 Rizal St, next to Maria's sari-sari store",
+      }),
+      ...BASE_INPUT,
     });
+    expect(md.description).not.toContain("Rizal St");
+    expect(md.description).not.toContain("Maria");
     expect(md.description.length).toBeLessThanOrEqual(280);
   });
 
-  it("includes core traits", () => {
+  it("includes core traits and privacy commitments, but never exact lat/lng", () => {
     const md = buildAerisReportHypercert({
       report: makeReport(),
-      contributorAddress: "0xabc",
-      verifiedAtUnix: 1779843600,
+      ...BASE_INPUT,
+      photoCommitment: "photo".padEnd(64, "0"),
     });
     const traits = md.properties.map((p) => p.trait_type);
     expect(traits).toEqual(
@@ -78,14 +87,28 @@ describe("buildAerisReportHypercert", () => {
         "message_id",
         "category",
         "ai_priority",
-        "lat",
-        "lng",
+        "coarse_lat",
+        "coarse_lng",
+        "geo_commitment",
+        "description_commitment",
+        "photo_commitment",
         "dedupe_hash",
         "verified_at",
         "phone_verification_status",
         "verification_status",
       ]),
     );
+    expect(traits).not.toContain("lat");
+    expect(traits).not.toContain("lng");
+  });
+
+  it("omits photo_commitment when there is no evidence photo", () => {
+    const md = buildAerisReportHypercert({
+      report: makeReport(),
+      ...BASE_INPUT,
+    });
+    const traits = md.properties.map((p) => p.trait_type);
+    expect(traits).not.toContain("photo_commitment");
   });
 });
 

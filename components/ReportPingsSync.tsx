@@ -80,14 +80,40 @@ export const ReportPingsSync = memo(function ReportPingsSync({
 
     map.on("styledata", rehydrateLayers);
     window.addEventListener("aeris:reports-refresh", refresh);
+
+    // Pause polling while the tab is hidden so a backgrounded dashboard stops
+    // hitting /api/reports; refresh once immediately on return to foreground.
+    let intervalId: number | null = null;
+    const startInterval = () => {
+      if (intervalId === null) {
+        intervalId = window.setInterval(refresh, REFRESH_MS);
+      }
+    };
+    const stopInterval = () => {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        stopInterval();
+      } else {
+        void refresh();
+        startInterval();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     void refresh();
-    const id = window.setInterval(refresh, REFRESH_MS);
+    if (document.visibilityState !== "hidden") startInterval();
 
     return () => {
       disposed = true;
       map.off("styledata", rehydrateLayers);
       window.removeEventListener("aeris:reports-refresh", refresh);
-      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      stopInterval();
       clearReportsFromMap(map);
     };
   }, [map]);

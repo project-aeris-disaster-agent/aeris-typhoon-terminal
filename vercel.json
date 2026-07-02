@@ -2,24 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/cron/weather-reports",
-      "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/cron/triage",
-      "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/cron/youtube-feed",
+      "path": "/api/cron/daily",
       "schedule": "0 7 * * *"
-    },
-    {
-      "path": "/api/cron/storm-watch",
-      "schedule": "0 7 * * *"
-    },
-    {
-      "path": "/api/cron/onchain-mint",
-      "schedule": "0 10 * * *"
     }
   ],
   "headers": [

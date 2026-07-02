@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import type { SelectedLocation } from "@/components/MapSearchBar";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import {
   computeFloodAutomation,
   type FloodAutomationPlan,
@@ -117,11 +118,7 @@ export function FloodAutomationProvider({
     }
   }, [selectedLocation, availablePeriods]);
 
-  useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
+  useVisiblePolling(() => void refresh(), REFRESH_MS);
 
   const isAutoControlled = manualOverride === null;
 

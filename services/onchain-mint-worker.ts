@@ -21,11 +21,14 @@ import {
   buildAerisReportHypercert,
   reportToTokenId,
 } from "@/lib/onchain/hypercert-metadata";
+import { pinJson } from "@/lib/onchain/ipfs";
 import {
-  pinJson,
-  pinFileFromUrl,
-  evidenceImagePinningEnabled,
-} from "@/lib/onchain/ipfs";
+  generateCommitmentSalt,
+  coarsenPosition,
+  computeGeoCommitment,
+  computeDescriptionCommitment,
+  computePhotoCommitment,
+} from "@/lib/onchain/commitments";
 import {
   getMintClient,
   mintClientAvailable,
@@ -37,50 +40,29 @@ import type { PublicReport } from "@/lib/supabase-reports";
 import type { Address } from "viem";
 
 /**
- * Decide which image URI (if any) to embed in the token metadata.
+ * Compute a commitment hash of the citizen's evidence photo, if any. The raw
+ * photo is never minted or pinned to IPFS (see lib/onchain/commitments.ts) -
+ * the token metadata's `image` always falls back to the static badge.
  *
- * Returns:
- *  - an `ipfs://` URI when evidence-image pinning is enabled and the file pins
- *    successfully (immutable, preferred for on-chain),
- *  - the report's Supabase `photoUrl` (https) otherwise,
- *  - `undefined` when there is no photo or the report has not passed moderation,
- *    in which case the metadata builder falls back to the static badge image.
- *
- * Never throws: a pin failure degrades to the Supabase URL so a missing/slow
- * Pinata never blocks a mint.
+ * Never throws: a fetch/hash failure just means no photo_commitment trait is
+ * attached, so a missing/slow photo host never blocks a mint.
  */
-async function resolveMintImageUri(
+async function resolvePhotoCommitment(
   report: PublicReport,
+  salt: string,
 ): Promise<string | undefined> {
   const photoUrl = report.photoUrl;
   if (!photoUrl || !/^https?:\/\//i.test(photoUrl)) return undefined;
 
-  // Reuse the existing moderation workflow: a report is safe to surface/pin
-  // only once verified and not hidden/flagged. (Mint already requires verified.)
+  // Reuse the existing moderation workflow: only commit a photo hash once the
+  // report is verified and not hidden/flagged. (Mint already requires verified.)
   const moderation = report.moderationStatus;
   const moderationOk = moderation !== "hidden" && moderation !== "needs_review";
   if (report.verificationStatus !== "verified" || !moderationOk) {
     return undefined;
   }
 
-  if (evidenceImagePinningEnabled()) {
-    try {
-      const pinnedImage = await pinFileFromUrl(
-        photoUrl,
-        `aeris-report-${report.id}-photo`,
-      );
-      return pinnedImage.uri;
-    } catch (err) {
-      // Non-fatal: keep the Supabase URL as the image so the mint still proceeds.
-      console.error(
-        `[onchain-mint] report=${report.id} evidence pin failed, using supabase url: ${
-          (err as Error).message
-        }`,
-      );
-    }
-  }
-
-  return photoUrl;
+  return computePhotoCommitment(photoUrl, salt);
 }
 
 export type MintWorkerOptions = {
@@ -280,18 +262,28 @@ async function mintOne(
     const contributorAddress =
       report.onchain?.proxyWallet?.address ?? client.serviceAddress;
 
-    // Moderation safety: only use the citizen photo as the token image once the
-    // report has passed review. Mint is already gated on verification_status ===
-    // 'verified', but we re-check moderation here so we never pin/reference a
-    // photo that was hidden or flagged for review. Falls back to the static
-    // badge (handled by the metadata builder) when there is no approved photo.
-    const imageUri = await resolveMintImageUri(report);
+    // Salted commitments replace the exact GPS/description/photo that used to
+    // be minted directly. The salt is generated fresh per mint attempt and
+    // only persisted (via applyMintTransition below) once the mint succeeds,
+    // so an authorized party can later reveal-and-verify the exact values
+    // without them ever having been public. See lib/onchain/commitments.ts.
+    const salt = generateCommitmentSalt();
+    const coarsePosition = coarsenPosition(report.position);
+    const geoCommitment = await computeGeoCommitment(report.position, salt);
+    const descriptionCommitment = await computeDescriptionCommitment(
+      report.description ?? "",
+      salt,
+    );
+    const photoCommitment = await resolvePhotoCommitment(report, salt);
 
     const metadata = buildAerisReportHypercert({
       report,
       contributorAddress,
       verifiedAtUnix,
-      imageUri,
+      coarsePosition,
+      geoCommitment,
+      descriptionCommitment,
+      photoCommitment,
     });
 
     const pinned = await pinJson(metadata, `aeris-report-${report.id}`);
@@ -311,8 +303,23 @@ async function mintOne(
       tokenId: tokenIdStr,
       mintedAt: new Date().toISOString(),
       reason: pinned.backend === "dev-skip" ? "dev-skip-ipfs" : null,
+      geoSalt: salt,
+      geoCommitment,
+      descriptionCommitment,
+      photoCommitment,
     };
-    await applyMintTransition(report.id, txUpdate);
+    const persisted = await applyMintTransition(report.id, txUpdate);
+    if (!persisted) {
+      // The chain write already succeeded - never surface this as a failed
+      // mint (that would drive a pointless retry). But the Supabase row is
+      // now desynced from on-chain state (most likely cause: the
+      // geo_salt/geo_commitment/description_commitment/photo_commitment
+      // columns from supabase/migrations/20260701000000_report_privacy_commitments.sql
+      // haven't been applied yet). Surface loudly so it doesn't go unnoticed.
+      console.error(
+        `[onchain-mint] report=${report.id} minted on-chain (tx=${result.txHash}, tokenId=${tokenIdStr}) but failed to persist to Supabase - manual reconciliation needed`,
+      );
+    }
 
     return {
       reportId: report.id,

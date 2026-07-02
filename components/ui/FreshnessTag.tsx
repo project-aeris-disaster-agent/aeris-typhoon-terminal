@@ -38,7 +38,7 @@ export function FreshnessTag({
   return (
     <div
       className={clsx(
-        "flex items-center gap-1 text-body-sm text-aeris-muted/80",
+        "flex items-center gap-1 text-chrome text-aeris-muted/80",
         className,
       )}
     >

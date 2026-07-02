@@ -1,5 +1,5 @@
 /**
- * Phase 6.1 - Hypercerts-shaped ERC-1155 token metadata for AERIS reports.
+ * Phase 6.1 / 7 - Hypercerts-shaped ERC-1155 token metadata for AERIS reports.
  *
  * This is intentionally "Hypercerts-shaped, not protocol-compliant". We reuse
  * the dimension names defined by the Hypercerts data model
@@ -9,11 +9,17 @@
  * Hypercerts contracts or PDS at this layer.
  *
  * https://docs.hypercerts.org/
+ *
+ * v2 (Phase 7): stops putting exact GPS, free-text description, and evidence
+ * photos into public immutable metadata. Only a coarse position + salted
+ * commitment hashes are minted; the salt and exact values live off-chain in
+ * Supabase, revealable only through an authorized channel. See
+ * lib/onchain/commitments.ts.
  */
 
 import type { PublicReport } from "@/lib/supabase-reports";
 
-export const AERIS_REPORT_HYPERCERT_VERSION = "aeris.report.v1";
+export const AERIS_REPORT_HYPERCERT_VERSION = "aeris.report.v2";
 
 export type AerisReportHypercert = {
   name: string;
@@ -39,7 +45,15 @@ export type BuildHypercertInput = {
   contributorAddress: string;
   /** Unix seconds when phone verification + operator review both completed. */
   verifiedAtUnix: number;
-  /** Optional override for the badge image URI (ipfs://... or https://...). */
+  /** Position rounded to ~111m (lib/onchain/commitments.ts#coarsenPosition). */
+  coarsePosition: [number, number];
+  /** sha256(exact lng|exact lat|salt) - proves the exact position without revealing it. */
+  geoCommitment: string;
+  /** sha256(description|salt) - proves the free-text report without revealing it. */
+  descriptionCommitment: string;
+  /** sha256(sha256(photo bytes)|salt), when the report has an approved evidence photo. */
+  photoCommitment?: string;
+  /** Optional override for the badge image URI. Never the raw evidence photo. */
   imageUri?: string;
   /** Optional override for the canonical report URL. */
   externalUrl?: string;
@@ -63,13 +77,28 @@ function clampStr(s: string, n: number): string {
 export function buildAerisReportHypercert(
   input: BuildHypercertInput,
 ): AerisReportHypercert {
-  const { report, contributorAddress, verifiedAtUnix, imageUri, externalUrl } = input;
+  const {
+    report,
+    contributorAddress,
+    verifiedAtUnix,
+    coarsePosition,
+    geoCommitment,
+    descriptionCommitment,
+    photoCommitment,
+    imageUri,
+    externalUrl,
+  } = input;
 
   const createdUnix = unixSeconds(report.createdAt);
   const verifiedUnix = verifiedAtUnix > 0 ? verifiedAtUnix : Math.floor(Date.now() / 1000);
-  const [lng, lat] = report.position;
+  const [coarseLng, coarseLat] = coarsePosition;
   const name = `AERIS Report ${report.messageId ?? report.id.slice(0, 8)}`;
-  const description = clampStr(report.description ?? "", 280);
+  // Generic, non-identifying summary - the citizen's free-text description is
+  // never minted; only its commitment hash is (see description_commitment).
+  const description = clampStr(
+    `Verified ${report.category} report submitted via AERIS citizen reporting.`,
+    280,
+  );
 
   return {
     name,
@@ -110,8 +139,14 @@ export function buildAerisReportHypercert(
         trait_type: "ai_priority",
         value: report.aiPriority ?? "pending",
       },
-      { trait_type: "lat", value: Number(lat.toFixed(6)) },
-      { trait_type: "lng", value: Number(lng.toFixed(6)) },
+      // Coarse position only (~111m) - full precision never leaves Supabase.
+      { trait_type: "coarse_lat", value: coarseLat },
+      { trait_type: "coarse_lng", value: coarseLng },
+      { trait_type: "geo_commitment", value: geoCommitment },
+      { trait_type: "description_commitment", value: descriptionCommitment },
+      ...(photoCommitment
+        ? [{ trait_type: "photo_commitment", value: photoCommitment }]
+        : []),
       { trait_type: "dedupe_hash", value: report.dedupeHash ?? "" },
       {
         trait_type: "verified_at",

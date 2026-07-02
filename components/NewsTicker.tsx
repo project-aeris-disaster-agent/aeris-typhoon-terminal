@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { fetchNews, type NewsItem } from "@/services/news";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 
 const TICKER_HEADLINE_LIMIT = 24;
 const POLL_MS = 10 * 60 * 1000;
@@ -31,29 +32,18 @@ export function NewsTicker({ className }: { className?: string }) {
   const [items, setItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
+  useVisiblePolling(() => {
+    void (async () => {
       try {
         const result = await fetchNews();
-        if (!cancelled) {
-          setItems(result.items.slice(0, TICKER_HEADLINE_LIMIT));
-        }
+        setItems(result.items.slice(0, TICKER_HEADLINE_LIMIT));
       } catch {
         /* keep last successful headlines */
       } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
-    };
-
-    void load();
-    const id = window.setInterval(() => void load(), POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+    })();
+  }, POLL_MS);
 
   const loopItems = useMemo(() => {
     if (items.length === 0) return [];

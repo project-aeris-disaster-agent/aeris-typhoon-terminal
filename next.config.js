@@ -37,6 +37,14 @@ const nextConfig = {
         ],
       },
       {
+        // The global DENY above blocks this route from framing itself: the
+        // PDF viewer embeds this same-origin proxy in an <iframe>, and DENY
+        // rejects that regardless of origin. Scope framing back to same-origin
+        // for this one route instead of disabling clickjacking protection app-wide.
+        source: "/api/pagasa-bulletin-pdf",
+        headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
+      },
+      {
         source: "/models/:path*.vrm",
         headers: [
           { key: "Content-Type", value: "model/gltf-binary" },

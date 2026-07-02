@@ -28,9 +28,9 @@ export function useUnreadLiveReports(liveReportsOpen: boolean): number {
     };
 
     window.addEventListener(REPORTS_UPDATED_EVENT, onUpdate);
-    void fetchReports()
-      .then(setReports)
-      .catch(() => undefined);
+    // No mount fetch: ReportPingsSync is the single canonical poller and emits
+    // REPORTS_UPDATED_EVENT on its immediate first poll, which `onUpdate`
+    // catches. Avoids a redundant /api/reports hit per mounted consumer.
 
     return () => window.removeEventListener(REPORTS_UPDATED_EVENT, onUpdate);
   }, []);

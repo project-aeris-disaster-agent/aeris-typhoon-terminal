@@ -1,15 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Map as MLMap } from "maplibre-gl";
 import { clsx } from "clsx";
 import {
   AlertTriangle,
   ChevronDown,
+  Clock,
+  Maximize2,
   MapPin,
   RefreshCw,
   Siren,
   Stamp,
+  X,
 } from "lucide-react";
 import { CardHeader, Pill } from "../ui/Card";
 import {
@@ -22,7 +26,7 @@ import {
 import { FreshnessTag } from "../ui/FreshnessTag";
 import { useAerisRole } from "@/services/role-context";
 import { mintExplorerTxUrl, shortTxHash } from "@/lib/onchain/explorer-links";
-import { formatAerisRoleLabel } from "@/lib/aeris-roles";
+import { formatAerisRoleLabel, type AerisRole } from "@/lib/aeris-roles";
 
 const AI_PRIORITY_ORDER: Record<string, number> = {
   urgent: 0,
@@ -32,6 +36,32 @@ const AI_PRIORITY_ORDER: Record<string, number> = {
 };
 
 type ReportFilter = "all" | "urgent" | "unverified" | "verified" | "minted";
+type SortBy = "priority" | "newest" | "oldest";
+type DateRange = "all" | "1h" | "24h" | "7d";
+
+/** How many cards render before the "showing N of M" cap kicks in. */
+const EMBEDDED_LIMIT = 40;
+const FULLSCREEN_LIMIT = 300;
+
+const DATE_RANGE_MS: Record<DateRange, number | null> = {
+  all: null,
+  "1h": 60 * 60 * 1000,
+  "24h": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+};
+
+const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: "priority", label: "Priority" },
+  { value: "newest", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+];
+
+const RANGE_OPTIONS: { value: DateRange; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "1h", label: "1h" },
+  { value: "24h", label: "24h" },
+  { value: "7d", label: "7d" },
+];
 
 function isVerifiedReport(report: IncidentReport) {
   return report.verificationStatus === "verified";
@@ -50,8 +80,28 @@ function isPendingMintReport(report: IncidentReport) {
   );
 }
 
-function sortReports(reports: IncidentReport[]) {
-  return [...reports].sort((a, b) => {
+function withinRange(report: IncidentReport, range: DateRange) {
+  const windowMs = DATE_RANGE_MS[range];
+  if (windowMs == null) return true;
+  const ts = new Date(report.createdAt).getTime();
+  if (!Number.isFinite(ts)) return true;
+  return Date.now() - ts <= windowMs;
+}
+
+function sortReports(reports: IncidentReport[], sortBy: SortBy) {
+  const arr = [...reports];
+  if (sortBy === "newest") {
+    return arr.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }
+  if (sortBy === "oldest") {
+    return arr.sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+  }
+  // priority: urgent first, then most-recent within the same rank.
+  return arr.sort((a, b) => {
     const aRank = AI_PRIORITY_ORDER[a.aiPriority ?? "pending"] ?? 2;
     const bRank = AI_PRIORITY_ORDER[b.aiPriority ?? "pending"] ?? 2;
     if (aRank !== bRank) return aRank - bRank;
@@ -93,6 +143,89 @@ function formatRelativeTime(iso: string) {
   return new Date(iso).toLocaleTimeString("en-PH", { hour12: false });
 }
 
+/** Compact segmented toggle used for sort + date-range controls. */
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="inline-flex items-center gap-0.5 rounded-md border border-aeris-border/60 bg-aeris-bg/50 p-0.5"
+    >
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(opt.value)}
+            className={clsx(
+              "rounded px-2 py-1 text-chrome font-mono uppercase tracking-wider transition-colors",
+              active
+                ? "bg-aeris-accent/15 text-aeris-accent shadow-sm"
+                : "text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text",
+            )}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReportControls({
+  sortBy,
+  onSortChange,
+  dateRange,
+  onRangeChange,
+  className,
+}: {
+  sortBy: SortBy;
+  onSortChange: (value: SortBy) => void;
+  dateRange: DateRange;
+  onRangeChange: (value: DateRange) => void;
+  className?: string;
+}) {
+  return (
+    <div className={clsx("flex flex-wrap items-center gap-x-3 gap-y-1.5", className)}>
+      <div className="flex items-center gap-1.5">
+        <span className="text-chrome font-mono uppercase tracking-wider text-aeris-muted/70">
+          Sort
+        </span>
+        <Segmented
+          ariaLabel="Sort reports"
+          options={SORT_OPTIONS}
+          value={sortBy}
+          onChange={onSortChange}
+        />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Clock size={11} className="text-aeris-muted/70" aria-hidden />
+        <span className="text-chrome font-mono uppercase tracking-wider text-aeris-muted/70">
+          Range
+        </span>
+        <Segmented
+          ariaLabel="Filter by time range"
+          options={RANGE_OPTIONS}
+          value={dateRange}
+          onChange={onRangeChange}
+        />
+      </div>
+    </div>
+  );
+}
+
 function StatChip({
   label,
   count,
@@ -121,10 +254,11 @@ function StatChip({
     <Tag
       type={onClick ? "button" : undefined}
       onClick={onClick}
+      aria-pressed={onClick ? Boolean(active) : undefined}
       className={clsx(
-        "rounded border px-2 py-1 text-left transition-colors",
+        "rounded-md border px-2 py-1 text-left transition-colors",
         toneClass,
-        active && "ring-1 ring-aeris-accent/50 bg-aeris-accent/5",
+        active && "ring-1 ring-aeris-accent/60 bg-aeris-accent/10",
         onClick && "hover:bg-aeris-elev/40 cursor-pointer",
       )}
     >
@@ -133,6 +267,98 @@ function StatChip({
       </div>
       <div className="text-sm font-mono tabular-nums leading-tight">{count}</div>
     </Tag>
+  );
+}
+
+type FeedCounts = {
+  total: number;
+  urgent: number;
+  chat: number;
+  unverified: number;
+  verified: number;
+  minted: number;
+  pendingMint: number;
+};
+
+function StatsGrid({
+  counts,
+  filter,
+  onFilter,
+  canReview,
+  mintingAll,
+  onMintAllVerified,
+  className,
+}: {
+  counts: FeedCounts;
+  filter: ReportFilter;
+  onFilter: (next: ReportFilter) => void;
+  canReview: boolean;
+  mintingAll: boolean;
+  onMintAllVerified: () => void;
+  className?: string;
+}) {
+  const toggle = (value: Exclude<ReportFilter, "all">) =>
+    onFilter(filter === value ? "all" : value);
+
+  return (
+    <div className={clsx("grid grid-cols-3 gap-1.5", className)}>
+      <StatChip
+        label="Urgent"
+        count={counts.urgent}
+        tone="danger"
+        active={filter === "urgent"}
+        onClick={() => toggle("urgent")}
+      />
+      <StatChip label="Chat" count={counts.chat} />
+      <StatChip
+        label="Needs Review"
+        count={counts.unverified}
+        tone="warn"
+        active={filter === "unverified"}
+        onClick={() => toggle("unverified")}
+      />
+      <StatChip
+        label="Verified"
+        count={counts.verified}
+        tone="ok"
+        active={filter === "verified"}
+        onClick={() => toggle("verified")}
+      />
+      <StatChip
+        label="Minted"
+        count={counts.minted}
+        tone="ok"
+        active={filter === "minted"}
+        onClick={() => toggle("minted")}
+      />
+      {canReview ? (
+        <button
+          type="button"
+          onClick={onMintAllVerified}
+          disabled={mintingAll || counts.pendingMint === 0}
+          className={clsx(
+            "rounded-md border px-2 py-1 text-left transition-colors",
+            "border-aeris-accent/35 text-aeris-accent",
+            "hover:bg-aeris-accent/10 disabled:cursor-not-allowed disabled:opacity-40",
+          )}
+          title={
+            counts.pendingMint === 0
+              ? "All verified reports are minted or in progress"
+              : `Queue and mint ${counts.pendingMint} verified report${counts.pendingMint === 1 ? "" : "s"}`
+          }
+        >
+          <div className="flex items-center gap-1 text-chrome font-mono uppercase tracking-wider opacity-80">
+            <Stamp size={10} aria-hidden />
+            Mint all
+          </div>
+          <div className="text-sm font-mono tabular-nums leading-tight">
+            {mintingAll ? "…" : counts.pendingMint}
+          </div>
+        </button>
+      ) : (
+        <StatChip label="Pending Mint" count={counts.pendingMint} tone="warn" />
+      )}
+    </div>
   );
 }
 
@@ -175,17 +401,17 @@ function ReportCard({
       role="button"
       tabIndex={0}
       className={clsx(
-        "w-full cursor-pointer rounded-md border p-2 text-left transition-colors",
+        "flex h-full w-full cursor-pointer flex-col rounded-lg border p-2.5 text-left transition-colors",
         "hover:border-aeris-accent/40 hover:bg-aeris-accent/5",
-        "focus:outline-none focus:border-aeris-accent/50",
+        "focus:outline-none focus:border-aeris-accent/50 focus:ring-1 focus:ring-aeris-accent/40",
         CARD_TONE_CLASS[tone],
       )}
     >
-      <header className="mb-1 flex flex-wrap items-center gap-1.5">
+      <header className="mb-1.5 flex flex-wrap items-center gap-1.5">
         {report.aiPriority === "urgent" ? (
-          <Siren size={12} className="shrink-0 text-aeris-danger" aria-hidden />
+          <Siren size={13} className="shrink-0 text-aeris-danger" aria-hidden />
         ) : (
-          <AlertTriangle size={12} className="shrink-0 text-aeris-warn" aria-hidden />
+          <AlertTriangle size={13} className="shrink-0 text-aeris-warn" aria-hidden />
         )}
         <Pill tone="warn">{report.category}</Pill>
         <Pill tone={report.verificationStatus === "verified" ? "ok" : "warn"}>
@@ -199,12 +425,8 @@ function ReportCard({
         {(() => {
           const mint = report.onchain?.mint;
           if (!mint || !mint.status || mint.status === "not_started") return null;
-          const tone =
-            mint.status === "minted"
-              ? "ok"
-              : mint.status === "failed"
-                ? "warn"
-                : "warn";
+          const mintTone =
+            mint.status === "minted" ? "ok" : ("warn" as const);
           const networkLabel = mint.network?.startsWith("skale") ? "SKALE" : "BASE";
           const label =
             mint.status === "minted"
@@ -216,7 +438,7 @@ function ReportCard({
                   : mint.status === "failed"
                     ? `${networkLabel} failed`
                     : `${networkLabel} ${mint.status}`;
-          return <Pill tone={tone}>{label}</Pill>;
+          return <Pill tone={mintTone}>{label}</Pill>;
         })()}
         <time
           dateTime={report.createdAt}
@@ -238,18 +460,18 @@ function ReportCard({
       )}
 
       {report.photoUrl ? (
-        <div className="mt-1.5 overflow-hidden rounded border border-aeris-border/50">
+        <div className="mt-2 overflow-hidden rounded border border-aeris-border/50">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={report.photoUrl}
             alt="Report photo"
-            className="max-h-24 w-full object-cover"
+            className="max-h-28 w-full object-cover"
             loading="lazy"
           />
         </div>
       ) : null}
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-body-sm text-aeris-muted">
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-body-sm text-aeris-muted">
         {report.sourceApp && <span>{report.sourceApp}</span>}
         {confidencePct !== null && <span>{confidencePct}% conf</span>}
         {report.confirmations > 0 && (
@@ -276,25 +498,27 @@ function ReportCard({
             )}
           </span>
         ) : null}
-        <span className="inline-flex items-center gap-0.5 text-aeris-accent/80">
-          <MapPin size={10} aria-hidden />
-          Tap to locate on map
-        </span>
       </div>
 
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          setDetailsOpen((open) => !open);
-        }}
-        className="mt-1 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:text-aeris-text"
-      >
-        {detailsOpen ? "Hide details ▴" : "Details ▾"}
-      </button>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1 text-body-sm text-aeris-accent/80">
+          <MapPin size={11} aria-hidden />
+          Locate on map
+        </span>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setDetailsOpen((open) => !open);
+          }}
+          className="text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:text-aeris-text"
+        >
+          {detailsOpen ? "Hide details ▴" : "Details ▾"}
+        </button>
+      </div>
 
       {detailsOpen && (
-        <div className="mt-1 space-y-0.5 border-t border-aeris-border/40 pt-1 text-body-sm font-mono text-aeris-muted">
+        <div className="mt-1.5 space-y-0.5 border-t border-aeris-border/40 pt-1.5 text-body-sm font-mono text-aeris-muted">
           <div>msg: {report.messageId ?? report.id}</div>
           <div>mint: {report.onchain?.mint.status ?? "not_started"}</div>
           {mintTxHash && (
@@ -325,7 +549,7 @@ function ReportCard({
 
       {canReview && (
         <div
-          className="mt-2 grid grid-cols-3 gap-1"
+          className="mt-2.5 grid grid-cols-3 gap-1"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
           role="presentation"
@@ -334,7 +558,7 @@ function ReportCard({
             type="button"
             disabled={reviewing}
             onClick={(event) => onReview(event, "verify")}
-            className="rounded border border-aeris-ok/30 bg-aeris-ok/10 px-2 py-1.5 text-body-sm text-aeris-ok disabled:opacity-40 min-h-[36px]"
+            className="rounded-md border border-aeris-ok/30 bg-aeris-ok/10 px-2 py-1.5 text-body-sm font-medium text-aeris-ok transition-colors hover:bg-aeris-ok/20 disabled:opacity-40 min-h-[36px]"
           >
             Verify
           </button>
@@ -342,7 +566,7 @@ function ReportCard({
             type="button"
             disabled={reviewing}
             onClick={(event) => onReview(event, "needs_review")}
-            className="rounded border border-aeris-warn/30 bg-aeris-warn/10 px-2 py-1.5 text-body-sm text-aeris-warn disabled:opacity-40 min-h-[36px]"
+            className="rounded-md border border-aeris-warn/30 bg-aeris-warn/10 px-2 py-1.5 text-body-sm font-medium text-aeris-warn transition-colors hover:bg-aeris-warn/20 disabled:opacity-40 min-h-[36px]"
           >
             Review
           </button>
@@ -350,13 +574,90 @@ function ReportCard({
             type="button"
             disabled={reviewing}
             onClick={(event) => onReview(event, "reject")}
-            className="rounded border border-aeris-danger/30 bg-aeris-danger/10 px-2 py-1.5 text-body-sm text-aeris-danger disabled:opacity-40 min-h-[36px]"
+            className="rounded-md border border-aeris-danger/30 bg-aeris-danger/10 px-2 py-1.5 text-body-sm font-medium text-aeris-danger transition-colors hover:bg-aeris-danger/20 disabled:opacity-40 min-h-[36px]"
           >
             Reject
           </button>
         </div>
       )}
     </article>
+  );
+}
+
+function FeedList({
+  id,
+  reports,
+  layout,
+  maxItems,
+  loading,
+  filter,
+  canReview,
+  reviewingId,
+  onFocus,
+  onReview,
+  className,
+}: {
+  id?: string;
+  reports: IncidentReport[];
+  layout: "list" | "grid";
+  maxItems: number;
+  loading: boolean;
+  filter: ReportFilter;
+  canReview: boolean;
+  reviewingId: string | null;
+  onFocus: (report: IncidentReport) => void;
+  onReview: (
+    event: React.MouseEvent,
+    report: IncidentReport,
+    action: ReportReviewAction,
+  ) => void;
+  className?: string;
+}) {
+  const shown = reports.slice(0, maxItems);
+
+  if (loading && reports.length === 0) {
+    return (
+      <p id={id} className="text-body-sm text-aeris-muted py-6 text-center">
+        Fetching reports…
+      </p>
+    );
+  }
+  if (reports.length === 0) {
+    return (
+      <p id={id} className="text-body-sm text-aeris-muted py-6 text-center">
+        {filter === "all"
+          ? "No reports match the current time range."
+          : "No reports match this filter."}
+      </p>
+    );
+  }
+
+  return (
+    <div id={id} className={className}>
+      <div
+        className={clsx(
+          layout === "grid"
+            ? "grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+            : "space-y-2",
+        )}
+      >
+        {shown.map((report) => (
+          <ReportCard
+            key={report.id}
+            report={report}
+            canReview={canReview}
+            reviewing={reviewingId === report.id}
+            onFocus={() => onFocus(report)}
+            onReview={(event, action) => onReview(event, report, action)}
+          />
+        ))}
+      </div>
+      {reports.length > shown.length && (
+        <p className="mt-2 text-center text-chrome font-mono uppercase tracking-wider text-aeris-muted/70">
+          Showing {shown.length} of {reports.length} — narrow the range or filter to see more
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -371,7 +672,10 @@ export function LiveReportsPanel({
   const [reports, setReports] = useState<IncidentReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<ReportFilter>("all");
+  const [sortBy, setSortBy] = useState<SortBy>("priority");
+  const [dateRange, setDateRange] = useState<DateRange>("all");
   const [listExpanded, setListExpanded] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [mintingAll, setMintingAll] = useState(false);
   const [status, setStatus] = useState<{
@@ -382,31 +686,18 @@ export function LiveReportsPanel({
   const { role, userId, authDisabled } = useAerisRole();
   const canReview = role === "admin" || authDisabled;
 
-  const urgentReports = useMemo(
-    () => reports.filter((report) => report.aiPriority === "urgent"),
-    [reports],
-  );
-  const chatReports = useMemo(
-    () => reports.filter((report) => report.sourceApp === "aeris-chat"),
-    [reports],
-  );
-  const unverifiedReports = useMemo(
-    () =>
-      reports.filter(
-        (report) => (report.verificationStatus ?? "unverified") !== "verified",
-      ),
-    [reports],
-  );
-  const verifiedReports = useMemo(
-    () => reports.filter(isVerifiedReport),
-    [reports],
-  );
-  const mintedReports = useMemo(
-    () => reports.filter(isMintedReport),
-    [reports],
-  );
-  const pendingMintReports = useMemo(
-    () => reports.filter(isPendingMintReport),
+  const counts: FeedCounts = useMemo(
+    () => ({
+      total: reports.length,
+      urgent: reports.filter((r) => r.aiPriority === "urgent").length,
+      chat: reports.filter((r) => r.sourceApp === "aeris-chat").length,
+      unverified: reports.filter(
+        (r) => (r.verificationStatus ?? "unverified") !== "verified",
+      ).length,
+      verified: reports.filter(isVerifiedReport).length,
+      minted: reports.filter(isMintedReport).length,
+      pendingMint: reports.filter(isPendingMintReport).length,
+    }),
     [reports],
   );
 
@@ -414,7 +705,7 @@ export function LiveReportsPanel({
     setLoading(true);
     try {
       const data = await fetchReports();
-      setReports(sortReports(data));
+      setReports(data);
       setStatus((current) =>
         current?.tone === "danger"
           ? { tone: "ok", msg: "Reports feed recovered." }
@@ -434,45 +725,62 @@ export function LiveReportsPanel({
     refresh.current = () => {
       void load();
     };
+    // ReportPingsSync (mounted at page level) is the single canonical poller;
+    // it broadcasts the full feed on `aeris:reports-updated`. Subscribe to that
+    // instead of running our own 20s timer so the feed isn't fetched twice.
+    const onUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ reports?: IncidentReport[] }>)
+        .detail;
+      if (!Array.isArray(detail?.reports)) return;
+      setReports(detail.reports);
+      setStatus((current) =>
+        current?.tone === "danger"
+          ? { tone: "ok", msg: "Reports feed recovered." }
+          : current,
+      );
+    };
+    window.addEventListener("aeris:reports-updated", onUpdate);
+    // Populate immediately on mount in case the canonical poller's first
+    // broadcast already fired before this panel subscribed.
     void load();
-    const id = window.setInterval(() => {
-      void load();
-    }, 20 * 1000);
     return () => {
-      window.clearInterval(id);
+      window.removeEventListener("aeris:reports-updated", onUpdate);
     };
   }, [load]);
 
-  const filteredReports = useMemo(() => {
-    const sorted = sortReports(reports);
+  const visibleReports = useMemo(() => {
+    let list = reports;
     if (filter === "urgent") {
-      return sorted.filter((report) => report.aiPriority === "urgent");
-    }
-    if (filter === "unverified") {
-      return sorted.filter(
-        (report) => (report.verificationStatus ?? "unverified") !== "verified",
+      list = list.filter((r) => r.aiPriority === "urgent");
+    } else if (filter === "unverified") {
+      list = list.filter(
+        (r) => (r.verificationStatus ?? "unverified") !== "verified",
       );
+    } else if (filter === "verified") {
+      list = list.filter(isVerifiedReport);
+    } else if (filter === "minted") {
+      list = list.filter(isMintedReport);
     }
-    if (filter === "verified") {
-      return sorted.filter(isVerifiedReport);
-    }
-    if (filter === "minted") {
-      return sorted.filter(isMintedReport);
-    }
-    return sorted;
-  }, [reports, filter]);
+    list = list.filter((r) => withinRange(r, dateRange));
+    return sortReports(list, sortBy);
+  }, [reports, filter, dateRange, sortBy]);
 
-  const focusReport = (report: IncidentReport) => {
-    if (!map) return;
-    map.flyTo({
-      center: report.position,
-      zoom: Math.max(map.getZoom(), 13),
-      duration: 900,
-      essential: true,
-    });
-  };
+  const focusReport = useCallback(
+    (report: IncidentReport) => {
+      if (!map) return;
+      // Close the fullscreen modal so the map (behind it) is visible.
+      setFullscreen(false);
+      map.flyTo({
+        center: report.position,
+        zoom: Math.max(map.getZoom(), 13),
+        duration: 900,
+        essential: true,
+      });
+    },
+    [map],
+  );
 
-  const onMintAllVerified = async () => {
+  const onMintAllVerified = useCallback(async () => {
     setMintingAll(true);
     try {
       const summary = await mintVerifiedReports({ limit: 20 });
@@ -498,60 +806,88 @@ export function LiveReportsPanel({
     } finally {
       setMintingAll(false);
     }
-  };
+  }, []);
 
-  const onReview = async (
-    event: React.MouseEvent,
-    report: IncidentReport,
-    action: ReportReviewAction,
-  ) => {
-    event.stopPropagation();
-    setReviewingId(report.id);
-    try {
-      await reviewReport({
-        reportId: report.id,
-        action,
-        actorId: userId ?? undefined,
-        confidence:
-          action === "verify"
-            ? Math.max(report.confidence ?? 0, 0.85)
-            : action === "reject"
-              ? Math.min(report.confidence ?? 0.25, 0.1)
-              : report.confidence,
-      });
-      setStatus({ tone: "ok", msg: `Report marked ${action}.` });
-      refresh.current();
-      window.dispatchEvent(new CustomEvent("aeris:reports-refresh"));
-    } catch (error) {
-      setStatus({ tone: "danger", msg: (error as Error).message });
-    } finally {
-      setReviewingId(null);
-    }
-  };
+  const onReview = useCallback(
+    async (
+      event: React.MouseEvent,
+      report: IncidentReport,
+      action: ReportReviewAction,
+    ) => {
+      event.stopPropagation();
+      setReviewingId(report.id);
+      try {
+        await reviewReport({
+          reportId: report.id,
+          action,
+          actorId: userId ?? undefined,
+          confidence:
+            action === "verify"
+              ? Math.max(report.confidence ?? 0, 0.85)
+              : action === "reject"
+                ? Math.min(report.confidence ?? 0.25, 0.1)
+                : report.confidence,
+        });
+        setStatus({ tone: "ok", msg: `Report marked ${action}.` });
+        refresh.current();
+        window.dispatchEvent(new CustomEvent("aeris:reports-refresh"));
+      } catch (error) {
+        setStatus({ tone: "danger", msg: (error as Error).message });
+      } finally {
+        setReviewingId(null);
+      }
+    },
+    [userId],
+  );
+
+  const statusBanner = status ? (
+    <div
+      className={clsx(
+        "rounded-md border px-2.5 py-1.5 text-body-sm",
+        status.tone === "ok"
+          ? "border-aeris-ok/30 bg-aeris-ok/10 text-aeris-ok"
+          : status.tone === "warn"
+            ? "border-aeris-warn/30 bg-aeris-warn/10 text-aeris-warn"
+            : "border-aeris-danger/30 bg-aeris-danger/10 text-aeris-danger",
+      )}
+    >
+      {status.msg}
+    </div>
+  ) : null;
 
   return (
     <div className="space-y-2.5">
-      {!embedded && (
-        <CardHeader title="Live Reports" helpId="panel.reports" />
-      )}
+      {!embedded && <CardHeader title="Live Reports" helpId="panel.reports" />}
 
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
           {embedded && (
             <Pill tone={canReview ? "ok" : "warn"}>{formatAerisRoleLabel(role)}</Pill>
           )}
           <FreshnessTag source="reports" />
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          disabled={loading}
-          className="shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
-          aria-label="Refresh reports"
-        >
-          <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
-          Sync
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setFullscreen(true)}
+            className="inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text"
+            aria-label="Open reports in full screen"
+            title="Full screen"
+          >
+            <Maximize2 size={10} />
+            Expand
+          </button>
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
+            aria-label="Sync reports"
+          >
+            <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
+            Sync
+          </button>
+        </div>
       </div>
 
       <div className="rounded-md border border-aeris-danger/45 bg-aeris-danger/10 px-3 py-2">
@@ -561,7 +897,7 @@ export function LiveReportsPanel({
               Total Reports
             </div>
             <div className="text-2xl font-mono font-semibold tabular-nums leading-none text-aeris-danger">
-              {reports.length}
+              {counts.total}
             </div>
           </div>
           {loading && reports.length === 0 ? (
@@ -570,109 +906,28 @@ export function LiveReportsPanel({
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <div className="grid grid-cols-3 gap-1.5">
-          <StatChip
-            label="Urgent"
-            count={urgentReports.length}
-            tone="danger"
-            active={filter === "urgent"}
-            onClick={() =>
-              setFilter((current) => (current === "urgent" ? "all" : "urgent"))
-            }
-          />
-          <StatChip
-            label="Chat"
-            count={chatReports.length}
-            active={false}
-          />
-          <StatChip
-            label="Needs Review"
-            count={unverifiedReports.length}
-            tone="warn"
-            active={filter === "unverified"}
-            onClick={() =>
-              setFilter((current) =>
-                current === "unverified" ? "all" : "unverified",
-              )
-            }
-          />
-        </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          <StatChip
-            label="Verified"
-            count={verifiedReports.length}
-            tone="ok"
-            active={filter === "verified"}
-            onClick={() =>
-              setFilter((current) =>
-                current === "verified" ? "all" : "verified",
-              )
-            }
-          />
-          <StatChip
-            label="Minted"
-            count={mintedReports.length}
-            tone="ok"
-            active={filter === "minted"}
-            onClick={() =>
-              setFilter((current) => (current === "minted" ? "all" : "minted"))
-            }
-          />
-          {canReview ? (
-            <button
-              type="button"
-              onClick={() => void onMintAllVerified()}
-              disabled={mintingAll || pendingMintReports.length === 0}
-              className={clsx(
-                "rounded border px-2 py-1 text-left transition-colors",
-                "border-aeris-accent/35 text-aeris-accent",
-                "hover:bg-aeris-accent/10 disabled:cursor-not-allowed disabled:opacity-40",
-              )}
-              title={
-                pendingMintReports.length === 0
-                  ? "All verified reports are minted or in progress"
-                  : `Queue and mint ${pendingMintReports.length} verified report${pendingMintReports.length === 1 ? "" : "s"}`
-              }
-            >
-              <div className="flex items-center gap-1 text-chrome font-mono uppercase tracking-wider opacity-80">
-                <Stamp size={10} aria-hidden />
-                Mint all
-              </div>
-              <div className="text-sm font-mono tabular-nums leading-tight">
-                {mintingAll ? "…" : pendingMintReports.length}
-              </div>
-            </button>
-          ) : (
-            <StatChip
-              label="Pending Mint"
-              count={pendingMintReports.length}
-              tone="warn"
-              active={false}
-            />
-          )}
-        </div>
-      </div>
+      <StatsGrid
+        counts={counts}
+        filter={filter}
+        onFilter={setFilter}
+        canReview={canReview}
+        mintingAll={mintingAll}
+        onMintAllVerified={() => void onMintAllVerified()}
+      />
+
+      <ReportControls
+        sortBy={sortBy}
+        onSortChange={setSortBy}
+        dateRange={dateRange}
+        onRangeChange={setDateRange}
+      />
 
       <p className="text-body-sm leading-snug text-aeris-muted">
         Consumer reports are displayed immediately as unverified intelligence
         until corroborated by operators or official sources.
       </p>
 
-      {status && (
-        <div
-          className={clsx(
-            "text-body-sm",
-            status.tone === "ok"
-              ? "text-aeris-ok"
-              : status.tone === "warn"
-                ? "text-aeris-warn"
-                : "text-aeris-danger",
-          )}
-        >
-          {status.msg}
-        </div>
-      )}
+      {statusBanner}
 
       <div className="border-t border-aeris-border pt-2">
         <button
@@ -693,11 +948,11 @@ export function LiveReportsPanel({
           <span className="text-body-sm font-mono tabular-nums text-aeris-muted">
             {loading && reports.length === 0
               ? "…"
-              : `${filteredReports.length} item${filteredReports.length === 1 ? "" : "s"}`}
+              : `${visibleReports.length} item${visibleReports.length === 1 ? "" : "s"}`}
           </span>
-          {urgentReports.length > 0 && !listExpanded && (
+          {counts.urgent > 0 && !listExpanded && (
             <Pill tone="danger" className="ml-1">
-              {urgentReports.length} urgent
+              {counts.urgent} urgent
             </Pill>
           )}
           <ChevronDown
@@ -711,39 +966,205 @@ export function LiveReportsPanel({
         </button>
 
         {listExpanded ? (
-          <div
+          <FeedList
             id="live-reports-feed"
-            className="mt-2 space-y-2 max-h-[min(50vh,420px)] overflow-y-auto"
-          >
-            {loading && reports.length === 0 ? (
-              <p className="text-body-sm text-aeris-muted py-4 text-center">
-                Fetching reports…
-              </p>
-            ) : filteredReports.length === 0 ? (
-              <p className="text-body-sm text-aeris-muted py-4 text-center">
-                {filter === "all"
-                  ? "No reports yet."
-                  : "No reports match this filter."}
-              </p>
-            ) : (
-              filteredReports.slice(0, 20).map((report) => (
-                <ReportCard
-                  key={report.id}
-                  report={report}
-                  canReview={canReview}
-                  reviewing={reviewingId === report.id}
-                  onFocus={() => focusReport(report)}
-                  onReview={(event, action) => onReview(event, report, action)}
-                />
-              ))
-            )}
-          </div>
-        ) : filteredReports.length > 0 ? (
+            reports={visibleReports}
+            layout="list"
+            maxItems={EMBEDDED_LIMIT}
+            loading={loading}
+            filter={filter}
+            canReview={canReview}
+            reviewingId={reviewingId}
+            onFocus={focusReport}
+            onReview={onReview}
+            className="mt-2 max-h-[min(60vh,560px)] overflow-y-auto pr-0.5"
+          />
+        ) : visibleReports.length > 0 ? (
           <p className="mt-1.5 text-body-sm text-aeris-muted">
-            Expand to review individual reports and take action.
+            Expand to review individual reports, or open full screen for the grid view.
           </p>
         ) : null}
       </div>
+
+      {fullscreen ? (
+        <ReportsFullscreen
+          onClose={() => setFullscreen(false)}
+          onSync={() => void load()}
+          loading={loading}
+          role={role}
+          canReview={canReview}
+          counts={counts}
+          filter={filter}
+          onFilter={setFilter}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          dateRange={dateRange}
+          onRangeChange={setDateRange}
+          mintingAll={mintingAll}
+          onMintAllVerified={() => void onMintAllVerified()}
+          statusBanner={statusBanner}
+          reports={visibleReports}
+          reviewingId={reviewingId}
+          onFocus={focusReport}
+          onReview={onReview}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function ReportsFullscreen({
+  onClose,
+  onSync,
+  loading,
+  role,
+  canReview,
+  counts,
+  filter,
+  onFilter,
+  sortBy,
+  onSortChange,
+  dateRange,
+  onRangeChange,
+  mintingAll,
+  onMintAllVerified,
+  statusBanner,
+  reports,
+  reviewingId,
+  onFocus,
+  onReview,
+}: {
+  onClose: () => void;
+  onSync: () => void;
+  loading: boolean;
+  role: AerisRole;
+  canReview: boolean;
+  counts: FeedCounts;
+  filter: ReportFilter;
+  onFilter: (next: ReportFilter) => void;
+  sortBy: SortBy;
+  onSortChange: (value: SortBy) => void;
+  dateRange: DateRange;
+  onRangeChange: (value: DateRange) => void;
+  mintingAll: boolean;
+  onMintAllVerified: () => void;
+  statusBanner: React.ReactNode;
+  reports: IncidentReport[];
+  reviewingId: string | null;
+  onFocus: (report: IncidentReport) => void;
+  onReview: (
+    event: React.MouseEvent,
+    report: IncidentReport,
+    action: ReportReviewAction,
+  ) => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  if (!mounted) return null;
+
+  // Portalled to <body> so this modal escapes ancestor stacking contexts
+  // (e.g. the sidebar's `backdrop-blur`), matching the PdfOverlay pattern.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex flex-col bg-aeris-bg/80 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Live reports — full screen"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col overflow-hidden p-3 sm:p-4">
+        <div className="flex h-full flex-col overflow-hidden rounded-xl border border-aeris-border bg-aeris-surface shadow-2xl">
+          {/* Header */}
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-aeris-border bg-aeris-elev/50 px-3 py-2.5 sm:px-4">
+            <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-aeris-accent" />
+            <span className="text-body-sm font-semibold text-aeris-text">
+              Live Reports
+            </span>
+            <Pill tone={canReview ? "ok" : "warn"}>{formatAerisRoleLabel(role)}</Pill>
+            <FreshnessTag source="reports" />
+            <span className="text-body-sm font-mono tabular-nums text-aeris-muted">
+              {counts.total} total
+            </span>
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                onClick={onSync}
+                disabled={loading}
+                className="inline-flex items-center gap-1 rounded border border-aeris-border px-2 py-1 text-body-sm font-mono text-aeris-muted transition-colors hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+                Sync
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex items-center gap-1 rounded border border-aeris-border px-2 py-1 text-body-sm font-mono text-aeris-muted transition-colors hover:border-aeris-danger/60 hover:bg-aeris-danger/5 hover:text-aeris-danger"
+                title="Close (Esc)"
+                aria-label="Close full screen"
+              >
+                <X size={12} /> Close
+              </button>
+            </div>
+          </div>
+
+          {/* Toolbar */}
+          <div className="shrink-0 space-y-2.5 border-b border-aeris-border/60 bg-aeris-bg/30 px-3 py-2.5 sm:px-4">
+            <StatsGrid
+              counts={counts}
+              filter={filter}
+              onFilter={onFilter}
+              canReview={canReview}
+              mintingAll={mintingAll}
+              onMintAllVerified={onMintAllVerified}
+              className="sm:grid-cols-6"
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <ReportControls
+                sortBy={sortBy}
+                onSortChange={onSortChange}
+                dateRange={dateRange}
+                onRangeChange={onRangeChange}
+              />
+              <span className="text-body-sm font-mono tabular-nums text-aeris-muted">
+                {reports.length} item{reports.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            {statusBanner}
+          </div>
+
+          {/* Feed grid */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+            <FeedList
+              reports={reports}
+              layout="grid"
+              maxItems={FULLSCREEN_LIMIT}
+              loading={loading}
+              filter={filter}
+              canReview={canReview}
+              reviewingId={reviewingId}
+              onFocus={onFocus}
+              onReview={onReview}
+            />
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

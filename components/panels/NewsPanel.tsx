@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CardHeader, Pill } from "../ui/Card";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import { usePanelHeaderBadge } from "@/components/panel-header-badge";
 import { FreshnessTag } from "../ui/FreshnessTag";
 import { fetchNews, type NewsFetchResult, type NewsItem } from "@/services/news";
@@ -11,30 +12,19 @@ export function NewsPanel() {
   const [items, setItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
+  useVisiblePolling(() => {
+    void (async () => {
       try {
         const result: NewsFetchResult = await fetchNews();
-        if (!cancelled) {
-          setItems(result.items);
-          setError(null);
-        }
+        setItems(result.items);
+        setError(null);
       } catch (newsError) {
-        if (!cancelled) {
-          setError((newsError as Error).message);
-        }
+        setError((newsError as Error).message);
       } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
-    };
-    run();
-    const id = window.setInterval(run, 10 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+    })();
+  }, 10 * 60 * 1000);
 
   const headerBadge = useMemo(() => {
     if (loading) return <Pill>loading</Pill>;

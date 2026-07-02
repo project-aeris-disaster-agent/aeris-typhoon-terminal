@@ -19,6 +19,7 @@ import {
   type PagasaBulletins,
 } from "@/lib/pagasa-bulletins";
 import { fetchOpenMeteoForecast } from "@/lib/open-meteo-server";
+import { store } from "@/lib/kv";
 import { computeForecastAlert } from "@/lib/forecast-alert";
 import {
   buildNationalWeatherSnapshot,
@@ -120,10 +121,20 @@ export type AgentLiveContext = {
   };
 };
 
-/** Single-flight + 60s memoization for the national snapshot. */
+/**
+ * Two-layer cache for the national snapshot:
+ *  - L1: in-process memory (per warm lambda instance) + single-flight.
+ *  - L2: shared Vercel KV, so the chat route, the Minds snapshot route, and the
+ *    crons reuse one upstream build (Open-Meteo/GDACS/PAGASA) instead of each
+ *    cold instance fanning out independently — which protects those third-party
+ *    rate limits and cuts function duration. `store` no-ops to an in-memory map
+ *    when KV is unconfigured (local dev), so this path is dev-safe.
+ */
 let snapshotCache: { at: number; value: NationalWeatherSnapshot } | null = null;
 let snapshotInFlight: Promise<NationalWeatherSnapshot> | null = null;
 const SNAPSHOT_TTL_MS = 60_000;
+const SNAPSHOT_KV_KEY = "snapshot:national";
+const SNAPSHOT_KV_TTL_SECONDS = 90;
 
 async function getCachedSnapshot(): Promise<NationalWeatherSnapshot> {
   const now = Date.now();
@@ -132,14 +143,28 @@ async function getCachedSnapshot(): Promise<NationalWeatherSnapshot> {
   }
   if (snapshotInFlight) return snapshotInFlight;
 
-  snapshotInFlight = buildNationalWeatherSnapshot()
-    .then((value) => {
-      snapshotCache = { at: Date.now(), value };
-      return value;
-    })
-    .finally(() => {
-      snapshotInFlight = null;
-    });
+  snapshotInFlight = (async () => {
+    // L2 hit is implicitly fresh: KV's own TTL handles expiry.
+    try {
+      const cached = await store.get<NationalWeatherSnapshot>(SNAPSHOT_KV_KEY);
+      if (cached) {
+        snapshotCache = { at: Date.now(), value: cached };
+        return cached;
+      }
+    } catch {
+      // KV unavailable — fall through to a fresh build.
+    }
+
+    const value = await buildNationalWeatherSnapshot();
+    snapshotCache = { at: Date.now(), value };
+    store
+      .set(SNAPSHOT_KV_KEY, value, SNAPSHOT_KV_TTL_SECONDS)
+      .catch(() => undefined);
+    return value;
+  })().finally(() => {
+    snapshotInFlight = null;
+  });
+
   return snapshotInFlight;
 }
 

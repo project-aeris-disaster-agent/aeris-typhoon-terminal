@@ -10,6 +10,7 @@ import {
   getChatProfile,
   upsertChatProfile,
 } from "@/lib/community-chat";
+import { getUserProfile } from "@/lib/user-profiles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,9 +38,27 @@ export async function GET() {
   if (!userId) return jsonError("Authentication required.", 401);
 
   const profile = await getChatProfile(userId);
-  return jsonOkNoStore({
-    displayName: profile?.display_name ?? null,
-  });
+  if (profile?.display_name) {
+    return jsonOkNoStore({ displayName: profile.display_name });
+  }
+
+  // No chat-specific nickname yet: the account already has a persistent
+  // username from the main profile sync (aeris_user_profiles, seeded at
+  // login). Reuse it so chat identity comes from the Privy-linked profile
+  // instead of forcing a manual "pick a nickname" prompt on every device.
+  // The user can still change it later via the nickname gate/edit flow,
+  // which upserts a chat-specific override into community_chat_profiles.
+  const mainProfile = await getUserProfile(userId).catch(() => null);
+  if (mainProfile?.username) {
+    const seeded = await upsertChatProfile(userId, mainProfile.username);
+    if (seeded.ok) {
+      return jsonOkNoStore({ displayName: seeded.profile.display_name });
+    }
+    // Collision with another chat nickname: fall through to manual entry
+    // rather than silently assigning a different name than the profile.
+  }
+
+  return jsonOkNoStore({ displayName: null });
 }
 
 export async function POST(request: Request) {

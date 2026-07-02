@@ -173,7 +173,7 @@ export default function HomePage() {
                         <button
                           type="button"
                           onClick={() => setCommunityChatOpen(true)}
-                          className="hud-text absolute bottom-3 left-3 z-40 flex items-center gap-1.5 rounded-md border border-aeris-border bg-aeris-surface/95 px-2.5 py-1.5 text-body-sm font-semibold text-aeris-muted shadow-md backdrop-blur-md transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent"
+                          className="hud-text absolute bottom-12 left-3 z-40 flex items-center gap-1.5 rounded-md border border-aeris-border bg-aeris-surface/95 px-2.5 py-1.5 text-body-sm font-semibold text-aeris-muted shadow-md backdrop-blur-md transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent"
                           aria-label="Open community chat"
                         >
                           <svg

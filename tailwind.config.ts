@@ -43,11 +43,16 @@ const config: Config = {
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "scan-line": "scanline 2s linear infinite",
+        aurora: "aurora var(--animation-speed, 60s) linear infinite",
       },
       keyframes: {
         scanline: {
           "0%": { transform: "translateY(-100%)" },
           "100%": { transform: "translateY(100vh)" },
+        },
+        aurora: {
+          from: { backgroundPosition: "50% 50%, 50% 50%" },
+          to: { backgroundPosition: "350% 50%, 350% 50%" },
         },
       },
     },

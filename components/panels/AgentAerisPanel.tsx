@@ -12,6 +12,7 @@ import { clsx } from "clsx";
 import { AgentSpeechControls } from "@/components/agent/AgentSpeechControls";
 import { AerisVrmAvatar } from "@/components/agent/AerisVrmAvatar";
 import { useAgentSpeech } from "@/hooks/useAgentSpeech";
+import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 import type { AgentExplainRequest } from "@/lib/help/agent-explain";
 
 type AgentRole = "user" | "assistant" | "system";
@@ -288,16 +289,18 @@ export function AgentAerisPanel({
     void loadHistory();
   }, [isActive, historyLoaded, loadHistory]);
 
-  useEffect(() => {
-    if (!isActive) return;
-    const interval = window.setInterval(() => {
+  useVisiblePolling(
+    () => {
       // Don't refetch in the middle of a conversation; merge-by-id is safe,
       // but pausing avoids any visual churn while the operator is typing.
       if (isSending || input.length > 0) return;
       void loadHistory();
-    }, 30_000);
-    return () => window.clearInterval(interval);
-  }, [isActive, loadHistory, isSending, input]);
+    },
+    30_000,
+    // History is seeded by a separate effect on activation, so skip the
+    // immediate fire here to avoid a duplicate fetch when the panel opens.
+    { enabled: isActive, immediate: false },
+  );
 
   useEffect(() => {
     const node = scrollRef.current;
