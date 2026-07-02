@@ -13,7 +13,6 @@ import {
   resetImageryBufferOpacities,
   raiseImageryBufferSlot,
   imageryBufferSourceId,
-  gibsAnimationFrames,
   getGibsRequestDiagnostics,
   getLiveWeatherSourceContract,
   normalizeLiveImagerySource,
@@ -28,6 +27,7 @@ import {
   WEATHER_TILE_READY_MAX_WAIT_MS,
   WEATHER_LOOP_WRAP_CROSSFADE_FACTOR,
   WEATHER_FRAME_PRELOAD_LEAD_MS,
+  WEATHER_ADVANCE_MAX_STALL_MS,
   easeInOutCubic,
   weatherFrameHoldMs,
   weatherLoopEndHoldMs,
@@ -73,6 +73,8 @@ type State = {
   preload: PreloadState | null;
   activeNowcastTint: boolean;
   nextAdvanceAtMs: number;
+  /** Deadline for waiting on unready incoming tiles before advancing anyway. */
+  advanceStallDeadlineMs: number | null;
   tickId: number | null;
   mapMode: "2d" | "3d";
   typhoonFocus: Typhoon | null;
@@ -109,10 +111,43 @@ function currentFrame(st: State): RadarFrame | null {
   return st.timeline.frames[st.timeline.index] ?? null;
 }
 
+/** Newest frame in the loop — feed freshness is judged against this, not the playhead. */
+function newestFrame(st: State): RadarFrame | null {
+  return st.timeline.frames[st.timeline.frames.length - 1] ?? null;
+}
+
+function satelliteFallbackMessage(
+  source: Exclude<LiveImagerySource, "radar">,
+  provider: SatelliteFrameProvider,
+): string | null {
+  // GIBS is the *primary* feed for Air Mass — only IR treats it as a fallback.
+  if (source !== "himawari-ir" || provider !== "gibs-fallback") return null;
+  return "RainViewer IR offline — showing NASA GIBS Himawari-9.";
+}
+
 function devLog(tag: string, payload: Record<string, unknown>) {
   if (process.env.NODE_ENV === "production") return;
   // eslint-disable-next-line no-console
   console.debug(`[live-weather] ${tag}`, payload);
+}
+
+/**
+ * Adopt the provider's authoritative frame window while keeping the playhead
+ * on the same timestamp when it still exists. Adds new frames and prunes
+ * expired ones — appending alone is what previously caused the loop to animate
+ * dead tiles (blank imagery) the longer the tab stayed open.
+ */
+function reconcileTimelineFrames(st: State, freshFrames: RadarFrame[]) {
+  const existingTimes = new Set(st.timeline.frames.map((f) => f.time));
+  const freshTimes = new Set(freshFrames.map((f) => f.time));
+  const changed =
+    freshFrames.some((f) => !existingTimes.has(f.time)) ||
+    st.timeline.frames.some((f) => !freshTimes.has(f.time));
+  if (changed) {
+    setTimelineFrames(st, freshFrames, {
+      preservePlayheadTime: currentFrame(st)?.time ?? null,
+    });
+  }
 }
 
 function setTimelineFrames(
@@ -195,13 +230,23 @@ async function refreshSatelliteFrames(
   const cur = store.get(map);
   if (!cur || cur.source !== source) return;
   const previousProvider = cur.satelliteProvider;
+  // Keep showing cached RainViewer frames through a transient outage, but only
+  // while they're within the staleness contract — RainViewer drops expired
+  // frame paths, so animating them past that point renders blank tiles.
+  const newestCachedMs = hadFrames
+    ? new Date(cur.timeline.frames[cur.timeline.frames.length - 1].time).getTime()
+    : Number.NaN;
+  const cacheStillFresh =
+    Number.isFinite(newestCachedMs) &&
+    Date.now() - newestCachedMs <
+      getLiveWeatherSourceContract(source).staleAfterMinutes * 60_000;
   const canUseCacheFirst =
     result.provider === "gibs-fallback" &&
     hadFrames &&
-    previousProvider === "rainviewer-satellite";
+    previousProvider === "rainviewer-satellite" &&
+    cacheStillFresh;
   if (canUseCacheFirst) {
-    cur.fallbackMessage =
-      "Primary satellite feed unavailable; showing last-known-good satellite frame cache.";
+    cur.fallbackMessage = "Live IR feed stalled — holding the last good frames.";
     emitStatus(cur, cur.fallbackMessage);
     if (options?.restartTicker) {
       startTicker(map);
@@ -212,24 +257,8 @@ async function refreshSatelliteFrames(
   cur.satelliteProvider = result.provider;
 
   if (options?.preserveAnimation && hadFrames && !providerChanged) {
-    const playheadTime = currentFrame(cur)?.time ?? null;
-    const existingTimes = new Set(cur.timeline.frames.map((f) => f.time));
-    const freshTimes = new Set(result.frames.map((f) => f.time));
-    const hasNewFrames = result.frames.some((f) => !existingTimes.has(f.time));
-    const hasExpiredFrames = cur.timeline.frames.some(
-      (f) => !freshTimes.has(f.time),
-    );
-    // Reconcile to the provider's authoritative window so expired satellite
-    // frames are pruned (not just appended), preventing stale/blank imagery.
-    if (hasNewFrames || hasExpiredFrames) {
-      setTimelineFrames(cur, result.frames, {
-        preservePlayheadTime: playheadTime,
-      });
-    }
-    cur.fallbackMessage =
-      result.provider === "gibs-fallback"
-        ? "Primary satellite feed unavailable; using GIBS fallback."
-        : null;
+    reconcileTimelineFrames(cur, result.frames);
+    cur.fallbackMessage = satelliteFallbackMessage(source, result.provider);
     emitStatus(cur, cur.fallbackMessage);
     return;
   }
@@ -243,12 +272,7 @@ async function refreshSatelliteFrames(
   cur.preload = null;
   cur.activeNowcastTint = false;
   cur.nextAdvanceAtMs = performance.now() + frameHoldMs(cur);
-  cur.fallbackMessage =
-    result.provider === "gibs-fallback"
-      ? hadFrames
-        ? "Primary satellite feed unavailable; using GIBS fallback."
-        : "Primary satellite feed unavailable; started with GIBS fallback."
-      : null;
+  cur.fallbackMessage = satelliteFallbackMessage(source, result.provider);
   emitStatus(cur, cur.fallbackMessage);
   if (options?.restartTicker) {
     startTicker(map);
@@ -277,23 +301,7 @@ async function refreshRadarFrames(
   const cur = store.get(map);
   if (!cur || cur.source !== "radar") return;
   if (options?.preserveAnimation && cur.timeline.frames.length > 0) {
-    const playheadTime = currentFrame(cur)?.time ?? null;
-    const existingTimes = new Set(cur.timeline.frames.map((f) => f.time));
-    const freshTimes = new Set(result.frames.map((f) => f.time));
-    const hasNewFrames = result.frames.some((f) => !existingTimes.has(f.time));
-    const hasExpiredFrames = cur.timeline.frames.some(
-      (f) => !freshTimes.has(f.time),
-    );
-    // Reconcile to RainViewer's authoritative window instead of appending.
-    // `result.frames` already covers the valid past + nowcast range, so
-    // adopting it both adds new frames and drops expired ones — the latter is
-    // what previously caused the loop to animate dead tiles (blank radar) the
-    // longer the tab stayed open.
-    if (hasNewFrames || hasExpiredFrames) {
-      setTimelineFrames(cur, result.frames, {
-        preservePlayheadTime: playheadTime,
-      });
-    }
+    reconcileTimelineFrames(cur, result.frames);
     cur.fallbackMessage = null;
     emitStatus(cur, null);
     return;
@@ -393,7 +401,7 @@ function resolveLiveWeatherHealth(
 }
 
 function emitStatus(st: State, message: string | null = st.fallbackMessage) {
-  const frame = currentFrame(st);
+  const frame = newestFrame(st);
   const diagnostics =
     st.source === "radar" || st.satelliteProvider !== "gibs-fallback" || !frame
       ? { clamped: false }
@@ -408,7 +416,7 @@ function emitStatus(st: State, message: string | null = st.fallbackMessage) {
   window.dispatchEvent(new CustomEvent<LiveWeatherStatusDetail>(LIVE_WEATHER_STATUS_EVENT, { detail }));
 }
 
-function emitFrame(map: MLMap, st: State) {
+function emitFrame(st: State) {
   const fr = currentFrame(st);
   if (!fr) return;
   window.dispatchEvent(
@@ -466,18 +474,19 @@ function waitForImagerySlot(
     return Promise.resolve();
   }
   return new Promise((resolve) => {
-    const deadline = performance.now() + WEATHER_TILE_READY_MAX_WAIT_MS;
+    // Resolves when the slot's tiles load, or after the max wait — the blend
+    // starts regardless so a slow tile server can't stall the animation.
+    let timer = 0;
+    const finish = () => {
+      map.off("sourcedata", onData);
+      window.clearTimeout(timer);
+      resolve();
+    };
     const onData = () => {
-      if (isImagerySourceReady(map, source, slot) || performance.now() >= deadline) {
-        map.off("sourcedata", onData);
-        resolve();
-      }
+      if (isImagerySourceReady(map, source, slot)) finish();
     };
     map.on("sourcedata", onData);
-    window.setTimeout(() => {
-      map.off("sourcedata", onData);
-      resolve();
-    }, WEATHER_TILE_READY_MAX_WAIT_MS);
+    timer = window.setTimeout(finish, WEATHER_TILE_READY_MAX_WAIT_MS);
   });
 }
 
@@ -578,9 +587,10 @@ function startTicker(map: MLMap) {
   if (!s || !shouldRunWeatherTicker(s)) return;
   stopTicker(map);
 
-  emitFrame(map, s);
+  emitFrame(s);
   s.crossfade = null;
   s.preload = null;
+  s.advanceStallDeadlineMs = null;
   s.nextAdvanceAtMs = performance.now() + holdAfterIndexMs(s, s.timeline.index);
   resetImageryBufferOpacities(map, s.source, s.activeSlot);
   const initialFrame = currentFrame(s);
@@ -628,7 +638,7 @@ function startTicker(map: MLMap) {
         st.nextAdvanceAtMs = now + holdAfterIndexMs(st, st.timeline.index);
         if (fr) {
           try {
-            emitFrame(map, st);
+            emitFrame(st);
           } catch (err) {
             console.error("[live-weather] crossfade complete", err);
           }
@@ -643,20 +653,35 @@ function startTicker(map: MLMap) {
         }
       }
       if (now >= st.nextAdvanceAtMs) {
-        st.nextAdvanceAtMs = Number.POSITIVE_INFINITY;
         const prevIdx = st.timeline.index;
         const nextIdx = advanceTimelineIndex(st);
-        const isWrap = nextIdx === 0 && prevIdx !== 0;
-        if (isWrap && st.source !== "radar" && st.satelliteProvider === "gibs-fallback") {
-          st.timeline.frames = gibsAnimationFrames();
-          st.preload = null;
+        if (st.preload?.index !== nextIdx) {
+          try {
+            preloadNextFrame(map, st);
+          } catch (err) {
+            console.error("[live-weather] preload", err);
+          }
         }
-        st.timeline.index = nextIdx;
-        const fr = currentFrame(st);
-        if (fr) {
-          void beginCrossfade(map, st, fr, isWrap).catch((err) => {
-            console.error("[live-weather] crossfade start", err);
-          });
+        // Hold the current frame while the incoming buffer's tiles load —
+        // blending into an empty buffer makes the overlay flash/disappear.
+        // Advance anyway after a bounded stall so a dead tile server can't
+        // freeze the loop.
+        const inactiveSlot = (1 - st.activeSlot) as ImageryBufferSlot;
+        const incomingReady = isImagerySourceReady(map, st.source, inactiveSlot);
+        if (!incomingReady && st.advanceStallDeadlineMs == null) {
+          st.advanceStallDeadlineMs = now + WEATHER_ADVANCE_MAX_STALL_MS;
+        }
+        if (incomingReady || now >= (st.advanceStallDeadlineMs ?? 0)) {
+          st.advanceStallDeadlineMs = null;
+          st.nextAdvanceAtMs = Number.POSITIVE_INFINITY;
+          const isWrap = nextIdx === 0 && prevIdx !== 0;
+          st.timeline.index = nextIdx;
+          const fr = currentFrame(st);
+          if (fr) {
+            void beginCrossfade(map, st, fr, isWrap).catch((err) => {
+              console.error("[live-weather] crossfade start", err);
+            });
+          }
         }
       }
     }
@@ -690,6 +715,7 @@ export function initLiveWeatherOverlay(map: MLMap) {
     preload: null,
     activeNowcastTint: false,
     nextAdvanceAtMs: 0,
+    advanceStallDeadlineMs: null,
     tickId: null,
     mapMode: "2d",
     typhoonFocus: null,
@@ -881,6 +907,7 @@ export function setLiveWeatherImagerySource(
   s.crossfade = null;
   s.preload = null;
   s.activeNowcastTint = false;
+  s.advanceStallDeadlineMs = null;
   stopTicker(map);
 
   if (source === "radar") {

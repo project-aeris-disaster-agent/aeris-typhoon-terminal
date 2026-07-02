@@ -174,6 +174,13 @@ const RADAR_SOURCE_ID = "src-radar";
 const RADAR_LAYER_ID = "lyr-radar";
 const RADAR_SOURCE_B_ID = "src-radar-b";
 const RADAR_LAYER_B_ID = "lyr-radar-b";
+/**
+ * PH coastline outline shown above full-frame (non-transparent) satellite
+ * imagery — GIBS Himawari hides the basemap, so without this the country is
+ * invisible under the overlay. Data: simplified geoBoundaries ADM0 (CC-BY 4.0).
+ */
+const PH_OUTLINE_SOURCE_ID = "src-ph-outline";
+const PH_OUTLINE_LAYER_ID = "lyr-ph-outline";
 const satelliteProviderByMap = new WeakMap<MLMap, SatelliteFrameProvider>();
 const imageryBaseOpacityByMap = new WeakMap<MLMap, number>();
 
@@ -226,9 +233,78 @@ const GIBS_TIME_STEP_MS = 10 * 60 * 1000;
 /**
  * GIBS "best" Himawari is not available at the wall-clock "current" 10-minute
  * slot immediately; requesting too-new times yields empty/404 tiles and the
- * map shows a broken, blocky mosaic. Keep all requests at or before this lag.
+ * map shows a broken, blocky mosaic. Used only when DescribeDomains hasn't
+ * told us the actual newest published frame yet.
  */
 const GIBS_PUBLISH_LAG_MS = 35 * 60 * 1000;
+/** How many frames the Himawari browse animation plays. */
+const GIBS_ANIMATION_FRAME_COUNT = 12;
+/** Time window queried from DescribeDomains (covers gaps in the 10-min feed). */
+const GIBS_DOMAIN_QUERY_WINDOW_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Newest frame time GIBS actually reported as published (via DescribeDomains).
+ * Anchors the synthetic-frame fallback and the tile-URL clamp so we never
+ * request unpublished (404) times.
+ */
+let gibsNewestPublishedMs: number | null = null;
+
+/** Expand a WMTS `<Domain>` time list ("start/end/PT10M,..." or instants). */
+export function parseGibsDomainTimes(domainText: string): number[] {
+  const out: number[] = [];
+  for (const part of domainText.split(",")) {
+    const segs = part.trim().split("/");
+    if (!segs[0]) continue;
+    const startMs = Date.parse(segs[0]);
+    if (!Number.isFinite(startMs)) continue;
+    if (segs.length === 1) {
+      out.push(startMs);
+      continue;
+    }
+    const endMs = Date.parse(segs[1]);
+    if (!Number.isFinite(endMs)) continue;
+    const periodMatch = /^PT(\d+)M$/.exec(segs[2] ?? "");
+    const stepMs = periodMatch
+      ? Number(periodMatch[1]) * 60_000
+      : GIBS_TIME_STEP_MS;
+    for (
+      let t = startMs;
+      t <= endMs && out.length < 500;
+      t += Math.max(stepMs, 60_000)
+    ) {
+      out.push(t);
+    }
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/**
+ * Ask GIBS which frame times actually exist (WMTS DescribeDomains). The
+ * Himawari browse feed has both a variable publish lag (~30-40 min) and
+ * mid-window gaps; animating assumed 10-minute slots renders blank frames
+ * wherever a slot is missing. CORS is open (`Access-Control-Allow-Origin: *`).
+ */
+async function fetchGibsAvailableFrameTimes(sourceKey: string): Promise<string[]> {
+  const spec = resolveGibsSpec(sourceKey);
+  const fmt = (ms: number) => new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
+  const now = Date.now();
+  const url =
+    "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/wmts.cgi" +
+    "?SERVICE=WMTS&REQUEST=DescribeDomains&VERSION=1.0.0" +
+    `&LAYER=${spec.layerId}&TILEMATRIXSET=${spec.matrix}` +
+    `&TIME=${fmt(now - GIBS_DOMAIN_QUERY_WINDOW_MS)}/${fmt(now)}`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`GIBS DescribeDomains ${res.status}`);
+  const xml = await res.text();
+  const domain = /<Domain>([^<]*)<\/Domain>/.exec(xml);
+  const times = domain ? parseGibsDomainTimes(domain[1]) : [];
+  if (times.length === 0) {
+    throw new Error("GIBS DescribeDomains listed no published frames.");
+  }
+  const newest = times[times.length - 1];
+  gibsNewestPublishedMs = newest;
+  return times.slice(-GIBS_ANIMATION_FRAME_COUNT).map((ms) => new Date(ms).toISOString());
+}
 
 function resolveGibsSpec(sourceKey: string): GibsLayerSpec {
   const normalized = normalizeLiveImagerySource(sourceKey);
@@ -244,7 +320,9 @@ export type GibsRequestDiagnostics = {
 
 function clampGibsRequestInstant(frameIsoTime: string): Date {
   const requested = new Date(frameIsoTime).getTime();
-  const newestOk = Date.now() - GIBS_PUBLISH_LAG_MS;
+  // Prefer the newest published time GIBS itself reported; fall back to the
+  // fixed lag only before the first DescribeDomains response arrives.
+  const newestOk = gibsNewestPublishedMs ?? Date.now() - GIBS_PUBLISH_LAG_MS;
   return new Date(Math.min(requested, newestOk));
 }
 
@@ -296,10 +374,15 @@ export function buildGibsTileUrl(sourceKey: string, frameIsoTime: string): strin
   return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${spec.layerId}/default/${timeParam}/${spec.matrix}/{z}/{y}/{x}.png`;
 }
 
-/** Past ~110 minutes of 10-minute UTC steps for Himawari browse animation. */
-export function gibsAnimationFrames(stepsBack = 11): RadarFrame[] {
+/**
+ * Synthetic fallback timeline: past ~110 minutes of 10-minute UTC steps.
+ * Used only when DescribeDomains is unreachable — verified frame times from
+ * `fetchGibsAvailableFrameTimes` are always preferred because the feed has
+ * gaps that make assumed slots render blank.
+ */
+export function gibsAnimationFrames(stepsBack = GIBS_ANIMATION_FRAME_COUNT - 1): RadarFrame[] {
   const anchor = floorUtcToTenMinutes(
-    new Date(Date.now() - GIBS_PUBLISH_LAG_MS),
+    new Date(gibsNewestPublishedMs ?? Date.now() - GIBS_PUBLISH_LAG_MS),
   );
   const out: RadarFrame[] = [];
   for (let i = stepsBack; i >= 0; i--) {
@@ -329,6 +412,10 @@ function toRainViewerProxyUrl(url: string): string {
  * sometimes a full XYZ template. MapLibre needs a single template URL. Tiles
  * are routed through `/api/rainviewer/tiles` (same-origin caching proxy) to
  * avoid RainViewer's 429 rate limit and the CORS errors it produces.
+ *
+ * 512px tiles on the 256px tile grid = @2x rendering; RainViewer's composite
+ * caps at zoom 7, so the extra texture resolution is what keeps the overlay
+ * from looking blurry at PH-wide zooms.
  */
 export function buildRadarTileUrl(fullTileTemplateOrBase: string): string {
   const base = fullTileTemplateOrBase.trim().replace(/\/$/, "");
@@ -336,7 +423,7 @@ export function buildRadarTileUrl(fullTileTemplateOrBase: string): string {
   if (/\{z\}/.test(base) && /\{x\}/.test(base) && /\{y\}/.test(base)) {
     return toRainViewerProxyUrl(base);
   }
-  return toRainViewerProxyUrl(`${base}/256/{z}/{x}/{y}/2/1_1.png`);
+  return toRainViewerProxyUrl(`${base}/512/{z}/{x}/{y}/2/1_1.png`);
 }
 
 function satelliteTileUrl(
@@ -350,11 +437,37 @@ function satelliteTileUrl(
   return buildGibsTileUrl(sourceKey, frame.time);
 }
 
+function ensurePhOutlineLayer(map: MLMap) {
+  if (!map.getSource(PH_OUTLINE_SOURCE_ID)) {
+    map.addSource(PH_OUTLINE_SOURCE_ID, {
+      type: "geojson",
+      data: "/ph-outline.json",
+    });
+  }
+  if (!map.getLayer(PH_OUTLINE_LAYER_ID)) {
+    map.addLayer(
+      {
+        id: PH_OUTLINE_LAYER_ID,
+        type: "line",
+        source: PH_OUTLINE_SOURCE_ID,
+        layout: { visibility: "none", "line-join": "round" },
+        paint: {
+          "line-color": "rgba(215, 238, 255, 0.9)",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.7, 8, 1.6],
+          "line-opacity": 0.6,
+        },
+      },
+      layerBeforeBasemapLabels(map),
+    );
+  }
+}
+
 /** Keep GIBS / RainViewer rasters above lazily inserted hazard vectors. */
 export function pinSatelliteRastersToTop(map: MLMap) {
   if (typeof map.moveLayer !== "function") return;
   const labelAnchor = layerBeforeBasemapLabels(map);
-  for (const layerId of [...GIBS_LAYER_IDS, ...RADAR_LAYER_IDS]) {
+  // PH outline moves after the rasters so it renders above them.
+  for (const layerId of [...GIBS_LAYER_IDS, ...RADAR_LAYER_IDS, PH_OUTLINE_LAYER_ID]) {
     if (!map.getLayer(layerId)) continue;
     if (labelAnchor) map.moveLayer(layerId, labelAnchor);
     else map.moveLayer(layerId);
@@ -370,32 +483,22 @@ export function pinSatelliteRastersToTop(map: MLMap) {
  */
 function syncSatelliteOverlayMapMode(map: MLMap, mode: "2d" | "3d") {
   const kind = activeOverlayByMap.get(map) ?? "none";
-  if (mode === "3d") {
-    for (const layerId of [...RADAR_LAYER_IDS, ...GIBS_LAYER_IDS]) {
+  const setVisibility = (layerIds: readonly string[], visible: boolean) => {
+    for (const layerId of layerIds) {
       if (map.getLayer(layerId)) {
-        map.setLayoutProperty(layerId, "visibility", "none");
+        map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
       }
     }
+  };
+  if (mode === "3d") {
+    setVisibility([...RADAR_LAYER_IDS, ...GIBS_LAYER_IDS, PH_OUTLINE_LAYER_ID], false);
     return;
   }
-
-  const vis = "visible" as const;
-  const hidden = "none" as const;
-  if (kind === "radar") {
-    for (const layerId of RADAR_LAYER_IDS) {
-      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", vis);
-    }
-    for (const layerId of GIBS_LAYER_IDS) {
-      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", hidden);
-    }
-  } else if (kind === "gibs") {
-    for (const layerId of GIBS_LAYER_IDS) {
-      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", vis);
-    }
-    for (const layerId of RADAR_LAYER_IDS) {
-      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", hidden);
-    }
-  }
+  if (kind === "none") return;
+  setVisibility(RADAR_LAYER_IDS, kind === "radar");
+  setVisibility(GIBS_LAYER_IDS, kind === "gibs");
+  // Full-frame GIBS imagery hides the basemap; show the PH outline on top.
+  setVisibility([PH_OUTLINE_LAYER_ID], kind === "gibs");
   pinSatelliteRastersToTop(map);
 }
 
@@ -408,8 +511,17 @@ export function notifyMapViewModeForSatelliteImagery(
   syncSatelliteOverlayMapMode(map, mode);
 }
 
-export async function fetchRadarFrames(): Promise<RadarFramesResult> {
-  try {
+/**
+ * Shared fetch of the RainViewer frame index. Radar and satellite frame
+ * fetchers both read this endpoint, so concurrent callers (boot check + radar
+ * init, or overlapping refresh timers) share one in-flight request instead of
+ * hitting the proxy twice.
+ */
+let rainViewerIndexInFlight: Promise<RainViewerApiResponse> | null = null;
+
+function fetchRainViewerIndex(): Promise<RainViewerApiResponse> {
+  if (rainViewerIndexInFlight) return rainViewerIndexInFlight;
+  const request = (async () => {
     const res = await fetch("/api/rainviewer", { cache: "no-store" });
     const data = (await res.json().catch(() => ({}))) as
       | RainViewerApiResponse
@@ -419,13 +531,22 @@ export async function fetchRadarFrames(): Promise<RadarFramesResult> {
         "error" in data && typeof data.error === "string"
           ? data.error
           : `RainViewer ${res.status}`;
-      recordFailure("radar", message);
       throw new Error(message);
     }
     if (!isRainViewerApiResponse(data)) {
-      recordFailure("radar", "RainViewer returned an invalid payload.");
       throw new Error("RainViewer returned an invalid payload.");
     }
+    return data;
+  })();
+  rainViewerIndexInFlight = request.finally(() => {
+    rainViewerIndexInFlight = null;
+  });
+  return rainViewerIndexInFlight;
+}
+
+export async function fetchRadarFrames(): Promise<RadarFramesResult> {
+  try {
+    const data = await fetchRainViewerIndex();
     const observed: RadarFrame[] = data.radar.past.map((f) => ({
       time: new Date(f.time * 1000).toISOString(),
       path: `${data.host}${f.path}`,
@@ -444,6 +565,33 @@ export async function fetchRadarFrames(): Promise<RadarFramesResult> {
   }
 }
 
+/**
+ * GIBS frame list, verified against DescribeDomains so every frame in the
+ * animation has published tiles. Falls back to the synthetic 10-minute grid
+ * (some frames may 404) only when the availability query itself fails.
+ */
+async function gibsFrames(
+  sourceKey: Exclude<LiveImagerySource, "radar">,
+  freshnessKey: string,
+  attribution: string,
+): Promise<SatelliteFramesResult> {
+  let frames: RadarFrame[];
+  try {
+    const times = await fetchGibsAvailableFrameTimes(sourceKey);
+    frames = times.map((time) => ({ time, path: "", kind: "observed" as const }));
+    recordSuccess(freshnessKey);
+  } catch (error) {
+    recordFailure(freshnessKey, (error as Error).message);
+    frames = gibsAnimationFrames();
+  }
+  return {
+    provider: "gibs-fallback",
+    frames,
+    supportsTransparency: false,
+    attribution,
+  };
+}
+
 export async function fetchSatelliteFrames(
   sourceKey: Exclude<LiveImagerySource, "radar">,
 ): Promise<SatelliteFramesResult> {
@@ -454,28 +602,11 @@ export async function fetchSatelliteFrames(
    * skip the RainViewer round-trip entirely.
    */
   if (sourceKey === "himawari-airmass") {
-    recordSuccess(freshnessKey);
-    return {
-      provider: "gibs-fallback",
-      frames: gibsAnimationFrames(),
-      supportsTransparency: false,
-      attribution: "NASA GIBS / Himawari-9 Air Mass",
-    };
+    return gibsFrames(sourceKey, freshnessKey, "NASA GIBS / Himawari-9 Air Mass");
   }
 
   try {
-    const res = await fetch("/api/rainviewer", { cache: "no-store" });
-    const data = (await res.json().catch(() => ({}))) as
-      | RainViewerApiResponse
-      | { error?: string };
-    if (!res.ok || !isRainViewerApiResponse(data)) {
-      const message = !res.ok
-        ? "error" in data && typeof data.error === "string"
-          ? data.error
-          : `RainViewer ${res.status}`
-        : "RainViewer returned an invalid payload.";
-      throw new Error(message);
-    }
+    const data = await fetchRainViewerIndex();
     const sat = data.satellite?.infrared ?? [];
     if (sat.length > 0) {
       recordSuccess(freshnessKey);
@@ -490,19 +621,11 @@ export async function fetchSatelliteFrames(
         attribution: "RainViewer Infrared",
       };
     }
-    recordFailure(
-      freshnessKey,
-      "RainViewer satellite catalog is empty; using GIBS fallback.",
-    );
-  } catch (error) {
-    recordFailure(freshnessKey, (error as Error).message);
+  } catch {
+    // RainViewer index unreachable — fall through to GIBS below, which
+    // records freshness for this source on its own success/failure.
   }
-  return {
-    provider: "gibs-fallback",
-    frames: gibsAnimationFrames(),
-    supportsTransparency: false,
-    attribution: "NASA GIBS / Himawari-9",
-  };
+  return gibsFrames(sourceKey, freshnessKey, "NASA GIBS / Himawari-9");
 }
 
 function removeGibsLayersIfAny(map: MLMap) {
@@ -552,25 +675,21 @@ export function setImageryBufferNowcastTint(
     map.setPaintProperty(layerId, "raster-brightness-min", 0.08);
     return;
   }
-  // Restore baseline paint values for the source.
-  if (source === "radar") {
-    map.setPaintProperty(layerId, "raster-hue-rotate", 0);
-    map.setPaintProperty(layerId, "raster-saturation", 0.15);
-    map.setPaintProperty(layerId, "raster-brightness-min", 0.2);
-    return;
-  }
-  // For satellite presets, leave hue-rotate at 0 and let the active paint
-  // (gibs vs rainviewer-satellite) reapply its own contrast/saturation on the
-  // next frame swap; resetting the three shifted properties is enough to drop
-  // the amber cast.
+  // Restore the layer's baseline paint for whichever source/provider is
+  // active, so the values can't drift from the canonical paint specs.
+  const baseline =
+    source === "radar"
+      ? radarLayerPaint()
+      : satelliteProviderByMap.get(map) === "rainviewer-satellite"
+        ? transparentSatelliteOverlayPaint(source)
+        : gibsRasterPaint(source);
   map.setPaintProperty(layerId, "raster-hue-rotate", 0);
-  if (source === "himawari-ir") {
-    map.setPaintProperty(layerId, "raster-saturation", -0.1);
-    map.setPaintProperty(layerId, "raster-brightness-min", 0.08);
-  } else {
-    map.setPaintProperty(layerId, "raster-saturation", 0.22);
-    map.setPaintProperty(layerId, "raster-brightness-min", 0.01);
-  }
+  map.setPaintProperty(layerId, "raster-saturation", baseline["raster-saturation"]);
+  map.setPaintProperty(
+    layerId,
+    "raster-brightness-min",
+    baseline["raster-brightness-min"],
+  );
 }
 
 export function setImageryBufferOpacity(
@@ -615,7 +734,6 @@ export function raiseImageryBufferSlot(
   pinSatelliteRastersToTop(map);
 }
 
-type SatelliteBlendPreset = "disturbance-only" | "screen-like";
 type RasterPaintSpec = Record<string, string | number>;
 
 /**
@@ -624,11 +742,11 @@ type RasterPaintSpec = Record<string, string | number>;
  * an overlay on the PH basemap, we intentionally keep Himawari semi-transparent
  * and apply gentle tonal shaping.
  */
-function gibsRasterPaint(sourceKey: string): RasterPaintSpec {
-  const preset: SatelliteBlendPreset =
-    sourceKey === "himawari-ir" ? "disturbance-only" : "screen-like";
-
-  if (preset === "disturbance-only") {
+function gibsRasterPaint(
+  sourceKey: Exclude<LiveImagerySource, "radar">,
+): RasterPaintSpec {
+  // IR gets a muted "disturbance-only" blend; Air Mass a brighter screen-like one.
+  if (sourceKey === "himawari-ir") {
     return {
       "raster-opacity": 0.5,
       "raster-fade-duration": 0,
@@ -640,27 +758,14 @@ function gibsRasterPaint(sourceKey: string): RasterPaintSpec {
       "raster-hue-rotate": 0,
     };
   }
-
-  if (sourceKey === "himawari-airmass" || sourceKey === "himawari-true") {
-    return {
-      "raster-opacity": 0.54,
-      "raster-fade-duration": 0,
-      "raster-resampling": "linear",
-      "raster-contrast": 0.36,
-      "raster-saturation": 0.22,
-      "raster-brightness-min": 0.01,
-      "raster-brightness-max": 0.98,
-      "raster-hue-rotate": 0,
-    };
-  }
   return {
-    "raster-opacity": 0.5,
+    "raster-opacity": 0.54,
     "raster-fade-duration": 0,
     "raster-resampling": "linear",
-    "raster-contrast": 0.34,
-    "raster-saturation": 0.06,
-    "raster-brightness-min": 0.02,
-    "raster-brightness-max": 0.96,
+    "raster-contrast": 0.36,
+    "raster-saturation": 0.22,
+    "raster-brightness-min": 0.01,
+    "raster-brightness-max": 0.98,
     "raster-hue-rotate": 0,
   };
 }
@@ -779,6 +884,7 @@ function ensureSatelliteLayerNow(
   provider: SatelliteFrameProvider,
 ) {
   setActiveSatelliteOverlay(map, "gibs");
+  ensurePhOutlineLayer(map);
   for (const layerId of RADAR_LAYER_IDS) {
     if (map.getLayer(layerId)) {
       map.setLayoutProperty(layerId, "visibility", "none");
@@ -830,20 +936,11 @@ function ensureSatelliteLayerNow(
 }
 
 /**
- * Returns the raster paint spec for a given imagery source. Exposed for
- * regression tests that guard `raster-fade-duration: 0` (the JS ticker owns
- * crossfades — MapLibre's native tile fade must stay disabled to avoid the
- * end-of-loop disappearance bug).
+ * Every raster paint variant used by the overlay. Exposed for regression tests
+ * that guard `raster-fade-duration: 0` (the JS ticker owns crossfades —
+ * MapLibre's native tile fade must stay disabled to avoid the end-of-loop
+ * disappearance bug).
  */
-export function getImageryRasterPaint(source: LiveImagerySource): RasterPaintSpec {
-  if (source === "radar") return radarLayerPaint();
-  if (source === "himawari-ir") {
-    // Two paint variants depending on provider; both must keep fade-duration: 0.
-    return transparentSatelliteOverlayPaint("himawari-ir");
-  }
-  return gibsRasterPaint("himawari-airmass");
-}
-
 export function getAllImageryRasterPaints(): RasterPaintSpec[] {
   return [
     radarLayerPaint(),
@@ -938,36 +1035,6 @@ function ensureRadarLayerNow(map: MLMap, frame?: RadarFrame) {
   }
   pinSatelliteRastersToTop(map);
   reapplySatelliteImageryForStoredMapMode(map);
-}
-
-/** Set the active buffer slot to a frame (used for style reattach and first paint). */
-export function setFrameTimestamp(
-  map: MLMap,
-  source: LiveImagerySource,
-  frame: RadarFrame,
-  provider: SatelliteFrameProvider = "gibs-fallback",
-  activeSlot: ImageryBufferSlot = 0,
-) {
-  if (source === "radar") {
-    if (map.getSource(RADAR_SOURCE_ID)) {
-      setRadarFrameOnSlot(map, activeSlot, frame);
-      pinSatelliteRastersToTop(map);
-      reapplySatelliteImageryForStoredMapMode(map);
-    } else {
-      ensureRadarLayer(map, frame);
-    }
-  } else {
-    const sourceKey = source as Exclude<LiveImagerySource, "radar">;
-    if (map.getSource(GIBS_SOURCE_ID)) {
-      setSatelliteFrameOnSlot(map, activeSlot, sourceKey, frame, provider);
-      satelliteProviderByMap.set(map, provider);
-      gibsSourceKeyByMap.set(map, sourceKey);
-      pinSatelliteRastersToTop(map);
-      reapplySatelliteImageryForStoredMapMode(map);
-    } else {
-      ensureSatelliteLayer(map, sourceKey, frame, provider);
-    }
-  }
 }
 
 function radarTileUrl(frame: RadarFrame) {

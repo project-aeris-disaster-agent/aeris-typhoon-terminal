@@ -126,7 +126,7 @@ export function LiveWeatherFrameIndicator({
       </span>
       {isForecast && (
         <span
-          className="shrink-0 rounded border border-orange-500/50 bg-orange-500/15 px-1.5 py-0.5 text-chrome font-semibold uppercase tracking-wider text-orange-300"
+          className="shrink-0 rounded border border-orange-500/50 bg-orange-500/15 px-1.5 py-0.5 text-chrome font-semibold uppercase tracking-wider text-orange-700 dark:text-orange-300"
           title="Model nowcast — forecast precipitation, not an observed scan"
         >
           Forecast

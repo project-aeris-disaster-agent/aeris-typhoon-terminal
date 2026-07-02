@@ -36,6 +36,13 @@ export const WEATHER_LOOP_WRAP_CROSSFADE_FACTOR = 1.5;
  */
 export const WEATHER_FRAME_PRELOAD_LEAD_MS = 600;
 
+/**
+ * If the incoming buffer's tiles still aren't loaded at advance time, hold the
+ * current frame (rather than blending into a blank buffer, which makes the
+ * overlay flash/disappear) for at most this long before advancing anyway.
+ */
+export const WEATHER_ADVANCE_MAX_STALL_MS = 4000;
+
 export function weatherFrameHoldMs(source: "radar" | "satellite"): number {
   return source === "radar"
     ? WEATHER_FRAME_HOLD_MS.radar
