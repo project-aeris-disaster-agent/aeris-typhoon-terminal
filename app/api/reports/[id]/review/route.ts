@@ -8,6 +8,7 @@ import {
 import { jsonError } from "@/lib/api-response";
 import { authorizeReportReview } from "@/lib/review-auth";
 import { awardXp } from "@/lib/gamification";
+import { settleReportVotes } from "@/lib/report-votes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,6 +89,15 @@ export async function POST(
           dedupeKey: `report_verified:${reportId}`,
         });
       }
+    }
+
+    // RLHF settlement: the admin decision grades community votes. Verifying
+    // rewards thumbs-up voters, rejecting rewards thumbs-down voters
+    // (`vote_correct`, idempotent per report+user). Best-effort, like awardXp.
+    if (validated.data.action === "verify") {
+      await settleReportVotes(reportId, "verified");
+    } else if (validated.data.action === "reject") {
+      await settleReportVotes(reportId, "rejected");
     }
 
     return NextResponse.json(

@@ -322,6 +322,54 @@ export async function reviewReport(opts: {
   return data.report;
 }
 
+export type ReportVoteValue = "up" | "down";
+
+export type ReportVoteResult = {
+  vote: ReportVoteValue;
+  /** True when this vote granted new XP (first vote on this report). */
+  awarded: boolean;
+  xp: number | null;
+  level: number | null;
+  leveledUp: boolean;
+};
+
+/** Cast (or change) the signed-in user's thumbs-up/down vote on a report. */
+export async function voteOnReport(
+  reportId: string,
+  vote: ReportVoteValue,
+): Promise<ReportVoteResult> {
+  const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}/vote`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ vote }),
+  });
+  const data = (await res.json().catch(() => ({}))) as Partial<ReportVoteResult> & {
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(data.error ?? `Vote failed (${res.status})`);
+  }
+  return {
+    vote: data.vote ?? vote,
+    awarded: data.awarded ?? false,
+    xp: data.xp ?? null,
+    level: data.level ?? null,
+    leveledUp: data.leveledUp ?? false,
+  };
+}
+
+/** The signed-in user's votes, as a reportId -> "up" | "down" map. */
+export async function fetchMyReportVotes(): Promise<
+  Record<string, ReportVoteValue>
+> {
+  const res = await fetch("/api/reports/votes", { cache: "no-store" });
+  if (!res.ok) return {};
+  const data = (await res.json().catch(() => ({}))) as {
+    votes?: Record<string, ReportVoteValue>;
+  };
+  return data.votes ?? {};
+}
+
 function toFeatureCollection(
   reports: IncidentReport[],
 ): GeoJSON.FeatureCollection {

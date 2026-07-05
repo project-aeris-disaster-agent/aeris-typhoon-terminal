@@ -10,6 +10,8 @@ export type XpAction =
   | "submit_report"
   | "report_verified"
   | "review_report"
+  | "vote_report"
+  | "vote_correct"
   | "usage_time"
   | "profile_completed";
 
@@ -18,6 +20,8 @@ export const XP_REWARDS: Record<XpAction, number> = {
   submit_report: 15,
   report_verified: 40,
   review_report: 10,
+  vote_report: 5,
+  vote_correct: 15,
   usage_time: 5,
   profile_completed: 25,
 };

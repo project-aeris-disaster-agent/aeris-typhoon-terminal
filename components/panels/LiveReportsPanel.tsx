@@ -13,6 +13,8 @@ import {
   RefreshCw,
   Siren,
   Stamp,
+  ThumbsDown,
+  ThumbsUp,
   X,
 } from "lucide-react";
 import { CardHeader, Pill } from "../ui/Card";
@@ -21,12 +23,17 @@ import {
   mintVerifiedReports,
   type ReportReviewAction,
   fetchReports,
+  fetchMyReportVotes,
+  voteOnReport,
+  type ReportVoteValue,
   type IncidentReport,
 } from "@/services/reports-client";
 import { FreshnessTag } from "../ui/FreshnessTag";
 import { useAerisRole } from "@/services/role-context";
+import { useUserProfile } from "@/services/profile-context";
 import { mintExplorerTxUrl, shortTxHash } from "@/lib/onchain/explorer-links";
 import { formatAerisRoleLabel, type AerisRole } from "@/lib/aeris-roles";
+import { XP_REWARDS } from "@/lib/gamification";
 
 const AI_PRIORITY_ORDER: Record<string, number> = {
   urgent: 0,
@@ -366,17 +373,25 @@ function ReportCard({
   report,
   canReview,
   reviewing,
+  canVote,
+  myVote,
+  voting,
   onFocus,
   onReview,
+  onVote,
 }: {
   report: IncidentReport;
   canReview: boolean;
   reviewing: boolean;
+  canVote: boolean;
+  myVote?: ReportVoteValue;
+  voting: boolean;
   onFocus: () => void;
   onReview: (
     event: React.MouseEvent,
     action: ReportReviewAction,
   ) => void;
+  onVote: (event: React.MouseEvent, vote: ReportVoteValue) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const tone = reportCardTone(report);
@@ -547,6 +562,77 @@ function ReportCard({
         </div>
       )}
 
+      {canVote && (() => {
+        const decided =
+          report.verificationStatus === "verified" ||
+          report.verificationStatus === "rejected";
+        if (decided) {
+          if (!myVote) return null;
+          const correct =
+            (report.verificationStatus === "verified") === (myVote === "up");
+          return (
+            <div
+              className={clsx(
+                "mt-2.5 flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-body-sm",
+                correct
+                  ? "border-aeris-ok/30 bg-aeris-ok/10 text-aeris-ok"
+                  : "border-aeris-border/60 bg-aeris-bg/40 text-aeris-muted",
+              )}
+            >
+              {myVote === "up" ? (
+                <ThumbsUp size={12} aria-hidden />
+              ) : (
+                <ThumbsDown size={12} aria-hidden />
+              )}
+              {correct
+                ? `Your vote was correct — +${XP_REWARDS.vote_correct} XP`
+                : "Your vote didn't match the operator decision."}
+            </div>
+          );
+        }
+        return (
+          <div
+            className="mt-2.5 grid grid-cols-2 gap-1"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            role="presentation"
+          >
+            <button
+              type="button"
+              disabled={voting}
+              aria-pressed={myVote === "up"}
+              onClick={(event) => onVote(event, "up")}
+              title={`Looks legitimate — correct votes earn +${XP_REWARDS.vote_correct} XP when an operator verifies`}
+              className={clsx(
+                "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-body-sm font-medium transition-colors disabled:opacity-40",
+                myVote === "up"
+                  ? "border-aeris-ok/60 bg-aeris-ok/20 text-aeris-ok ring-1 ring-aeris-ok/40"
+                  : "border-aeris-ok/30 bg-aeris-ok/10 text-aeris-ok hover:bg-aeris-ok/20",
+              )}
+            >
+              <ThumbsUp size={13} aria-hidden />
+              Legit
+            </button>
+            <button
+              type="button"
+              disabled={voting}
+              aria-pressed={myVote === "down"}
+              onClick={(event) => onVote(event, "down")}
+              title={`Looks wrong or spam — correct votes earn +${XP_REWARDS.vote_correct} XP when an operator rejects`}
+              className={clsx(
+                "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-body-sm font-medium transition-colors disabled:opacity-40",
+                myVote === "down"
+                  ? "border-aeris-danger/60 bg-aeris-danger/20 text-aeris-danger ring-1 ring-aeris-danger/40"
+                  : "border-aeris-danger/30 bg-aeris-danger/10 text-aeris-danger hover:bg-aeris-danger/20",
+              )}
+            >
+              <ThumbsDown size={13} aria-hidden />
+              Doubtful
+            </button>
+          </div>
+        );
+      })()}
+
       {canReview && (
         <div
           className="mt-2.5 grid grid-cols-3 gap-1"
@@ -593,8 +679,12 @@ function FeedList({
   filter,
   canReview,
   reviewingId,
+  canVote,
+  myVotes,
+  votingId,
   onFocus,
   onReview,
+  onVote,
   className,
 }: {
   id?: string;
@@ -605,11 +695,19 @@ function FeedList({
   filter: ReportFilter;
   canReview: boolean;
   reviewingId: string | null;
+  canVote: boolean;
+  myVotes: Record<string, ReportVoteValue>;
+  votingId: string | null;
   onFocus: (report: IncidentReport) => void;
   onReview: (
     event: React.MouseEvent,
     report: IncidentReport,
     action: ReportReviewAction,
+  ) => void;
+  onVote: (
+    event: React.MouseEvent,
+    report: IncidentReport,
+    vote: ReportVoteValue,
   ) => void;
   className?: string;
 }) {
@@ -647,8 +745,12 @@ function FeedList({
             report={report}
             canReview={canReview}
             reviewing={reviewingId === report.id}
+            canVote={canVote}
+            myVote={myVotes[report.id]}
+            voting={votingId === report.id}
             onFocus={() => onFocus(report)}
             onReview={(event, action) => onReview(event, report, action)}
+            onVote={(event, vote) => onVote(event, report, vote)}
           />
         ))}
       </div>
@@ -678,13 +780,18 @@ export function LiveReportsPanel({
   const [fullscreen, setFullscreen] = useState(false);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [mintingAll, setMintingAll] = useState(false);
+  const [myVotes, setMyVotes] = useState<Record<string, ReportVoteValue>>({});
+  const [votingId, setVotingId] = useState<string | null>(null);
   const [status, setStatus] = useState<{
     tone: "ok" | "warn" | "danger";
     msg: string;
   } | null>(null);
   const refresh = useRef<() => void>(() => undefined);
   const { role, userId, authDisabled } = useAerisRole();
+  const { refresh: refreshProfile } = useUserProfile();
   const canReview = role === "admin" || authDisabled;
+  // RLHF voting is for signed-in non-admin users; admins decide via review.
+  const canVote = !canReview && Boolean(userId);
 
   const counts: FeedCounts = useMemo(
     () => ({
@@ -747,6 +854,53 @@ export function LiveReportsPanel({
       window.removeEventListener("aeris:reports-updated", onUpdate);
     };
   }, [load]);
+
+  // Hydrate the user's existing votes so cards reflect prior thumbs-up/down.
+  useEffect(() => {
+    if (!canVote) return;
+    let cancelled = false;
+    void fetchMyReportVotes().then((votes) => {
+      if (!cancelled) setMyVotes(votes);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [canVote]);
+
+  const onVote = useCallback(
+    async (
+      event: React.MouseEvent,
+      report: IncidentReport,
+      vote: ReportVoteValue,
+    ) => {
+      event.stopPropagation();
+      if (myVotes[report.id] === vote) return;
+      setVotingId(report.id);
+      const previous = myVotes[report.id];
+      setMyVotes((current) => ({ ...current, [report.id]: vote }));
+      try {
+        const result = await voteOnReport(report.id, vote);
+        setStatus({
+          tone: "ok",
+          msg: result.awarded
+            ? `Vote recorded — +${XP_REWARDS.vote_report} XP! Earn +${XP_REWARDS.vote_correct} more if operators agree.`
+            : "Vote updated.",
+        });
+        if (result.awarded) void refreshProfile();
+      } catch (error) {
+        setMyVotes((current) => {
+          const next = { ...current };
+          if (previous) next[report.id] = previous;
+          else delete next[report.id];
+          return next;
+        });
+        setStatus({ tone: "danger", msg: (error as Error).message });
+      } finally {
+        setVotingId(null);
+      }
+    },
+    [myVotes, refreshProfile],
+  );
 
   const visibleReports = useMemo(() => {
     let list = reports;
@@ -975,8 +1129,12 @@ export function LiveReportsPanel({
             filter={filter}
             canReview={canReview}
             reviewingId={reviewingId}
+            canVote={canVote}
+            myVotes={myVotes}
+            votingId={votingId}
             onFocus={focusReport}
             onReview={onReview}
+            onVote={onVote}
             className="mt-2 max-h-[min(60vh,560px)] overflow-y-auto pr-0.5"
           />
         ) : visibleReports.length > 0 ? (
@@ -1005,8 +1163,12 @@ export function LiveReportsPanel({
           statusBanner={statusBanner}
           reports={visibleReports}
           reviewingId={reviewingId}
+          canVote={canVote}
+          myVotes={myVotes}
+          votingId={votingId}
           onFocus={focusReport}
           onReview={onReview}
+          onVote={onVote}
         />
       ) : null}
     </div>
@@ -1031,8 +1193,12 @@ function ReportsFullscreen({
   statusBanner,
   reports,
   reviewingId,
+  canVote,
+  myVotes,
+  votingId,
   onFocus,
   onReview,
+  onVote,
 }: {
   onClose: () => void;
   onSync: () => void;
@@ -1051,11 +1217,19 @@ function ReportsFullscreen({
   statusBanner: React.ReactNode;
   reports: IncidentReport[];
   reviewingId: string | null;
+  canVote: boolean;
+  myVotes: Record<string, ReportVoteValue>;
+  votingId: string | null;
   onFocus: (report: IncidentReport) => void;
   onReview: (
     event: React.MouseEvent,
     report: IncidentReport,
     action: ReportReviewAction,
+  ) => void;
+  onVote: (
+    event: React.MouseEvent,
+    report: IncidentReport,
+    vote: ReportVoteValue,
   ) => void;
 }) {
   const [mounted, setMounted] = useState(false);
@@ -1158,8 +1332,12 @@ function ReportsFullscreen({
               filter={filter}
               canReview={canReview}
               reviewingId={reviewingId}
+              canVote={canVote}
+              myVotes={myVotes}
+              votingId={votingId}
               onFocus={onFocus}
               onReview={onReview}
+              onVote={onVote}
             />
           </div>
         </div>

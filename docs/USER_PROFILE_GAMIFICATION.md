@@ -75,8 +75,27 @@ Defined in `lib/gamification.ts` (`XP_REWARDS`):
 | `submit_report` | 15 | a signed-in user files a report | `submit_report:{reportId}` |
 | `report_verified` | 40 | the reporter's report is verified | `report_verified:{reportId}` |
 | `review_report` | 10 | a human operator verifies a report | `review_report:{reportId}` |
+| `vote_report` | 5 | a non-admin user votes 👍/👎 on an undecided report | `vote_report:{reportId}:{userId}` |
+| `vote_correct` | 15 | the user's vote matches the admin decision (verify ⇒ up, reject ⇒ down), settled at review time | `vote_correct:{reportId}:{userId}` |
 | `usage_time` | 5 | per 15-min bucket of active dashboard time | `usage:{userId}:{bucket}` |
 | `profile_completed` | 25 | barangay + phone + ≥1 social filled in | `profile_completed:{userId}` |
+
+### Report votes (RLHF)
+
+Migration `20260703120000_report_votes_rlhf.sql` adds `aeris_report_votes`
+(service-role only): one row per `(report_id, user_id)`, `vote` ∈ `{1, -1}`,
+mutable until the report is decided. Rules enforced by
+`POST /api/reports/{id}/vote`:
+
+- signed-in users only; admins review instead of voting (dashboard UI);
+- no voting on your own report (`reporter_user_id`);
+- voting closes once `verification_status` ∈ `{verified, rejected, duplicate}`;
+- casting awards `vote_report` once per report (changing a vote never re-awards).
+
+Settlement happens in the review route: `verify` pays `vote_correct` to
+thumbs-up voters, `reject` pays thumbs-down voters. The per-user dedupe key
+makes flip-flop re-reviews safe — each user settles at most once per report.
+`GET /api/reports/votes` returns the session user's votes for UI hydration.
 
 ### Awarding XP
 
