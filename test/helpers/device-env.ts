@@ -5,6 +5,8 @@ export type DeviceSignals = {
   deviceMemory?: number;
   innerWidth?: number;
   innerHeight?: number;
+  screenWidth?: number;
+  screenHeight?: number;
   devicePixelRatio?: number;
 };
 
@@ -38,6 +40,16 @@ export function installDeviceSignals(signals: DeviceSignals) {
   });
   Object.defineProperty(window, "innerHeight", {
     value: signals.innerHeight ?? 768,
+    configurable: true,
+  });
+  // Screen defaults mirror the viewport so tests that only set innerWidth/
+  // innerHeight keep consistent phone/tablet classification.
+  Object.defineProperty(window, "screen", {
+    value: {
+      ...window.screen,
+      width: signals.screenWidth ?? signals.innerWidth ?? 1024,
+      height: signals.screenHeight ?? signals.innerHeight ?? 768,
+    },
     configurable: true,
   });
   if (signals.devicePixelRatio !== undefined) {

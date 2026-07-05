@@ -25,6 +25,26 @@ describe("mobile-access", () => {
         ),
       ).toBe(false);
     });
+
+    it("allows tablets (iPad and Android tablets) on the dashboard", () => {
+      expect(
+        isMobileUserAgent(
+          "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1",
+        ),
+      ).toBe(false);
+      // Android tablet UAs omit the "Mobile" token that phones carry.
+      expect(
+        isMobileUserAgent(
+          "Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        ),
+      ).toBe(false);
+      // iPadOS "desktop mode" reports a Macintosh UA.
+      expect(
+        isMobileUserAgent(
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15",
+        ),
+      ).toBe(false);
+    });
   });
 
   describe("shouldBlockMobileDashboardAccess", () => {

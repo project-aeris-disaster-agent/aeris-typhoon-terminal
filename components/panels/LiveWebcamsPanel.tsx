@@ -91,11 +91,13 @@ function SlotFrame({
 
   return (
     <div
-      className={`relative bg-black rounded overflow-hidden border transition-colors ${
+      className={`relative h-full min-h-0 bg-black rounded overflow-hidden border transition-colors ${
         isPickTarget
           ? "border-aeris-accent ring-1 ring-aeris-accent"
           : "border-aeris-border"
       }`}
+      // 16:9 is only a fallback minimum — inside the auto-rows-fr grid the
+      // h-full wins so tiles fill their row and no gaps open between rows.
       style={{ aspectRatio: "16/9" }}
     >
       {video ? (
@@ -321,7 +323,6 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
       <CardHeader
         title="Live Webcams"
         helpId="feeds.webcams"
-        subtitle="JazBaz Philippines • CCTV Grid"
         trailing={
           <div className="flex items-center gap-1.5">
             {liveCount > 0 ? (
@@ -385,9 +386,13 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
 
       {!loading && (
         <>
-          {/* CCTV grid */}
+          {/* CCTV grid — rows stretch to fill the panel height (tiles keep a
+              16:9 minimum via aspect-ratio; YouTube letterboxes the rest) so
+              the column has no dead space below the grid. */}
           {!pickMode && (
-            <div className={`grid ${GRID_COLS[gridSize]} gap-1 shrink-0`}>
+            <div
+              className={`grid ${GRID_COLS[gridSize]} auto-rows-fr gap-1 flex-1 min-h-0`}
+            >
               {visibleSlots.map((video, i) => (
                 <SlotFrame
                   key={i}
@@ -501,9 +506,9 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
             </div>
           )}
 
-          <div className="text-chrome text-aeris-muted font-mono shrink-0">
+          <div className="text-chrome text-aeris-muted font-mono shrink-0 mt-auto">
             {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Loading…"}
-            {" "}· @JazBazPhilippines · Click ✎ to change • ⟳ or press 1-{gridSize} to next camera
+            {" "}· @JazBazPhilippines
           </div>
         </>
       )}

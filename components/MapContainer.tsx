@@ -35,7 +35,7 @@ import {
 import {
   applyDeviceTierToMap,
   detectDeviceTier,
-  isCoarsePointerDevice,
+  isPhoneSizedCoarseDevice,
   mapModeFromUrl,
   DEVICE_TIER,
 } from "@/lib/device-tier";
@@ -58,9 +58,10 @@ export const MapContainer = memo(function MapContainer({
   const { theme, setTheme } = useTheme();
   const themeUrlSyncedRef = useRef(false);
   const [mode, setMode] = useState<MapMode>("2d");
-  // 3D mode is fully disabled on mobile/touch devices — terrain + Three.js
-  // are too heavy for phone GPUs/batteries. Resolved in an effect (not a
-  // lazy initializer) so SSR markup stays consistent with hydration.
+  // 3D mode is fully disabled on phones — terrain + Three.js are too heavy
+  // for phone GPUs/batteries. Tablets (iPad and up) get the full 3D toggle.
+  // Resolved in an effect (not a lazy initializer) so SSR markup stays
+  // consistent with hydration.
   const [allow3d, setAllow3d] = useState(true);
   const [externalFrame, setExternalFrame] = useState<ExternalMapFrameId | null>(
     null,
@@ -79,12 +80,12 @@ export const MapContainer = memo(function MapContainer({
   );
 
   const handleModeChange = useCallback((next: MapMode) => {
-    if (next === "3d" && isCoarsePointerDevice()) return;
+    if (next === "3d" && isPhoneSizedCoarseDevice()) return;
     setMode(next);
   }, []);
 
   useEffect(() => {
-    if (!isCoarsePointerDevice()) return;
+    if (!isPhoneSizedCoarseDevice()) return;
     setAllow3d(false);
     // Force back to 2D in case 3D was already active (e.g. desktop responsive
     // emulation or a device-mode change mid-session).

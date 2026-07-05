@@ -277,6 +277,46 @@ body > div {
   }
 }
 
+/* Animated red fill/wipe used to draw attention to "outside PAR" monitoring
+   rows — a translucent red band sweeps left-to-right behind the row content. */
+.aeris-monitor-wipe {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.aeris-monitor-wipe::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(var(--aeris-danger) / 0.32) 45%,
+    rgb(var(--aeris-danger) / 0.32) 55%,
+    transparent 100%
+  );
+  background-size: 250% 100%;
+  animation: aeris-monitor-wipe 2.8s ease-in-out infinite;
+}
+
+@keyframes aeris-monitor-wipe {
+  0% {
+    background-position: 140% 0;
+  }
+  100% {
+    background-position: -40% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aeris-monitor-wipe::before {
+    animation: none;
+    background-position: 50% 0;
+  }
+}
+
 .minds-integration-card {
   border-color: rgb(var(--aeris-accent) / 0.42);
   box-shadow: 0 0 0 1px rgb(var(--aeris-accent) / 0.14);

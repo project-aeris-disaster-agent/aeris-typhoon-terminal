@@ -151,7 +151,9 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
         // Mutually exclusive widths: both md:w-[360px] and md:w-10 would compile
         // with equal specificity — the wider rule can win and block minimize.
         "w-full",
-        collapsed ? "md:w-10" : "md:w-[380px]",
+        // Tablets get a narrower ops column so the map keeps usable width
+        // (iPad portrait is only 768px total); full width from xl up.
+        collapsed ? "md:w-10" : "md:w-[320px] xl:w-[380px]",
         collapsed ? "h-auto md:h-full" : "h-full",
       )}
     >

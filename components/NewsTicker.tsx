@@ -57,7 +57,9 @@ export function NewsTicker({ className }: { className?: string }) {
   return (
     <div
       className={clsx(
-        "news-ticker relative hidden min-w-0 overflow-hidden sm:flex",
+        // Responsive visibility is owned by the caller (Header hides it
+        // below lg); no display breakpoints here so the caller's win.
+        "news-ticker relative min-w-0 overflow-hidden",
         className,
       )}
       aria-label="Latest weather and disaster headlines"

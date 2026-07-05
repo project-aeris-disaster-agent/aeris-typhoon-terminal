@@ -69,27 +69,8 @@ type AgentAerisPanelProps = {
   explainRequest?: AgentExplainRequest | null;
 };
 
-const QUICK_ACTIONS: { label: string; prompt: string }[] = [
-  {
-    label: "Brief me",
-    prompt:
-      "Give me a Situation Brief for the currently selected location (or national if none).",
-  },
-  {
-    label: "Checklist",
-    prompt:
-      "Produce a time-boxed Checklist of preparedness actions for the next 24 hours based on current context.",
-  },
-  {
-    label: "Draft advisory",
-    prompt:
-      "Draft a Public Advisory (EN + FIL) suitable for broadcast based on current conditions.",
-  },
-  {
-    label: "Filipino",
-    prompt: "Magbigay ng maikling sitwasyon update sa Filipino.",
-  },
-];
+const GENERATE_REPORT_PROMPT =
+  "Generate a Situation Report (SITREP) for the currently selected location (or a national overview if none is selected). Include: current weather and typhoon status, active alerts and hazards, key risks for the area, and time-boxed recommended actions for the next 24 hours. Keep it concise and broadcast-ready.";
 
 const INITIAL_MESSAGE: AgentMessage = {
   id: "assistant-initial",
@@ -467,22 +448,8 @@ export function AgentAerisPanel({
   };
 
   return (
-    <div className="relative z-10 flex flex-1 min-h-0 overflow-hidden rounded-lg border border-aeris-border/60 bg-aeris-bg/40">
-      <AgentAvatarColumn>
-        <AgentSpeechControls
-          muted={muted}
-          onToggleMute={() => setMuted((m) => !m)}
-          voiceStatus={voiceStatus}
-          voiceEngine={voiceEngine}
-        />
-        <AerisVrmAvatar
-          isActive={isActive}
-          mouthLevel={mouthLevel}
-          emotion={emotion}
-        />
-      </AgentAvatarColumn>
-
-      <div className="flex min-w-0 flex-1 flex-col">
+    <div className="relative z-10 flex flex-1 min-h-0 flex-col overflow-hidden rounded-lg border border-aeris-border/60 bg-aeris-bg/40">
+      <div className="flex min-w-0 min-h-0 flex-1 flex-col">
         <div
           ref={scrollRef}
           className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3"
@@ -574,18 +541,48 @@ export function AgentAerisPanel({
           </label>
         )}
 
-        <div className="flex flex-wrap gap-1 border-t border-aeris-border/50 px-2 pt-2">
-          {QUICK_ACTIONS.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              onClick={() => void sendPrompt(action.prompt)}
-              disabled={isSending}
-              className="rounded-full border border-aeris-border/60 bg-aeris-bg/50 px-3 py-1.5 text-body-sm text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {action.label}
-            </button>
-          ))}
+        {/* 3D companion window — docked directly above the Generate Report
+            button and chat input, full width so the character is centered.
+            Height caps at 38% of the panel so short (landscape) bars keep
+            room for the conversation. */}
+        <div className="relative h-32 max-h-[38%] shrink-0 overflow-hidden border-t border-aeris-border/50">
+          <AgentSpeechControls
+            muted={muted}
+            onToggleMute={() => setMuted((m) => !m)}
+            voiceStatus={voiceStatus}
+            voiceEngine={voiceEngine}
+          />
+          <AerisVrmAvatar
+            isActive={isActive}
+            mouthLevel={mouthLevel}
+            emotion={emotion}
+          />
+        </div>
+
+        <div className="border-t border-aeris-border/50 px-2 pt-2">
+          <button
+            type="button"
+            onClick={() => void sendPrompt(GENERATE_REPORT_PROMPT)}
+            disabled={isSending}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-aeris-accent/40 bg-aeris-accent/10 px-3 py-2 text-body-sm font-semibold text-aeris-accent transition-colors hover:bg-aeris-accent/15 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M14 3v5h5M9 13h6M9 17h6"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {isSending ? "Generating…" : "Generate Report"}
+          </button>
         </div>
 
         <form
@@ -608,14 +605,6 @@ export function AgentAerisPanel({
           </button>
         </form>
       </div>
-    </div>
-  );
-}
-
-function AgentAvatarColumn({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="relative hidden w-[34%] min-w-[132px] max-w-[220px] border-r border-aeris-border/50 bg-aeris-bg/30 md:block">
-      {children}
     </div>
   );
 }

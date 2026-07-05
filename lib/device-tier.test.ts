@@ -112,9 +112,22 @@ describe("device-tier", () => {
       expect(mapModeFromUrl("2d")).toBe("2d");
     });
 
-    it("blocks 3d on touch until user opts in via toggle", () => {
-      installDeviceSignals({ coarse: true });
+    it("blocks 3d on phone-sized touch devices", () => {
+      installDeviceSignals({
+        coarse: true,
+        screenWidth: 390,
+        screenHeight: 844,
+      });
       expect(mapModeFromUrl("3d")).toBeUndefined();
+    });
+
+    it("allows 3d from URL on tablets (touch with tablet-sized screen)", () => {
+      installDeviceSignals({
+        coarse: true,
+        screenWidth: 768,
+        screenHeight: 1024,
+      });
+      expect(mapModeFromUrl("3d")).toBe("3d");
     });
 
     it("allows 3d from URL on fine-pointer devices", () => {

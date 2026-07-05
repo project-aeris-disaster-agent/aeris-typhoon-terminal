@@ -150,18 +150,20 @@ export function BottomPanel({
       {/* Sub-panel grid — unmounted when collapsed to avoid idle iframes/polling */}
       {!collapsed && (
         <div className="h-[calc(100%-2rem)] overflow-hidden">
-          {/* Desktop: horizontal columns; Mobile: vertical stack with overflow scroll */}
-          <div className="flex flex-col md:flex-row h-full md:divide-x md:divide-aeris-border overflow-y-auto md:overflow-hidden">
+          {/* Desktop: horizontal columns; Mobile: vertical stack with overflow
+              scroll. Tablets keep the columns but enforce a minimum width per
+              open column and scroll horizontally instead of crushing them. */}
+          <div className="flex flex-col md:flex-row h-full md:divide-x md:divide-aeris-border overflow-y-auto md:overflow-x-auto md:overflow-y-hidden">
             {SUB_PANELS.map((sp) => (
               <div
                 key={sp.id}
                 className={clsx(
                   "flex flex-col transition-[opacity,width] duration-200 overflow-hidden",
-                  "md:flex-1 md:min-w-0",
+                  "md:flex-1",
                   !openPanels[sp.id] && "md:w-0 md:flex-none",
                   openPanels[sp.id]
-                    ? "border-b border-aeris-border md:border-b-0"
-                    : "hidden md:block",
+                    ? "border-b border-aeris-border md:border-b-0 md:min-w-[320px]"
+                    : "hidden md:block md:min-w-0",
                 )}
               >
                 {openPanels[sp.id] && (

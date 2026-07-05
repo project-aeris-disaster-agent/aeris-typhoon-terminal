@@ -35,7 +35,7 @@ function getModelUrl() {
 const _headPos = new THREE.Vector3();
 const _neckPos = new THREE.Vector3();
 
-/** Face-centered portrait; ~2× tighter than medium head–waist framing. */
+/** Head-and-shoulders portrait, character centered in the frame. */
 function frameAvatar(scene: THREE.Object3D, camera: THREE.PerspectiveCamera, vrm: VRM) {
   const box = new THREE.Box3().setFromObject(scene);
   const size = box.getSize(new THREE.Vector3());
@@ -48,12 +48,13 @@ function frameAvatar(scene: THREE.Object3D, camera: THREE.PerspectiveCamera, vrm
   const halfFovY = THREE.MathUtils.degToRad(camera.fov) / 2;
   const halfFovX = Math.atan(Math.tan(halfFovY) * Math.max(camera.aspect, 0.01));
 
+  // Fit the bust in BOTH axes so narrow columns (tablet subpanel) can't crop
+  // the head; the max() picks whichever axis needs more camera distance.
   const bustHeight = size.y * 0.48;
   const bustWidth = Math.min(size.x * 0.48, size.y * 1.05);
   const distY = bustHeight / 2 / Math.tan(halfFovY);
   const distX = bustWidth / 2 / Math.tan(halfFovX);
-  let distance = Math.max(distY, distX) * 0.84;
-  distance *= 0.5;
+  const distance = Math.max(distY, distX) * 0.62;
 
   const head = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Head);
   const neck = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Neck);
@@ -67,12 +68,10 @@ function frameAvatar(scene: THREE.Object3D, camera: THREE.PerspectiveCamera, vrm
     focusY = _headPos.y - size.y * 0.06;
   }
 
-  const visibleHeight = 2 * distance * Math.tan(halfFovY);
-  const frameShiftY = 0.2 * visibleHeight;
-  const aimY = focusY + frameShiftY;
-
-  camera.position.set(0, aimY, distance);
-  camera.lookAt(0, aimY, 0);
+  // Aim straight at the head/neck focus (no vertical frame shift) so the
+  // character sits in the middle of the window instead of hugging an edge.
+  camera.position.set(0, focusY, distance);
+  camera.lookAt(0, focusY, 0);
   camera.updateProjectionMatrix();
 }
 
@@ -136,6 +135,13 @@ export function AerisVrmAvatar({
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      // Re-frame on every size change: the framing distance depends on the
+      // camera aspect, so a column that narrows after load (tablet layouts,
+      // panel toggles) would otherwise crop the character.
+      if (vrm) {
+        frameAvatar(vrm.scene, camera, vrm);
+        renderer.render(scene, camera);
+      }
     };
 
     const loader = new GLTFLoader();
@@ -153,6 +159,17 @@ export function AerisVrmAvatar({
         VRMUtils.removeUnnecessaryVertices(vrm.scene);
         VRMUtils.combineSkeletons(vrm.scene);
         vrm.scene.rotation.y = 0;
+        // The VRM ships in T-pose; relax the arms to the sides so wide
+        // viewports (the full-width companion strip) don't show them
+        // stretched across the frame.
+        const leftArm = vrm.humanoid.getNormalizedBoneNode(
+          VRMHumanBoneName.LeftUpperArm,
+        );
+        const rightArm = vrm.humanoid.getNormalizedBoneNode(
+          VRMHumanBoneName.RightUpperArm,
+        );
+        if (leftArm) leftArm.rotation.z = -1.15;
+        if (rightArm) rightArm.rotation.z = 1.15;
         scene.add(vrm.scene);
         vrm.update(0);
         frameAvatar(vrm.scene, camera, vrm);

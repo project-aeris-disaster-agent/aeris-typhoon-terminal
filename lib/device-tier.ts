@@ -37,6 +37,18 @@ export function isCoarsePointerDevice(): boolean {
   return window.matchMedia("(pointer: coarse)").matches;
 }
 
+/**
+ * Coarse-pointer device with a phone-sized screen (smallest side < 600 CSS px).
+ * Tablets (iPad, Android tablets) return false — they get heavier features
+ * like the 3D map that phones can't handle.
+ */
+export function isPhoneSizedCoarseDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  if (!isCoarsePointerDevice()) return false;
+  const smallestSide = Math.min(window.screen.width, window.screen.height);
+  return smallestSide < 600;
+}
+
 export function detectDeviceTier(): DeviceTier {
   if (typeof window === "undefined") return "mid";
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return "low";
@@ -66,6 +78,6 @@ export function mapModeFromUrl(
   urlMode: "2d" | "3d" | null | undefined,
 ): "2d" | "3d" | undefined {
   if (!urlMode) return undefined;
-  if (urlMode === "3d" && isCoarsePointerDevice()) return undefined;
+  if (urlMode === "3d" && isPhoneSizedCoarseDevice()) return undefined;
   return urlMode;
 }

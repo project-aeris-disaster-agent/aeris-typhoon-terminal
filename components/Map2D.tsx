@@ -14,7 +14,11 @@ import { ensureBasemapOverlays } from "@/services/map-basemap";
 import { reattachMapOverlaysAfterStyleChange } from "@/services/map-style-reattach";
 import type { MapMode } from "./MapContainer";
 import { applyMapViewMode } from "@/services/map-scene";
-import { DEVICE_TIER, detectDeviceTier } from "@/lib/device-tier";
+import {
+  DEVICE_TIER,
+  detectDeviceTier,
+  isCoarsePointerDevice,
+} from "@/lib/device-tier";
 import { readStoredTheme } from "@/lib/theme-storage";
 
 export type Map2DProps = {
@@ -142,10 +146,14 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
       new maplibregl.AttributionControl({ compact: true }),
       "bottom-right",
     );
-    map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false }),
-      "top-right",
-    );
+    // Touch devices (phones and tablets) already have pinch-to-zoom, so the
+    // on-screen +/- buttons are redundant chrome that eats map space.
+    if (!isCoarsePointerDevice()) {
+      map.addControl(
+        new maplibregl.NavigationControl({ showCompass: false }),
+        "top-right",
+      );
+    }
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
     // Resize passes are cheap-gated: skip `map.resize()` + `triggerRepaint()`

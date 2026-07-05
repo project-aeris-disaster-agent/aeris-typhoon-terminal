@@ -397,7 +397,7 @@ function OutsideParThreatRow({
         : null;
 
   return (
-    <div className="flex items-center gap-2 rounded-md border border-aeris-border bg-aeris-bg/35 px-2 py-1.5">
+    <div className="aeris-monitor-wipe flex items-center gap-2 rounded-md border border-aeris-danger/40 bg-aeris-bg/35 px-2 py-1.5">
       <span
         className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotTone}`}
         aria-hidden

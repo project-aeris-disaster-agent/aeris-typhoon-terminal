@@ -132,7 +132,7 @@ export const Header = memo(function Header({
           <span className="truncate text-body-sm font-semibold tracking-wide text-aeris-accent">
             A.E.R.I.S.
           </span>
-          <span className="hud-text hidden text-aeris-muted lg:inline">
+          <span className="hud-text hidden min-w-0 truncate text-aeris-muted xl:inline-block">
             {"// EARLY ACCESS // Emergency reporting for the Philippines"}
           </span>
         </div>
@@ -151,7 +151,7 @@ export const Header = memo(function Header({
       </div>
 
       <div className="relative z-10 flex min-w-0 shrink-0 items-center justify-end gap-1 sm:gap-2">
-        <NewsTicker className="hidden md:flex max-w-[min(52vw,36rem)]" />
+        <NewsTicker className="hidden lg:flex max-w-[min(38vw,36rem)] xl:max-w-[min(52vw,36rem)]" />
         <button
           type="button"
           onClick={toggleTheme}

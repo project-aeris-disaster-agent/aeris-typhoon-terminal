@@ -147,10 +147,13 @@ export default function HomePage() {
                 "max-md:invisible max-md:pointer-events-none",
             )}
           >
+            {/* In-flow chrome below lg (phones + tablet portrait): the map is
+                too narrow there for the floating overlay to clear the left
+                control column, so search + ad render above the map instead. */}
             <MapTopChrome
               map={map}
               onAddressSelect={handleAddressSelect}
-              className="md:hidden shrink-0 px-2 pt-2 pb-2 border-b border-aeris-border bg-aeris-surface/98"
+              className="lg:hidden shrink-0 px-2 pt-2 pb-2 border-b border-aeris-border bg-aeris-surface/98"
             />
             <main className="flex-1 relative min-h-0 min-w-0">
               <MapContainer
@@ -173,7 +176,7 @@ export default function HomePage() {
                         <button
                           type="button"
                           onClick={() => setCommunityChatOpen(true)}
-                          className="hud-text absolute bottom-12 left-3 z-40 flex items-center gap-1.5 rounded-md border border-aeris-border bg-aeris-surface/95 px-2.5 py-1.5 text-body-sm font-semibold text-aeris-muted shadow-md backdrop-blur-md transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent"
+                          className="hud-text absolute bottom-12 z-40 flex items-center gap-1.5 rounded-md border border-aeris-border bg-aeris-surface/95 px-2.5 py-1.5 text-body-sm font-semibold text-aeris-muted shadow-md backdrop-blur-md transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent left-1/2 -translate-x-1/2 xl:left-3 xl:translate-x-0"
                           aria-label="Open community chat"
                         >
                           <svg
@@ -194,7 +197,11 @@ export default function HomePage() {
                         </button>
                       )}
                     </div>
-                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 hidden md:block w-[min(480px,80%)] pointer-events-none [&>*]:pointer-events-auto">
+                    {/* Floating chrome (lg+): centered when there's room, but
+                        never left of 19rem so it clears the Live Weather /
+                        View Modes / Layers column pinned at left-3 (~17.5rem
+                        wide incl. margin). Width shrinks with the map area. */}
+                    <div className="absolute top-3 z-40 hidden lg:block left-[max(19rem,calc(50%_-_15rem))] w-[min(30rem,calc(100%_-_19.75rem))] pointer-events-none [&>*]:pointer-events-auto">
                       <MapTopChrome
                         map={map}
                         onAddressSelect={handleAddressSelect}
