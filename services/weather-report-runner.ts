@@ -3,7 +3,10 @@ import {
   persistWeatherReportBundle,
   supabaseAgentEnabled,
 } from "@/lib/supabase-agent";
-import { notifyWatchOfficer } from "@/lib/minds-watch-officer";
+import {
+  notifyWatchOfficer,
+  notifyWatchOfficerDetailed,
+} from "@/lib/minds-watch-officer";
 import {
   composeWeatherReport,
   formatAgentWeatherMessage,
@@ -25,6 +28,11 @@ export type WeatherReportRunResult = {
   messageId?: string;
   severityScore?: number;
   mindsNotified?: boolean;
+  /** Reply confirmation for breaking briefs (null = fire-and-forget). */
+  mindsConfirmed?: boolean | null;
+  /** Present when generated — lets callers build report emails without refetching. */
+  composed?: import("@/services/weather-report-compose").ComposedWeatherReport;
+  snapshot?: import("@/services/weather-snapshot").NationalWeatherSnapshot;
 };
 
 export async function runNationalWeatherReportCycle(options?: {
@@ -141,7 +149,9 @@ export async function runNationalWeatherReportCycle(options?: {
     agentMessage,
   });
 
-  const mindsNotified = await notifyWatchOfficer({
+  // Breaking briefs use confirmed delivery (waitForReply) inside the shared
+  // watch-officer helper; daily briefs remain fire-and-forget.
+  const minds = await notifyWatchOfficerDetailed({
     kind: "weather_report",
     digest: {
       reportType: decision.reportType,
@@ -154,7 +164,7 @@ export async function runNationalWeatherReportCycle(options?: {
     console.error(
       `[minds-watch] weather report notify failed: ${(error as Error).message}`,
     );
-    return false;
+    return { notified: false, critical: false, confirmed: null };
   });
 
   return {
@@ -164,6 +174,9 @@ export async function runNationalWeatherReportCycle(options?: {
     reportId: report.id,
     messageId: message.id,
     severityScore: snapshot.severityScore,
-    mindsNotified,
+    mindsNotified: minds.notified,
+    mindsConfirmed: minds.confirmed,
+    composed,
+    snapshot,
   };
 }

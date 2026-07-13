@@ -1,7 +1,8 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import {
-  notifyWatchOfficer,
+  notifyWatchOfficerDetailed,
   type TriageDigestItem,
+  type WatchNotifyResult,
 } from "@/lib/minds-watch-officer";
 import { triagePendingBatchDetailed } from "@/services/triage-runner";
 
@@ -67,14 +68,16 @@ export async function GET(request: Request) {
       confidence: row.result!.confidence,
     }));
 
-  const mindsNotified = await notifyWatchOfficer({
-    kind: "triage_batch",
-    items: triageDigestItems,
-  }).catch((error) => {
+  // Confirmed delivery only if it fits the remaining duration budget.
+  const replyBudgetMs = Math.max(0, deadlineAt - Date.now());
+  const minds: WatchNotifyResult = await notifyWatchOfficerDetailed(
+    { kind: "triage_batch", items: triageDigestItems },
+    { replyTimeoutMs: replyBudgetMs },
+  ).catch((error) => {
     console.error(
       `[minds-watch] triage notify failed: ${(error as Error).message}`,
     );
-    return false;
+    return { notified: false, critical: false, confirmed: null };
   });
 
   const elapsedMs = Date.now() - startedAt;
@@ -87,7 +90,8 @@ export async function GET(request: Request) {
     broadcasted: summary.results.filter((r) => r.broadcasted).length,
     stoppedEarly: summary.stoppedEarly,
     remaining: summary.remaining,
-    mindsNotified,
+    mindsNotified: minds.notified,
+    mindsConfirmed: minds.confirmed,
     elapsedMs,
     limit,
     maxDuration,

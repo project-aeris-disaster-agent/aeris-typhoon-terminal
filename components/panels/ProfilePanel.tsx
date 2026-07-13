@@ -123,19 +123,25 @@ export function ProfilePanel() {
     }
   };
 
-  const handleStormEmailToggle = async (enabled: boolean) => {
+  // Single master switch for all Minds email features (storm cyclone alerts
+  // + AERIS weather-brief reports). Writes both profile flags together so
+  // they stay in sync behind one control.
+  const handleMindsEmailToggle = async (enabled: boolean) => {
     if (stormEmailToggleInFlight.current) return;
     stormEmailToggleInFlight.current = true;
     setStatus(null);
-    const result = await updateProfile({ storm_email_enabled: enabled });
+    const result = await updateProfile({
+      storm_email_enabled: enabled,
+      aeris_reports_enabled: enabled,
+    });
     stormEmailToggleInFlight.current = false;
     setStatus(
       result.ok
         ? {
             tone: "ok",
             msg: enabled
-              ? "AERIS-PAGASA email alerts enabled."
-              : "AERIS-PAGASA email alerts disabled.",
+              ? "Minds email alerts enabled."
+              : "Minds email alerts disabled.",
           }
         : { tone: "err", msg: result.error },
     );
@@ -223,7 +229,8 @@ export function ProfilePanel() {
         </div>
       </div>
 
-      {/* AERIS-PAGASA storm email alerts (Anomica Minds) */}
+      {/* Anomica Minds email alerts — single master toggle for all Minds
+          email features (PAGASA cyclone bulletins + AERIS weather briefs). */}
       <div
         className={clsx(
           "minds-integration-card mt-3 shrink-0 rounded-md border bg-aeris-bg/60 p-2.5 relative",
@@ -257,12 +264,12 @@ export function ProfilePanel() {
               </span>
             </div>
             <div className="mt-1.5 text-body-sm font-medium leading-snug text-aeris-text">
-              Automated Email Alerts for Tropical Cyclones (AERIS-PAGASA)
+              Automated Email Alerts (AERIS-PAGASA)
             </div>
             {profile.stormEmailEnabled ? (
               <p className="mt-1 text-xs leading-relaxed text-aeris-muted">
-                PAGASA tropical cyclone bulletins sent to your profile email via
-                Minds.
+                PAGASA tropical cyclone bulletins and AERIS weather briefs sent
+                to your profile email via Minds.
               </p>
             ) : null}
             {!profile.email && (
@@ -275,10 +282,10 @@ export function ProfilePanel() {
             type="button"
             role="switch"
             aria-checked={profile.stormEmailEnabled}
-            aria-label="Automated Email Alerts for Tropical Cyclones (AERIS-PAGASA)"
+            aria-label="Automated Email Alerts (AERIS-PAGASA)"
             disabled={!profile.email}
             onClick={() =>
-              void handleStormEmailToggle(!profile.stormEmailEnabled)
+              void handleMindsEmailToggle(!profile.stormEmailEnabled)
             }
             className={clsx(
               "relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40",

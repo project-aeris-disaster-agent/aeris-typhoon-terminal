@@ -31,6 +31,15 @@ export function createMindsClient() {
     waitForReply: jest.fn(),
     ensureConversation: jest.fn(),
     getMindIdForAlias: jest.fn(),
+    getMind: jest.fn(),
+    updateMindStatus: jest.fn(),
+    getCognitionBalance: jest.fn(),
+    getCognitionUsage: jest.fn(),
+    getCognitionUsageByTool: jest.fn(),
+    getCircle: jest.fn(),
+    addCircleMembers: jest.fn(),
+    removeCircleMembers: jest.fn(),
+    listCirclesForAccount: jest.fn(),
   };
 }
 

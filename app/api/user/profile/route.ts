@@ -118,6 +118,13 @@ export async function PATCH(request: Request) {
     fields.storm_email_enabled = record.storm_email_enabled;
   }
 
+  if (record.aeris_reports_enabled !== undefined) {
+    if (typeof record.aeris_reports_enabled !== "boolean") {
+      return jsonError("aeris_reports_enabled must be a boolean.", 400);
+    }
+    fields.aeris_reports_enabled = record.aeris_reports_enabled;
+  }
+
   if (Object.keys(fields).length === 0) {
     return jsonError("No editable fields provided.", 400);
   }
@@ -133,15 +140,15 @@ export async function PATCH(request: Request) {
     return jsonError("Failed to update profile.", 502);
   }
 
-  if (fields.storm_email_enabled === true) {
+  if (fields.storm_email_enabled === true || fields.aeris_reports_enabled === true) {
     void touchUserLastActive(userId);
   }
 
-  const stormEmailOnly =
-    Object.keys(fields).length === 1 &&
-    fields.storm_email_enabled !== undefined;
+  const togglesOnly = Object.keys(fields).every((key) =>
+    ["storm_email_enabled", "aeris_reports_enabled"].includes(key),
+  );
 
-  if (!stormEmailOnly) {
+  if (!togglesOnly) {
     // Reward profile completion incrementally: each field filled in grants XP
     // once (more completed fields → more XP). Per-field dedupe keys keep every
     // award idempotent, and the full-profile bonus is granted when all are set.
@@ -166,7 +173,7 @@ export async function PATCH(request: Request) {
     }
   }
 
-  if (stormEmailOnly) {
+  if (togglesOnly) {
     return jsonOkNoStore({ profile: toClientProfile(result.profile) });
   }
 

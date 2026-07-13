@@ -16,14 +16,20 @@
 
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { runStormWatchCycle } from "@/services/storm-watch-runner";
-import { runNationalWeatherReportCycle } from "@/services/weather-report-runner";
+import {
+  runNationalWeatherReportCycle,
+  type WeatherReportRunResult,
+} from "@/services/weather-report-runner";
+import { runAerisReportEmailCycle } from "@/services/aeris-report-email-runner";
 import { triagePendingBatchDetailed } from "@/services/triage-runner";
 import { mintStaleQueuedReports } from "@/services/onchain-mint-worker";
 import { refreshMonitoredYoutubeChannels } from "@/lib/youtube-feed/serve";
 import {
-  notifyWatchOfficer,
+  notifyWatchOfficerDetailed,
   type TriageDigestItem,
 } from "@/lib/minds-watch-officer";
+import { getCognitionStatus, mindsClientAvailable } from "@/lib/minds-client";
+import { isMindsNotifyEnabled } from "@/lib/minds-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,10 +97,10 @@ async function runTriageJob(deadlineAt: number) {
       confidence: row.result!.confidence,
     }));
 
-  const mindsNotified = await notifyWatchOfficer({
-    kind: "triage_batch",
-    items,
-  }).catch(() => false);
+  const minds = await notifyWatchOfficerDetailed(
+    { kind: "triage_batch", items },
+    { replyTimeoutMs: Math.max(0, deadlineAt - Date.now()) },
+  ).catch(() => ({ notified: false, critical: false, confirmed: null }));
 
   return {
     processed: summary.results.length,
@@ -103,7 +109,29 @@ async function runTriageJob(deadlineAt: number) {
       .length,
     remaining: summary.remaining,
     stoppedEarly: summary.stoppedEarly,
-    mindsNotified,
+    mindsNotified: minds.notified,
+    mindsConfirmed: minds.confirmed,
+  };
+}
+
+/**
+ * Best-effort cognition balance check so a drained Mind is visible in cron
+ * logs before notifications silently stop. Never fails the cron.
+ */
+async function runMindsBalanceJob() {
+  if (!isMindsNotifyEnabled() || !mindsClientAvailable()) {
+    return { skipped: true };
+  }
+  const status = await getCognitionStatus();
+  if (status.low) {
+    console.warn(
+      `[cron-daily] Minds cognition balance low: ${status.balance.cognition} < ${status.warnThreshold}`,
+    );
+  }
+  return {
+    balance: status.balance.cognition,
+    warnThreshold: status.warnThreshold,
+    low: status.low,
   };
 }
 
@@ -135,8 +163,32 @@ export async function GET(request: Request) {
   jobs.push(
     await runJob("storm-watch", () => runStormWatchCycle({ force: false })),
   );
+  const weatherOutcome = await runJob("weather-reports", () =>
+    runNationalWeatherReportCycle(),
+  );
+  jobs.push(weatherOutcome);
   jobs.push(
-    await runJob("weather-reports", () => runNationalWeatherReportCycle()),
+    await runJob("report-emails", () => {
+      const weather = weatherOutcome.ok
+        ? (weatherOutcome.result as WeatherReportRunResult)
+        : null;
+      if (
+        !weather?.generated ||
+        !weather.reportId ||
+        !weather.reportType ||
+        !weather.composed ||
+        !weather.snapshot
+      ) {
+        return Promise.resolve({ skipped: true, reason: "no_new_report" });
+      }
+      return runAerisReportEmailCycle({
+        reportId: weather.reportId,
+        reportType: weather.reportType,
+        composed: weather.composed,
+        snapshot: weather.snapshot,
+        narrativeTimeoutMs: Math.max(0, globalDeadline - Date.now() - 15_000),
+      });
+    }),
   );
   jobs.push(
     await runJob("triage", () =>
@@ -149,6 +201,7 @@ export async function GET(request: Request) {
   jobs.push(
     await runJob("youtube-feed", () => refreshMonitoredYoutubeChannels()),
   );
+  jobs.push(await runJob("minds-balance", () => runMindsBalanceJob()));
 
   return jsonOkNoStore({
     ok: jobs.every((j) => j.ok),

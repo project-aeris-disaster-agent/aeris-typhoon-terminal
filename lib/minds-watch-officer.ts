@@ -2,6 +2,7 @@ import {
   describeMindsApiError,
   mindsClientAvailable,
   sendWatchMessage,
+  sendWatchMessageConfirmed,
 } from "@/lib/minds-client";
 import {
   getDashboardPublicUrl,
@@ -159,15 +160,53 @@ export type NotifyWatchOfficerPayload =
   | { kind: "verdict_change"; digest: VerdictChangeDigestInput }
   | { kind: "triage_batch"; items: TriageDigestItem[] };
 
-export async function notifyWatchOfficer(
+export type WatchNotifyResult = {
+  notified: boolean;
+  /** True when the digest warranted confirmed delivery (waitForReply). */
+  critical: boolean;
+  /** Reply confirmation outcome — null for fire-and-forget sends. */
+  confirmed: boolean | null;
+};
+
+const NOT_NOTIFIED: WatchNotifyResult = {
+  notified: false,
+  critical: false,
+  confirmed: null,
+};
+
+/**
+ * Breaking weather and urgent/SOS triage digests are critical: those wait
+ * (bounded) for the Mind's reply so silent drops are visible in cron output.
+ * Routine digests stay fire-and-forget.
+ */
+function isCriticalPayload(payload: NotifyWatchOfficerPayload): boolean {
+  if (payload.kind === "weather_report") {
+    return payload.digest.reportType === "breaking";
+  }
+  if (payload.kind === "triage_batch") {
+    return shouldNotifyTriageBatch(payload.items);
+  }
+  return false;
+}
+
+export type NotifyWatchOfficerOptions = {
+  /**
+   * Cap on the confirmed-delivery reply wait, for callers running under a
+   * platform duration budget. Values under 1s downgrade to fire-and-forget.
+   */
+  replyTimeoutMs?: number;
+};
+
+export async function notifyWatchOfficerDetailed(
   payload: NotifyWatchOfficerPayload,
-): Promise<boolean> {
-  if (!isMindsNotifyEnabled()) return false;
+  options?: NotifyWatchOfficerOptions,
+): Promise<WatchNotifyResult> {
+  if (!isMindsNotifyEnabled()) return NOT_NOTIFIED;
   if (!mindsClientAvailable()) {
     console.warn(
       "[minds-watch] MINDS_NOTIFY_ENABLED is true but MINDS_BUILDER_API_KEY or MINDS_AERIS_MIND_ID is missing.",
     );
-    return false;
+    return NOT_NOTIFIED;
   }
 
   let messageText = "";
@@ -176,22 +215,46 @@ export async function notifyWatchOfficer(
   } else if (payload.kind === "verdict_change") {
     messageText = formatVerdictChangeDigest(payload.digest);
   } else {
-    if (!shouldNotifyTriageBatch(payload.items)) return false;
+    if (!shouldNotifyTriageBatch(payload.items)) return NOT_NOTIFIED;
     messageText = formatTriageDigest(payload.items);
   }
 
-  if (!messageText.trim()) return false;
+  if (!messageText.trim()) return NOT_NOTIFIED;
+
+  const replyTimeoutMs = options?.replyTimeoutMs;
+  const critical =
+    isCriticalPayload(payload) &&
+    (replyTimeoutMs === undefined || replyTimeoutMs >= 1_000);
+  const alias = getMindsWatchAlias();
 
   try {
-    await sendWatchMessage({
-      alias: getMindsWatchAlias(),
-      messageText,
-    });
-    return true;
+    if (critical) {
+      const delivery = await sendWatchMessageConfirmed({
+        alias,
+        messageText,
+        ...(replyTimeoutMs !== undefined ? { timeoutMs: replyTimeoutMs } : {}),
+      });
+      if (!delivery.confirmed) {
+        console.warn(
+          `[minds-watch] critical ${payload.kind} sent but no Mind reply within timeout.`,
+        );
+      }
+      return { notified: true, critical, confirmed: delivery.confirmed };
+    }
+
+    await sendWatchMessage({ alias, messageText });
+    return { notified: true, critical, confirmed: null };
   } catch (error) {
     console.error(
       `[minds-watch] notify failed (${payload.kind}): ${describeMindsApiError(error)}`,
     );
-    return false;
+    return NOT_NOTIFIED;
   }
+}
+
+export async function notifyWatchOfficer(
+  payload: NotifyWatchOfficerPayload,
+): Promise<boolean> {
+  const result = await notifyWatchOfficerDetailed(payload);
+  return result.notified;
 }

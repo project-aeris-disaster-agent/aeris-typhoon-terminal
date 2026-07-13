@@ -27,7 +27,7 @@
     "vercel:deploy:prod": "npx vercel deploy --prod --yes"
   },
   "dependencies": {
-    "@animocabrands/minds-client-lib": "^0.1.0",
+    "@animocabrands/minds-client-lib": "^0.1.2",
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@pixiv/three-vrm": "^3.5.2",
     "@privy-io/node": "^0.21.0",

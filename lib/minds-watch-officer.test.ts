@@ -4,6 +4,7 @@ import {
   formatTriageDigest,
   formatWeatherDigest,
   notifyWatchOfficer,
+  notifyWatchOfficerDetailed,
   shouldNotifyTriageBatch,
 } from "@/lib/minds-watch-officer";
 import type { NationalWeatherSnapshot } from "@/services/weather-snapshot";
@@ -11,15 +12,23 @@ import type { NationalWeatherSnapshot } from "@/services/weather-snapshot";
 jest.mock("@/lib/minds-client", () => ({
   mindsClientAvailable: jest.fn(),
   sendWatchMessage: jest.fn(),
+  sendWatchMessageConfirmed: jest.fn(),
   describeMindsApiError: jest.fn(),
 }));
 
-import { mindsClientAvailable, sendWatchMessage } from "@/lib/minds-client";
+import {
+  mindsClientAvailable,
+  sendWatchMessage,
+  sendWatchMessageConfirmed,
+} from "@/lib/minds-client";
 
 const mockedAvailable = mindsClientAvailable as jest.MockedFunction<
   typeof mindsClientAvailable
 >;
 const mockedSend = sendWatchMessage as jest.MockedFunction<typeof sendWatchMessage>;
+const mockedSendConfirmed = sendWatchMessageConfirmed as jest.MockedFunction<
+  typeof sendWatchMessageConfirmed
+>;
 
 function fakeSnapshot(): NationalWeatherSnapshot {
   return {
@@ -61,6 +70,11 @@ describe("minds-watch-officer", () => {
     delete process.env.MINDS_NOTIFY_ENABLED;
     mockedAvailable.mockReturnValue(true);
     mockedSend.mockResolvedValue({ fingerprint: "fp-1" });
+    mockedSendConfirmed.mockResolvedValue({
+      fingerprint: "fp-1",
+      confirmed: true,
+      replyText: "Acknowledged.",
+    });
   });
 
   afterEach(() => {
@@ -194,7 +208,77 @@ describe("minds-watch-officer", () => {
       },
     });
     expect(sent).toBe(true);
+    // Breaking briefs are critical → confirmed delivery path.
+    expect(mockedSendConfirmed).toHaveBeenCalledTimes(1);
+    expect(mockedSend).not.toHaveBeenCalled();
+    expect(mockedSendConfirmed.mock.calls[0][0].messageText).toContain(
+      "BREAKING",
+    );
+  });
+
+  it("daily briefs stay fire-and-forget", async () => {
+    process.env.MINDS_NOTIFY_ENABLED = "true";
+    const result = await notifyWatchOfficerDetailed({
+      kind: "weather_report",
+      digest: {
+        reportType: "daily",
+        triggerReason: "daily_floor_24h",
+        composed: {
+          headline: "h",
+          body: "b",
+          structured: {
+            hazards: [],
+            actions: [],
+            severityScore: 1,
+            verdictLabel: "Monitor",
+            validScope: "PH",
+          },
+        },
+        snapshot: fakeSnapshot(),
+        reportId: "x",
+      },
+    });
+    expect(result).toEqual({ notified: true, critical: false, confirmed: null });
     expect(mockedSend).toHaveBeenCalledTimes(1);
-    expect(mockedSend.mock.calls[0][0].messageText).toContain("BREAKING");
+    expect(mockedSendConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("urgent triage uses confirmed delivery and reports the outcome", async () => {
+    process.env.MINDS_NOTIFY_ENABLED = "true";
+    mockedSendConfirmed.mockResolvedValue({ fingerprint: "fp-2", confirmed: false });
+    const result = await notifyWatchOfficerDetailed({
+      kind: "triage_batch",
+      items: [
+        {
+          reportId: "r1",
+          category: "SOS",
+          description: "trapped",
+          priority: "urgent",
+        },
+      ],
+    });
+    expect(result).toEqual({ notified: true, critical: true, confirmed: false });
+    expect(mockedSendConfirmed).toHaveBeenCalledTimes(1);
+  });
+
+  it("downgrades to fire-and-forget when reply budget is under 1s", async () => {
+    process.env.MINDS_NOTIFY_ENABLED = "true";
+    const result = await notifyWatchOfficerDetailed(
+      {
+        kind: "triage_batch",
+        items: [
+          {
+            reportId: "r1",
+            category: "SOS",
+            description: "trapped",
+            priority: "urgent",
+          },
+        ],
+      },
+      { replyTimeoutMs: 200 },
+    );
+    expect(result).toEqual({ notified: true, critical: false, confirmed: null });
+    expect(mockedSend).toHaveBeenCalledTimes(1);
+    expect(mockedSendConfirmed).not.toHaveBeenCalled();
   });
 });

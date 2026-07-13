@@ -23,6 +23,7 @@ export type ClientUserProfile = {
   socials: Record<string, string>;
   avatarUrl: string | null;
   stormEmailEnabled: boolean;
+  aerisReportsEnabled: boolean;
   xp: number;
   level: number;
   createdAt: string;
@@ -36,6 +37,7 @@ export type ProfileUpdateInput = {
   socials?: Record<string, string>;
   avatar_url?: string | null;
   storm_email_enabled?: boolean;
+  aeris_reports_enabled?: boolean;
 };
 
 export type ProfileUpdateResult =
@@ -68,6 +70,9 @@ function applyProfilePatch(
     ...(input.avatar_url !== undefined && { avatarUrl: input.avatar_url }),
     ...(input.storm_email_enabled !== undefined && {
       stormEmailEnabled: input.storm_email_enabled,
+    }),
+    ...(input.aeris_reports_enabled !== undefined && {
+      aerisReportsEnabled: input.aeris_reports_enabled,
     }),
   };
 }
