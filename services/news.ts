@@ -1,5 +1,6 @@
 "use client";
 
+import { dedupeNewsItems } from "@/lib/news-relevance";
 import { recordFailure, recordSuccess } from "@/services/data-freshness";
 
 export type NewsItem = {
@@ -16,11 +17,33 @@ export type NewsFetchResult = {
   warnings: string[];
 };
 
+/** Coalesce NewsTicker + NewsPanel mounts / double polls within a short window. */
+const NEWS_FRESH_CACHE_MS = 60 * 1000;
 const NEWS_STALE_CACHE_MS = 20 * 60 * 1000;
+
 let lastHealthyItems: NewsItem[] = [];
 let lastHealthyAt = 0;
+let lastResult: NewsFetchResult | null = null;
+let lastFetchAt = 0;
+let inFlight: Promise<NewsFetchResult> | null = null;
 
 export async function fetchNews(): Promise<NewsFetchResult> {
+  if (
+    lastResult &&
+    Date.now() - lastFetchAt < NEWS_FRESH_CACHE_MS &&
+    lastResult.items.length > 0
+  ) {
+    return lastResult;
+  }
+  if (inFlight) return inFlight;
+
+  inFlight = loadNews().finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+async function loadNews(): Promise<NewsFetchResult> {
   try {
     const res = await fetch("/api/rss", { cache: "no-store" });
     const data = (await res.json().catch(() => ({}))) as {
@@ -47,11 +70,14 @@ export async function fetchNews(): Promise<NewsFetchResult> {
       lastHealthyAt = Date.now();
     }
 
-    recordSuccess("news");
-    return {
+    const result: NewsFetchResult = {
       items: normalized,
       warnings: Array.isArray(data.errors) ? data.errors : [],
     };
+    lastResult = result;
+    lastFetchAt = Date.now();
+    recordSuccess("news");
+    return result;
   } catch (error) {
     const message = (error as Error).message;
     const canUseStaleCache =
@@ -59,28 +85,17 @@ export async function fetchNews(): Promise<NewsFetchResult> {
       Date.now() - lastHealthyAt < NEWS_STALE_CACHE_MS;
     if (canUseStaleCache) {
       recordSuccess("news");
-      return {
+      const stale: NewsFetchResult = {
         items: lastHealthyItems,
-        warnings: ["Live RSS unavailable, showing most recent successful snapshot."],
+        warnings: [
+          "Live RSS unavailable, showing most recent successful snapshot.",
+        ],
       };
+      lastResult = stale;
+      lastFetchAt = Date.now();
+      return stale;
     }
     recordFailure("news", message);
     throw error;
   }
-}
-
-function dedupeNewsItems(items: NewsItem[]) {
-  const seen = new Set<string>();
-  const out: NewsItem[] = [];
-  for (const item of items) {
-    const key = `${normalize(item.title)}|${item.url}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-  }
-  return out;
-}
-
-function normalize(text: string) {
-  return text.toLowerCase().replace(/\s+/g, " ").trim();
 }

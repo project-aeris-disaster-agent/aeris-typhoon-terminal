@@ -16,12 +16,11 @@ export async function GET(request: Request) {
     return jsonOkNoStore({ ok: false, pagasaBulletins: null });
   }
 
-  // Hide dissipated systems the upstream parser still lists as non-final,
-  // using storm-watch cycle history as the per-bulletin age signal the index
-  // itself never provides. Fail open on any lookup issue so a genuinely active
-  // bulletin is never withheld.
+  // Backup when the SWB quiet-PAR probe failed: hide dissipated systems the
+  // parser still lists as non-final, using storm-watch cycle history. Fail open
+  // so a genuinely active bulletin is never withheld.
   let pagasaBulletins = data;
-  if (stormWatchStateEnabled()) {
+  if (!data.quiet && stormWatchStateEnabled()) {
     try {
       const cycles = await listStormWatchCycles();
       pagasaBulletins = filterStaleBulletins(data, cycles);

@@ -169,53 +169,55 @@ export function NewsLivestreamsPanel() {
         helpId="feeds.livestreams"
         subtitle={channelInfo.label}
         trailing={
-          liveChannels.length > 0 ? (
-            <Pill tone="danger">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-aeris-danger animate-pulse mr-1" />
-              {liveChannels.length} LIVE
-            </Pill>
-          ) : (
-            <Pill tone="default">RECENT</Pill>
-          )
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1">
+              {NEWS_CHANNELS.map((ch) => {
+                const hasLive = videos.some(
+                  (v) =>
+                    v.channelHandle === ch.handle &&
+                    isPlayableVideo(v) &&
+                    isConfirmedLive(v),
+                );
+                const isActive = activeChannel === ch.handle;
+                const isNewlyLive = newlyLiveChannels.has(ch.handle);
+                return (
+                  <button
+                    key={ch.handle}
+                    type="button"
+                    onClick={() => handleChannelSelect(ch.handle)}
+                    className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-chrome font-mono uppercase tracking-wider border transition-colors ${
+                      isActive
+                        ? "bg-aeris-accent/10 border-aeris-accent/40 text-aeris-accent"
+                        : isNewlyLive
+                          ? "border-aeris-danger/60 bg-aeris-danger/5 text-aeris-text animate-pulse"
+                          : "border-aeris-border text-aeris-muted hover:text-aeris-text hover:border-aeris-border/80"
+                    }`}
+                  >
+                    {hasLive && (
+                      <span className="w-1 h-1 rounded-full bg-aeris-danger animate-pulse shrink-0" />
+                    )}
+                    {ch.short}
+                  </button>
+                );
+              })}
+            </div>
+            {liveChannels.length > 0 ? (
+              <Pill tone="danger">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-aeris-danger animate-pulse mr-1" />
+                {liveChannels.length} LIVE
+              </Pill>
+            ) : (
+              <Pill tone="default">RECENT</Pill>
+            )}
+          </div>
         }
       />
 
-      {/* Channel switcher */}
-      <div className="flex gap-1 shrink-0">
-        {NEWS_CHANNELS.map((ch) => {
-          const hasLive = videos.some(
-            (v) =>
-              v.channelHandle === ch.handle &&
-              isPlayableVideo(v) &&
-              isConfirmedLive(v),
-          );
-          const isActive = activeChannel === ch.handle;
-          const isNewlyLive = newlyLiveChannels.has(ch.handle);
-          return (
-            <button
-              key={ch.handle}
-              type="button"
-              onClick={() => handleChannelSelect(ch.handle)}
-              className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded text-body-sm font-mono border transition-colors ${
-                isActive
-                  ? "bg-aeris-accent/10 border-aeris-accent/40 text-aeris-accent"
-                  : isNewlyLive
-                    ? "border-aeris-danger/60 bg-aeris-danger/5 text-aeris-text animate-pulse"
-                    : "border-aeris-border text-aeris-muted hover:text-aeris-text hover:border-aeris-border/80"
-              }`}
-            >
-              {hasLive && (
-                <span className="w-1.5 h-1.5 rounded-full bg-aeris-danger animate-pulse shrink-0" />
-              )}
-              {ch.short}
-            </button>
-          );
-        })}
-      </div>
-
       {loading && (
         <div className="space-y-2">
-          <div className="aspect-video bg-aeris-elev animate-pulse rounded" />
+          <div className="w-full flex justify-center shrink-0">
+            <div className="aspect-video w-full max-w-xl bg-aeris-elev animate-pulse rounded" />
+          </div>
           {[1, 2].map((i) => (
             <div key={i} className="h-10 rounded bg-aeris-elev animate-pulse" />
           ))}
@@ -228,84 +230,88 @@ export function NewsLivestreamsPanel() {
 
       {!loading && (
         <>
-          {/* Main player */}
-          {displayed ? (
-            <div className="aspect-video bg-black rounded overflow-hidden border border-aeris-border shrink-0">
-              <iframe
-                key={displayed.id}
-                src={getEmbedUrl(
-                  displayed.id,
-                  true,
-                  true,
-                  lastUpdated?.getTime(),
-                )}
-                title={displayed.title}
-                allow="autoplay; encrypted-media; picture-in-picture"
-                allowFullScreen
-                className="w-full h-full"
-              />
-            </div>
-          ) : (
-            <div className="aspect-video bg-aeris-elev rounded flex items-center justify-center text-body-sm text-aeris-muted border border-aeris-border shrink-0">
-              No stream available
-            </div>
-          )}
-
-          {/* Now playing info */}
-          {displayed && (
-            <div className="flex items-start justify-between gap-2 min-w-0 shrink-0">
-              <div className="min-w-0 flex-1">
-                <div className="text-body-sm text-aeris-text font-medium leading-snug truncate">
-                  {displayed.title}
-                </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-chrome font-mono text-aeris-muted">
-                    {channelInfo.label}
-                  </span>
-                  {isConfirmedLive(displayed) && (
-                    <span className="text-chrome font-mono text-aeris-danger">
-                      ● LIVE
-                    </span>
+          {/* Main player — centered at all panel widths */}
+          <div className="w-full flex justify-center items-center shrink-0">
+            {displayed ? (
+              <div className="aspect-video w-full max-w-xl bg-black rounded overflow-hidden border border-aeris-border">
+                <iframe
+                  key={displayed.id}
+                  src={getEmbedUrl(
+                    displayed.id,
+                    true,
+                    true,
+                    lastUpdated?.getTime(),
                   )}
-                </div>
+                  title={displayed.title}
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                  allowFullScreen
+                  className="w-full h-full"
+                />
               </div>
-              
-              {/* Navigation buttons */}
-              <div className="flex gap-0.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={goToPrevVideo}
-                  disabled={!hasPrevVideo}
-                  title="Previous video"
-                  className={`px-1.5 py-0.5 rounded text-chrome font-mono border transition-colors ${
-                    hasPrevVideo
-                      ? "border-aeris-border hover:border-aeris-border/60 hover:bg-aeris-elev/50 text-aeris-muted hover:text-aeris-text"
-                      : "border-aeris-border/30 text-aeris-muted/40 cursor-not-allowed"
-                  }`}
-                >
-                  ← Prev
-                </button>
-                <button
-                  type="button"
-                  onClick={goToMostRecent}
-                  title="Most recent or live"
-                  className="px-1.5 py-0.5 rounded text-chrome font-mono border border-aeris-border hover:border-aeris-border/60 hover:bg-aeris-elev/50 text-aeris-muted hover:text-aeris-text transition-colors"
-                >
-                  ◆ Latest
-                </button>
-                <button
-                  type="button"
-                  onClick={goToNextVideo}
-                  disabled={!hasNextVideo}
-                  title="Next video"
-                  className={`px-1.5 py-0.5 rounded text-chrome font-mono border transition-colors ${
-                    hasNextVideo
-                      ? "border-aeris-border hover:border-aeris-border/60 hover:bg-aeris-elev/50 text-aeris-muted hover:text-aeris-text"
-                      : "border-aeris-border/30 text-aeris-muted/40 cursor-not-allowed"
-                  }`}
-                >
-                  Next →
-                </button>
+            ) : (
+              <div className="aspect-video w-full max-w-xl bg-aeris-elev rounded flex items-center justify-center text-body-sm text-aeris-muted border border-aeris-border">
+                No stream available
+              </div>
+            )}
+          </div>
+
+          {/* Now playing info — aligned to player width */}
+          {displayed && (
+            <div className="w-full flex justify-center shrink-0">
+              <div className="w-full max-w-xl flex items-start justify-between gap-2 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <div className="text-body-sm text-aeris-text font-medium leading-snug truncate">
+                    {displayed.title}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-chrome font-mono text-aeris-muted">
+                      {channelInfo.label}
+                    </span>
+                    {isConfirmedLive(displayed) && (
+                      <span className="text-chrome font-mono text-aeris-danger">
+                        ● LIVE
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Navigation buttons */}
+                <div className="flex gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={goToPrevVideo}
+                    disabled={!hasPrevVideo}
+                    title="Previous video"
+                    className={`px-1.5 py-0.5 rounded text-chrome font-mono border transition-colors ${
+                      hasPrevVideo
+                        ? "border-aeris-border hover:border-aeris-border/60 hover:bg-aeris-elev/50 text-aeris-muted hover:text-aeris-text"
+                        : "border-aeris-border/30 text-aeris-muted/40 cursor-not-allowed"
+                    }`}
+                  >
+                    ← Prev
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToMostRecent}
+                    title="Most recent or live"
+                    className="px-1.5 py-0.5 rounded text-chrome font-mono border border-aeris-border hover:border-aeris-border/60 hover:bg-aeris-elev/50 text-aeris-muted hover:text-aeris-text transition-colors"
+                  >
+                    ◆ Latest
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToNextVideo}
+                    disabled={!hasNextVideo}
+                    title="Next video"
+                    className={`px-1.5 py-0.5 rounded text-chrome font-mono border transition-colors ${
+                      hasNextVideo
+                        ? "border-aeris-border hover:border-aeris-border/60 hover:bg-aeris-elev/50 text-aeris-muted hover:text-aeris-text"
+                        : "border-aeris-border/30 text-aeris-muted/40 cursor-not-allowed"
+                    }`}
+                  >
+                    Next →
+                  </button>
+                </div>
               </div>
             </div>
           )}

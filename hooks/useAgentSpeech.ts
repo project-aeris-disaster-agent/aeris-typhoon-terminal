@@ -24,8 +24,6 @@ export function useAgentSpeech({
   const [mouthLevel, setMouthLevel] = useState(0);
   const [emotion, setEmotion] = useState<SpeechEmotion>("assistant");
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
-  const [voiceEngine, setVoiceEngine] = useState<string | null>(null);
   const [driverReady, setDriverReady] = useState(false);
 
   const spokenIdsRef = useRef(new Set<string>());
@@ -43,16 +41,10 @@ export function useAgentSpeech({
       }
       driverRef.current = driver;
       setDriverReady(true);
-      setVoiceEngine(driver.getEngineLabel?.() ?? null);
       unsub = driver.subscribeMouthLevel(setMouthLevel);
 
       if (driver.prepare) {
-        void driver.prepare().then(() => {
-          if (!disposed) {
-            setVoiceStatus(driver.getStatus?.() ?? null);
-            setVoiceEngine(driver.getEngineLabel?.() ?? null);
-          }
-        });
+        void driver.prepare();
       }
     });
 
@@ -63,16 +55,6 @@ export function useAgentSpeech({
       driverRef.current = null;
       setDriverReady(false);
     };
-  }, [isActive]);
-
-  useEffect(() => {
-    const driver = driverRef.current;
-    if (!driver?.getStatus) return;
-    const id = window.setInterval(() => {
-      setVoiceStatus(driver.getStatus?.() ?? null);
-      setVoiceEngine(driver.getEngineLabel?.() ?? null);
-    }, 400);
-    return () => window.clearInterval(id);
   }, [isActive]);
 
   useEffect(() => {
@@ -132,7 +114,5 @@ export function useAgentSpeech({
     mouthLevel,
     emotion,
     isSpeaking,
-    voiceStatus,
-    voiceEngine,
   };
 }

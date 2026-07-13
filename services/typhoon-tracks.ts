@@ -57,6 +57,8 @@ export type PagasaBulletinItem = {
   final: boolean;
   file: string;
   pdfUrl: string;
+  /** Latest SWB archive PDF while PAR is quiet. */
+  archive?: boolean;
 };
 
 export type PagasaBulletinsFetchResult = {
@@ -64,8 +66,11 @@ export type PagasaBulletinsFetchResult = {
   fetchedAt: string | null;
   indexAgeSeconds: number | null;
   hasActive: boolean;
+  quiet: boolean;
   stale: boolean;
   warning: string | null;
+  /** True when the API could not return a bulletin payload. */
+  unavailable: boolean;
 };
 
 const EMPTY_BULLETINS: PagasaBulletinsFetchResult = {
@@ -73,8 +78,10 @@ const EMPTY_BULLETINS: PagasaBulletinsFetchResult = {
   fetchedAt: null,
   indexAgeSeconds: null,
   hasActive: false,
+  quiet: false,
   stale: false,
   warning: null,
+  unavailable: true,
 };
 
 /**
@@ -100,6 +107,7 @@ export async function fetchPagasaBulletins(options?: {
         fetchedAt?: string;
         indexAgeSeconds?: number | null;
         hasActive?: boolean;
+        quiet?: boolean;
         stale?: boolean;
         warning?: string;
       } | null;
@@ -116,15 +124,22 @@ export async function fetchPagasaBulletins(options?: {
     recordSuccess("pagasa-bulletins");
     const payload = data.pagasaBulletins;
     return {
-      bulletins: Array.isArray(payload.bulletins) ? payload.bulletins : [],
+      bulletins: Array.isArray(payload.bulletins)
+        ? payload.bulletins.map((b) => ({
+            ...b,
+            archive: b.archive === true,
+          }))
+        : [],
       fetchedAt: payload.fetchedAt ?? null,
       indexAgeSeconds:
         typeof payload.indexAgeSeconds === "number"
           ? payload.indexAgeSeconds
           : null,
       hasActive: payload.hasActive === true,
+      quiet: payload.quiet === true,
       stale: payload.stale === true,
       warning: payload.warning ?? null,
+      unavailable: false,
     };
   } catch (error) {
     recordFailure("pagasa-bulletins", (error as Error).message);

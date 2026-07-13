@@ -2,18 +2,15 @@
  * Presentation-layer staleness filter for the PAGASA bulletin panel.
  *
  * The upstream index (pagasa-parser) exposes no per-bulletin issuance date and
- * frequently keeps dissipated/exited cyclones listed as non-`final` — so a
- * bulletin like "Francisco #21" can linger for days after the system is gone.
- * `filterSupersededBulletins` in lib/pagasa-bulletins.ts only arbitrates
- * between multiple competing systems; it cannot tell that a lone surviving
- * system is itself stale.
+ * frequently keeps dissipated/exited cyclones listed as non-`final`. The
+ * primary fix is the official SWB quiet-PAR gate in lib/pagasa-bulletins.ts.
+ * This filter is the backup when that probe fails: storm-watch cycle
+ * `updated_at` advances only when a bulletin number moves, so "no advance in
+ * N days" is a proxy for "dissipated".
  *
- * We recover the missing age signal from the storm-watch cycle rows: their
- * `updated_at` is written only when a bulletin number actually advances (see
- * cycleRowAfterEvent), so "no advance in N days" is a reliable proxy for
- * "dissipated". This filter is applied only to the dashboard feed
- * (/api/pagasa-bulletins) — the storm-watch email detection and the shared
- * lib/pagasa-bulletins.ts reducer are intentionally left untouched.
+ * Applied only on /api/pagasa-bulletins (and skipped when the payload is
+ * already quiet). Storm-watch email detection uses the shared fetch path,
+ * which already clears on quiet PAR.
  */
 
 import type { PagasaBulletin, PagasaBulletins } from "@/lib/pagasa-bulletins";

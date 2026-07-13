@@ -6,6 +6,7 @@ import type { Map as MLMap } from "maplibre-gl";
 import { clsx } from "clsx";
 import {
   AlertTriangle,
+  Check,
   ChevronDown,
   Clock,
   Maximize2,
@@ -48,6 +49,9 @@ type DateRange = "all" | "1h" | "24h" | "7d";
 
 /** How many cards render before the "showing N of M" cap kicks in. */
 const EMBEDDED_LIMIT = 40;
+
+/** Brief delight beat after a confirmed vote, before the card leaves the feed. */
+const VOTE_DELIGHT_MS = 1100;
 const FULLSCREEN_LIMIT = 300;
 
 const DATE_RANGE_MS: Record<DateRange, number | null> = {
@@ -376,6 +380,9 @@ function ReportCard({
   canVote,
   myVote,
   voting,
+  delight,
+  delightAwarded,
+  exiting,
   onFocus,
   onReview,
   onVote,
@@ -386,6 +393,9 @@ function ReportCard({
   canVote: boolean;
   myVote?: ReportVoteValue;
   voting: boolean;
+  delight: boolean;
+  delightAwarded: boolean;
+  exiting: boolean;
   onFocus: () => void;
   onReview: (
     event: React.MouseEvent,
@@ -394,6 +404,7 @@ function ReportCard({
   onVote: (event: React.MouseEvent, vote: ReportVoteValue) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [pendingVote, setPendingVote] = useState<ReportVoteValue | null>(null);
   const tone = reportCardTone(report);
   const confidencePct =
     typeof report.confidence === "number"
@@ -406,6 +417,11 @@ function ReportCard({
   const mintTxHref = mintTxHash
     ? mintExplorerTxUrl(report.onchain?.mint.network, mintTxHash)
     : null;
+
+  // Drop local confirm state if the parent finishes or abandons this vote.
+  useEffect(() => {
+    if (!voting && !delight) setPendingVote(null);
+  }, [voting, delight]);
 
   return (
     <article
@@ -420,6 +436,7 @@ function ReportCard({
         "hover:border-aeris-accent/40 hover:bg-aeris-accent/5",
         "focus:outline-none focus:border-aeris-accent/50 focus:ring-1 focus:ring-aeris-accent/40",
         CARD_TONE_CLASS[tone],
+        exiting && "aeris-vote-card-exit",
       )}
     >
       <header className="mb-1.5 flex flex-wrap items-center gap-1.5">
@@ -562,76 +579,18 @@ function ReportCard({
         </div>
       )}
 
-      {canVote && (() => {
-        const decided =
-          report.verificationStatus === "verified" ||
-          report.verificationStatus === "rejected";
-        if (decided) {
-          if (!myVote) return null;
-          const correct =
-            (report.verificationStatus === "verified") === (myVote === "up");
-          return (
-            <div
-              className={clsx(
-                "mt-2.5 flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-body-sm",
-                correct
-                  ? "border-aeris-ok/30 bg-aeris-ok/10 text-aeris-ok"
-                  : "border-aeris-border/60 bg-aeris-bg/40 text-aeris-muted",
-              )}
-            >
-              {myVote === "up" ? (
-                <ThumbsUp size={12} aria-hidden />
-              ) : (
-                <ThumbsDown size={12} aria-hidden />
-              )}
-              {correct
-                ? `Your vote was correct — +${XP_REWARDS.vote_correct} XP`
-                : "Your vote didn't match the operator decision."}
-            </div>
-          );
-        }
-        return (
-          <div
-            className="mt-2.5 grid grid-cols-2 gap-1"
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-            role="presentation"
-          >
-            <button
-              type="button"
-              disabled={voting}
-              aria-pressed={myVote === "up"}
-              onClick={(event) => onVote(event, "up")}
-              title={`Looks legitimate — correct votes earn +${XP_REWARDS.vote_correct} XP when an operator verifies`}
-              className={clsx(
-                "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-body-sm font-medium transition-colors disabled:opacity-40",
-                myVote === "up"
-                  ? "border-aeris-ok/60 bg-aeris-ok/20 text-aeris-ok ring-1 ring-aeris-ok/40"
-                  : "border-aeris-ok/30 bg-aeris-ok/10 text-aeris-ok hover:bg-aeris-ok/20",
-              )}
-            >
-              <ThumbsUp size={13} aria-hidden />
-              Legit
-            </button>
-            <button
-              type="button"
-              disabled={voting}
-              aria-pressed={myVote === "down"}
-              onClick={(event) => onVote(event, "down")}
-              title={`Looks wrong or spam — correct votes earn +${XP_REWARDS.vote_correct} XP when an operator rejects`}
-              className={clsx(
-                "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-body-sm font-medium transition-colors disabled:opacity-40",
-                myVote === "down"
-                  ? "border-aeris-danger/60 bg-aeris-danger/20 text-aeris-danger ring-1 ring-aeris-danger/40"
-                  : "border-aeris-danger/30 bg-aeris-danger/10 text-aeris-danger hover:bg-aeris-danger/20",
-              )}
-            >
-              <ThumbsDown size={13} aria-hidden />
-              Doubtful
-            </button>
-          </div>
-        );
-      })()}
+      {canVote && (
+        <ReportVoteControls
+          report={report}
+          myVote={myVote}
+          voting={voting}
+          delight={delight}
+          delightAwarded={delightAwarded}
+          pendingVote={pendingVote}
+          onPendingChange={setPendingVote}
+          onVote={onVote}
+        />
+      )}
 
       {canReview && (
         <div
@@ -670,6 +629,205 @@ function ReportCard({
   );
 }
 
+function ReportVoteControls({
+  report,
+  myVote,
+  voting,
+  delight,
+  delightAwarded,
+  pendingVote,
+  onPendingChange,
+  onVote,
+}: {
+  report: IncidentReport;
+  myVote?: ReportVoteValue;
+  voting: boolean;
+  delight: boolean;
+  delightAwarded: boolean;
+  pendingVote: ReportVoteValue | null;
+  onPendingChange: (vote: ReportVoteValue | null) => void;
+  onVote: (event: React.MouseEvent, vote: ReportVoteValue) => void;
+}) {
+  const decided =
+    report.verificationStatus === "verified" ||
+    report.verificationStatus === "rejected";
+
+  if (delight) {
+    const down = myVote === "down";
+    return (
+      <div
+        className={clsx(
+          "mt-2.5 relative overflow-hidden rounded-md border px-2.5 py-2",
+          down
+            ? "border-aeris-danger/40 bg-aeris-danger/10"
+            : "border-aeris-ok/40 bg-aeris-ok/10",
+        )}
+        onClick={(event) => event.stopPropagation()}
+        role="status"
+        aria-live="polite"
+      >
+        <span
+          className={clsx(
+            "aeris-vote-delight-spark pointer-events-none absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border",
+            down ? "border-aeris-danger/50" : "border-aeris-ok/50",
+          )}
+          aria-hidden
+        />
+        <div
+          className={clsx(
+            "relative flex items-center gap-2 text-body-sm",
+            down ? "text-aeris-danger" : "text-aeris-ok",
+          )}
+        >
+          <span
+            className={clsx(
+              "aeris-vote-delight-icon inline-flex h-6 w-6 items-center justify-center rounded-full",
+              down ? "bg-aeris-danger/20" : "bg-aeris-ok/20",
+            )}
+          >
+            {down ? (
+              <ThumbsDown size={13} aria-hidden />
+            ) : (
+              <Check size={14} strokeWidth={2.5} aria-hidden />
+            )}
+          </span>
+          <span className="font-medium">
+            {down ? "Doubt recorded" : "Vote recorded"}
+          </span>
+          {delightAwarded ? (
+            <span className="ml-auto font-mono text-chrome tabular-nums">
+              +{XP_REWARDS.vote_report} XP
+            </span>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (decided) {
+    if (!myVote) return null;
+    const correct =
+      (report.verificationStatus === "verified") === (myVote === "up");
+    return (
+      <div
+        className={clsx(
+          "mt-2.5 flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-body-sm",
+          correct
+            ? "border-aeris-ok/30 bg-aeris-ok/10 text-aeris-ok"
+            : "border-aeris-border/60 bg-aeris-bg/40 text-aeris-muted",
+        )}
+      >
+        {myVote === "up" ? (
+          <ThumbsUp size={12} aria-hidden />
+        ) : (
+          <ThumbsDown size={12} aria-hidden />
+        )}
+        {correct
+          ? `Your vote was correct — +${XP_REWARDS.vote_correct} XP`
+          : "Your vote didn't match the operator decision."}
+      </div>
+    );
+  }
+
+  if (pendingVote) {
+    const isUp = pendingVote === "up";
+    return (
+      <div
+        className="mt-2.5 rounded-md border border-aeris-border/70 bg-aeris-bg/40 px-2 py-2"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        role="group"
+        aria-label="Confirm report vote"
+      >
+        <p className="text-body-sm leading-snug text-aeris-text">
+          {isUp
+            ? "Mark this report as legitimate?"
+            : "Mark this report as doubtful?"}
+        </p>
+        <p className="mt-0.5 text-chrome text-aeris-muted">
+          Are you sure? Your vote helps train triage — you can&apos;t undo it
+          from this feed.
+        </p>
+        <div className="mt-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={voting}
+            onClick={(event) => onVote(event, pendingVote)}
+            className={clsx(
+              "inline-flex min-h-[28px] flex-1 items-center justify-center gap-1 rounded border px-2 py-1 text-body-sm font-medium transition-colors disabled:opacity-40",
+              isUp
+                ? "border-aeris-ok/50 bg-aeris-ok/15 text-aeris-ok hover:bg-aeris-ok/25"
+                : "border-aeris-danger/50 bg-aeris-danger/15 text-aeris-danger hover:bg-aeris-danger/25",
+            )}
+          >
+            {voting ? "Saving…" : "Yes"}
+          </button>
+          <button
+            type="button"
+            disabled={voting}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPendingChange(null);
+            }}
+            className="inline-flex min-h-[28px] flex-1 items-center justify-center rounded border border-aeris-border px-2 py-1 text-body-sm font-medium text-aeris-muted transition-colors hover:bg-aeris-elev/60 hover:text-aeris-text disabled:opacity-40"
+          >
+            No
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-2 flex items-center justify-end gap-1.5"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+      role="group"
+      aria-label="Vote on report"
+    >
+      <button
+        type="button"
+        disabled={voting}
+        aria-pressed={myVote === "up"}
+        onClick={(event) => {
+          event.stopPropagation();
+          onPendingChange("up");
+        }}
+        title={`Looks legitimate — correct votes earn +${XP_REWARDS.vote_correct} XP when an operator verifies`}
+        className={clsx(
+          "inline-flex h-7 items-center gap-1 rounded border px-2 text-chrome font-medium transition-colors disabled:opacity-40",
+          myVote === "up"
+            ? "border-aeris-ok/60 bg-aeris-ok/20 text-aeris-ok"
+            : "border-aeris-border/70 bg-aeris-bg/30 text-aeris-muted hover:border-aeris-ok/40 hover:bg-aeris-ok/10 hover:text-aeris-ok",
+        )}
+      >
+        <ThumbsUp size={12} aria-hidden />
+        Vote Up
+      </button>
+      <button
+        type="button"
+        disabled={voting}
+        aria-pressed={myVote === "down"}
+        onClick={(event) => {
+          event.stopPropagation();
+          onPendingChange("down");
+        }}
+        title={`Looks wrong or spam — correct votes earn +${XP_REWARDS.vote_correct} XP when an operator rejects`}
+        className={clsx(
+          "inline-flex h-7 items-center gap-1 rounded border px-2 text-chrome font-medium transition-colors disabled:opacity-40",
+          myVote === "down"
+            ? "border-aeris-danger/60 bg-aeris-danger/20 text-aeris-danger"
+            : "border-aeris-border/70 bg-aeris-bg/30 text-aeris-muted hover:border-aeris-danger/40 hover:bg-aeris-danger/10 hover:text-aeris-danger",
+        )}
+      >
+        <ThumbsDown size={12} aria-hidden />
+        Vote Down
+      </button>
+    </div>
+  );
+}
+
 function FeedList({
   id,
   reports,
@@ -682,9 +840,13 @@ function FeedList({
   canVote,
   myVotes,
   votingId,
+  delightId,
+  delightAwarded,
+  exitingId,
   onFocus,
   onReview,
   onVote,
+  emptyMessage,
   className,
 }: {
   id?: string;
@@ -698,6 +860,9 @@ function FeedList({
   canVote: boolean;
   myVotes: Record<string, ReportVoteValue>;
   votingId: string | null;
+  delightId: string | null;
+  delightAwarded: boolean;
+  exitingId: string | null;
   onFocus: (report: IncidentReport) => void;
   onReview: (
     event: React.MouseEvent,
@@ -709,6 +874,7 @@ function FeedList({
     report: IncidentReport,
     vote: ReportVoteValue,
   ) => void;
+  emptyMessage?: string;
   className?: string;
 }) {
   const shown = reports.slice(0, maxItems);
@@ -723,9 +889,10 @@ function FeedList({
   if (reports.length === 0) {
     return (
       <p id={id} className="text-body-sm text-aeris-muted py-6 text-center">
-        {filter === "all"
-          ? "No reports match the current time range."
-          : "No reports match this filter."}
+        {emptyMessage ??
+          (filter === "all"
+            ? "No reports match the current time range."
+            : "No reports match this filter.")}
       </p>
     );
   }
@@ -748,6 +915,9 @@ function FeedList({
             canVote={canVote}
             myVote={myVotes[report.id]}
             voting={votingId === report.id}
+            delight={delightId === report.id}
+            delightAwarded={delightId === report.id && delightAwarded}
+            exiting={exitingId === report.id}
             onFocus={() => onFocus(report)}
             onReview={(event, action) => onReview(event, report, action)}
             onVote={(event, vote) => onVote(event, report, vote)}
@@ -782,6 +952,17 @@ export function LiveReportsPanel({
   const [mintingAll, setMintingAll] = useState(false);
   const [myVotes, setMyVotes] = useState<Record<string, ReportVoteValue>>({});
   const [votingId, setVotingId] = useState<string | null>(null);
+  const [delightId, setDelightId] = useState<string | null>(null);
+  const [delightAwarded, setDelightAwarded] = useState(false);
+  const [exitingId, setExitingId] = useState<string | null>(null);
+  /** Voted reports hidden from the voter feed (hydrated + after delight). */
+  const [dismissedVoteIds, setDismissedVoteIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const voteDismissTimers = useRef<{
+    exit?: ReturnType<typeof setTimeout>;
+    done?: ReturnType<typeof setTimeout>;
+  }>({});
   const [status, setStatus] = useState<{
     tone: "ok" | "warn" | "danger";
     msg: string;
@@ -856,16 +1037,31 @@ export function LiveReportsPanel({
   }, [load]);
 
   // Hydrate the user's existing votes so cards reflect prior thumbs-up/down.
+  // Already-voted reports are dismissed from the voter feed immediately.
   useEffect(() => {
     if (!canVote) return;
     let cancelled = false;
     void fetchMyReportVotes().then((votes) => {
-      if (!cancelled) setMyVotes(votes);
+      if (cancelled) return;
+      setMyVotes(votes);
+      setDismissedVoteIds((current) => {
+        const next = new Set(current);
+        for (const id of Object.keys(votes)) next.add(id);
+        return next;
+      });
     });
     return () => {
       cancelled = true;
     };
   }, [canVote]);
+
+  useEffect(() => {
+    const timers = voteDismissTimers.current;
+    return () => {
+      if (timers.exit) clearTimeout(timers.exit);
+      if (timers.done) clearTimeout(timers.done);
+    };
+  }, []);
 
   const onVote = useCallback(
     async (
@@ -874,6 +1070,7 @@ export function LiveReportsPanel({
       vote: ReportVoteValue,
     ) => {
       event.stopPropagation();
+      if (votingId || delightId) return;
       if (myVotes[report.id] === vote) return;
       setVotingId(report.id);
       const previous = myVotes[report.id];
@@ -887,6 +1084,27 @@ export function LiveReportsPanel({
             : "Vote updated.",
         });
         if (result.awarded) void refreshProfile();
+        setVotingId(null);
+        setDelightId(report.id);
+        setDelightAwarded(result.awarded);
+
+        const timers = voteDismissTimers.current;
+        if (timers.exit) clearTimeout(timers.exit);
+        if (timers.done) clearTimeout(timers.done);
+        const exitAt = Math.max(0, VOTE_DELIGHT_MS - 340);
+        timers.exit = setTimeout(() => {
+          setExitingId(report.id);
+        }, exitAt);
+        timers.done = setTimeout(() => {
+          setDismissedVoteIds((current) => {
+            const next = new Set(current);
+            next.add(report.id);
+            return next;
+          });
+          setDelightId((current) => (current === report.id ? null : current));
+          setExitingId((current) => (current === report.id ? null : current));
+          setDelightAwarded(false);
+        }, VOTE_DELIGHT_MS);
       } catch (error) {
         setMyVotes((current) => {
           const next = { ...current };
@@ -895,11 +1113,10 @@ export function LiveReportsPanel({
           return next;
         });
         setStatus({ tone: "danger", msg: (error as Error).message });
-      } finally {
         setVotingId(null);
       }
     },
-    [myVotes, refreshProfile],
+    [delightId, myVotes, refreshProfile, votingId],
   );
 
   const visibleReports = useMemo(() => {
@@ -916,8 +1133,18 @@ export function LiveReportsPanel({
       list = list.filter(isMintedReport);
     }
     list = list.filter((r) => withinRange(r, dateRange));
+    // Voters only see reports they haven't confirmed a vote on yet; the next
+    // sorted item naturally fills the vacated card slot.
+    if (canVote && dismissedVoteIds.size > 0) {
+      list = list.filter((r) => !dismissedVoteIds.has(r.id));
+    }
     return sortReports(list, sortBy);
-  }, [reports, filter, dateRange, sortBy]);
+  }, [reports, filter, dateRange, sortBy, canVote, dismissedVoteIds]);
+
+  const voteQueueEmptyMessage =
+    canVote && dismissedVoteIds.size > 0
+      ? "You're caught up — no reports left to vote on."
+      : undefined;
 
   const focusReport = useCallback(
     (report: IncidentReport) => {
@@ -1132,9 +1359,13 @@ export function LiveReportsPanel({
             canVote={canVote}
             myVotes={myVotes}
             votingId={votingId}
+            delightId={delightId}
+            delightAwarded={delightAwarded}
+            exitingId={exitingId}
             onFocus={focusReport}
             onReview={onReview}
             onVote={onVote}
+            emptyMessage={voteQueueEmptyMessage}
             className="mt-2 max-h-[min(60vh,560px)] overflow-y-auto pr-0.5"
           />
         ) : visibleReports.length > 0 ? (
@@ -1166,6 +1397,10 @@ export function LiveReportsPanel({
           canVote={canVote}
           myVotes={myVotes}
           votingId={votingId}
+          delightId={delightId}
+          delightAwarded={delightAwarded}
+          exitingId={exitingId}
+          emptyMessage={voteQueueEmptyMessage}
           onFocus={focusReport}
           onReview={onReview}
           onVote={onVote}
@@ -1196,6 +1431,10 @@ function ReportsFullscreen({
   canVote,
   myVotes,
   votingId,
+  delightId,
+  delightAwarded,
+  exitingId,
+  emptyMessage,
   onFocus,
   onReview,
   onVote,
@@ -1220,6 +1459,10 @@ function ReportsFullscreen({
   canVote: boolean;
   myVotes: Record<string, ReportVoteValue>;
   votingId: string | null;
+  delightId: string | null;
+  delightAwarded: boolean;
+  exitingId: string | null;
+  emptyMessage?: string;
   onFocus: (report: IncidentReport) => void;
   onReview: (
     event: React.MouseEvent,
@@ -1335,6 +1578,10 @@ function ReportsFullscreen({
               canVote={canVote}
               myVotes={myVotes}
               votingId={votingId}
+              delightId={delightId}
+              delightAwarded={delightAwarded}
+              exitingId={exitingId}
+              emptyMessage={emptyMessage}
               onFocus={onFocus}
               onReview={onReview}
               onVote={onVote}

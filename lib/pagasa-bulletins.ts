@@ -8,10 +8,16 @@
  *
  * The community `pagasa-parser` project (public-domain, volunteer-run) scrapes
  * PAGASA's bulletin page and exposes a small JSON index of the currently
- * available bulletins. We consume only that index here: cyclone name, bulletin
+ * available bulletins. We consume that index for cyclone name, bulletin
  * number, "final" flag, and the official PAGASA PDF link. We do NOT parse the
  * PDF contents — wind signals come from the PDFs, which we intentionally leave
  * to the source of truth.
+ *
+ * The parser index often retains dissipated cyclones as non-final. We gate
+ * that against the official Severe Weather Bulletin page: when PAGASA says
+ * there is no active TC in PAR, we clear the active index and surface the
+ * single latest archive TCB PDF from that page. Storm-watch cycle history
+ * (`filterStaleBulletins`) remains a backup when the SWB probe fails.
  *
  * Upstream shape (https://pagasa.chlod.net/api/v1/bulletin/list):
  *   { "error": false, "bulletins": [
@@ -28,12 +34,19 @@
 import { withBreaker } from "@/lib/circuit-breaker";
 
 const PAGASA_BULLETIN_LIST_URL = "https://pagasa.chlod.net/api/v1/bulletin/list";
+const PAGASA_SWB_URL =
+  "https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin";
 const PROVIDER_NOTE =
-  "Index via pagasa-parser (pagasa.chlod.net); bulletins are PAGASA public-domain PDFs.";
+  "Index via pagasa-parser (pagasa.chlod.net); quiet-PAR + latest archive via official PAGASA SWB page; bulletins are PAGASA public-domain PDFs.";
 const CACHE_TTL_QUIET_MS = 15 * 60 * 1000;
 const CACHE_TTL_ACTIVE_MS = 3 * 60 * 1000;
 const ERROR_BACKOFF_MS = 60 * 1000;
 const STALE_SERVE_MS = 20 * 60 * 1000;
+const SWB_CACHE_TTL_MS = 5 * 60 * 1000;
+const SWB_QUIET_RE =
+  /No\s+Active\s+Tropical\s+Cyclone\s+within\s+the\s+Philippine\s+Area\s+of\s+Responsibility/i;
+const SWB_ARCHIVE_LINK_RE =
+  /href="(https:\/\/pubfiles\.pagasa\.dost\.gov\.ph[^"]*TCB(?:%23|#)(\d+)_([a-z0-9_-]+)\.pdf)"/gi;
 
 export type PagasaBulletin = {
   /** Cyclone name, title-cased (e.g. "Ester"). */
@@ -46,6 +59,11 @@ export type PagasaBulletin = {
   file: string;
   /** Official PAGASA PDF URL. */
   pdfUrl: string;
+  /**
+   * True when this is the latest archive PDF from the SWB page (shown only
+   * while PAR is quiet — not an active tropical cyclone bulletin).
+   */
+  archive?: boolean;
 };
 
 export type PagasaBulletins = {
@@ -58,10 +76,22 @@ export type PagasaBulletins = {
   stale?: boolean;
   /** Human-readable note when data is degraded or cached. */
   warning?: string;
-  /** Any cyclone whose latest bulletin is not yet final. */
+  /**
+   * True when the official PAGASA SWB page reports no active TC in PAR.
+   * Active parser leftovers are cleared; `bulletins` may hold the latest
+   * archive SWB PDF instead.
+   */
+  quiet?: boolean;
+  /** Any cyclone whose latest bulletin is not yet final (excludes archive). */
   hasActive: boolean;
   /** Latest bulletin per cyclone, active (non-final) first, then by name. */
   bulletins: PagasaBulletin[];
+};
+
+/** Result of one official SWB page fetch. `null` fields mean probe failed. */
+export type SwbPageProbe = {
+  quiet: boolean;
+  latestArchive: PagasaBulletin | null;
 };
 
 type UpstreamBulletin = {
@@ -91,6 +121,8 @@ type CacheEntry = {
 let cache: CacheEntry | null = null;
 let lastHealthy: { at: number; value: PagasaBulletins } | null = null;
 let inFlight: Promise<PagasaBulletins | null> | null = null;
+let swbProbeCache: { at: number; value: SwbPageProbe | null } | null = null;
+let swbInFlight: Promise<SwbPageProbe | null> | null = null;
 
 function titleCase(name: string): string {
   return name
@@ -114,30 +146,10 @@ function parseIndexAge(v: unknown): number | null {
   return Math.round(n);
 }
 
-/** Gap between latest bulletin numbers that suggests a stale index entry. */
-const SUPERSEDED_BULLETIN_GAP = 5;
-
-/**
- * pagasa-parser often keeps dissipated cyclones in the index with outdated
- * non-final bulletins (e.g. Ester #6 beside Francisco #16). Drop laggards when
- * one active system has moved well ahead.
- */
-export function filterSupersededBulletins(
-  bulletins: PagasaBulletin[],
-): PagasaBulletin[] {
-  const active = bulletins.filter((b) => !b.final);
-  if (active.length <= 1) return bulletins;
-
-  const maxNum = Math.max(...active.map((b) => b.number));
-  const minNum = Math.min(...active.map((b) => b.number));
-  if (maxNum - minNum <= SUPERSEDED_BULLETIN_GAP) return bulletins;
-
-  const cutoff = maxNum - 2;
-  return bulletins.filter((b) => b.number >= cutoff);
-}
-
 function cacheTtlMs(value: PagasaBulletins | null): number {
   if (value?.hasActive) return CACHE_TTL_ACTIVE_MS;
+  // Quiet PAR can flip quickly when a new system enters — refresh sooner.
+  if (value?.quiet) return SWB_CACHE_TTL_MS;
   return CACHE_TTL_QUIET_MS;
 }
 
@@ -156,6 +168,115 @@ function buildStalePayload(base: PagasaBulletins): PagasaBulletins {
     stale: true,
     warning: staleSnapshotWarning(),
     fetchedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * True when official PAGASA SWB HTML states there is no active TC in PAR.
+ * Exported for unit tests.
+ */
+export function isSwbQuietHtml(html: string): boolean {
+  return SWB_QUIET_RE.test(html);
+}
+
+/**
+ * Pick the highest-numbered TCB PDF linked on the SWB page (archive section).
+ * Exported for unit tests.
+ */
+export function extractLatestArchiveBulletin(
+  html: string,
+): PagasaBulletin | null {
+  let best: PagasaBulletin | null = null;
+  for (const match of html.matchAll(SWB_ARCHIVE_LINK_RE)) {
+    const pdfUrl = match[1];
+    const number = Number(match[2]);
+    const slug = match[3];
+    if (!pdfUrl || !Number.isFinite(number) || !slug) continue;
+    if (best && number <= best.number) continue;
+    best = {
+      name: titleCase(slug.replace(/_/g, " ")),
+      number,
+      final: true,
+      archive: true,
+      file: `TCB#${number}_${slug}.pdf`,
+      pdfUrl,
+    };
+  }
+  return best;
+}
+
+/** Parse quiet banner + latest archive PDF from one SWB HTML response. */
+export function parseSwbPage(html: string): SwbPageProbe {
+  const quiet = isSwbQuietHtml(html);
+  return {
+    quiet,
+    latestArchive: quiet ? extractLatestArchiveBulletin(html) : null,
+  };
+}
+
+/**
+ * Probe the official Severe Weather Bulletin page.
+ * Returns probe result, or null when the page could not be fetched.
+ */
+export async function probePagasaSwbPage(
+  bypassCache = false,
+): Promise<SwbPageProbe | null> {
+  const now = Date.now();
+  if (!bypassCache && swbProbeCache && now - swbProbeCache.at < SWB_CACHE_TTL_MS) {
+    return swbProbeCache.value;
+  }
+  if (swbInFlight) return swbInFlight;
+
+  swbInFlight = (async () => {
+    try {
+      const probe = await withBreaker(
+        "pagasa-swb",
+        async () => {
+          const res = await fetch(PAGASA_SWB_URL, {
+            headers: {
+              "user-agent":
+                "AERIS-Dashboard/1.0 (+disaster-resilience; contact via repo)",
+              accept: "text/html,application/xhtml+xml",
+            },
+            cache: "no-store",
+          });
+          if (!res.ok) throw new Error(`PAGASA SWB ${res.status}`);
+          return parseSwbPage(await res.text());
+        },
+        { cooldownMs: 300_000, timeoutMs: 8_000 },
+      );
+      swbProbeCache = { at: Date.now(), value: probe };
+      return probe;
+    } catch {
+      swbProbeCache = { at: Date.now(), value: null };
+      return null;
+    } finally {
+      swbInFlight = null;
+    }
+  })();
+
+  return swbInFlight;
+}
+
+async function applySwbQuietGate(
+  data: PagasaBulletins,
+  bypassCache: boolean,
+): Promise<PagasaBulletins> {
+  const probe = await probePagasaSwbPage(bypassCache);
+  if (probe?.quiet) {
+    return {
+      ...data,
+      bulletins: probe.latestArchive ? [probe.latestArchive] : [],
+      hasActive: false,
+      quiet: true,
+      // Quiet PAR is authoritative — drop stale-snapshot noise.
+      stale: undefined,
+      warning: undefined,
+    };
+  }
+  return {
+    ...data,
+    quiet: probe ? false : undefined,
   };
 }
 
@@ -191,12 +312,10 @@ export function reduceBulletins(payload: unknown): PagasaBulletins | null {
     }
   }
 
-  const bulletins = filterSupersededBulletins(
-    [...latest.values()].sort((a, b) => {
-      if (a.final !== b.final) return a.final ? 1 : -1;
-      return a.name.localeCompare(b.name);
-    }),
-  );
+  const bulletins = [...latest.values()].sort((a, b) => {
+    if (a.final !== b.final) return a.final ? 1 : -1;
+    return a.name.localeCompare(b.name);
+  });
 
   return {
     source: "pagasa-bulletins",
@@ -252,13 +371,17 @@ export async function fetchPagasaBulletins(
       const hint = cache?.value ?? lastHealthy?.value ?? null;
       const value = await fetchUpstream(bypass, hint);
       if (value) {
-        lastHealthy = { at: Date.now(), value };
-        cache = { at: Date.now(), value, isError: false };
-        return value;
+        const gated = await applySwbQuietGate(value, bypass);
+        lastHealthy = { at: Date.now(), value: gated };
+        cache = { at: Date.now(), value: gated, isError: false };
+        return gated;
       }
 
       if (lastHealthy && Date.now() - lastHealthy.at < STALE_SERVE_MS) {
-        const staleValue = buildStalePayload(lastHealthy.value);
+        const staleValue = await applySwbQuietGate(
+          buildStalePayload(lastHealthy.value),
+          bypass,
+        );
         cache = { at: Date.now(), value: staleValue, isError: true };
         return staleValue;
       }
@@ -267,7 +390,10 @@ export async function fetchPagasaBulletins(
       return null;
     } catch {
       if (lastHealthy && Date.now() - lastHealthy.at < STALE_SERVE_MS) {
-        const staleValue = buildStalePayload(lastHealthy.value);
+        const staleValue = await applySwbQuietGate(
+          buildStalePayload(lastHealthy.value),
+          bypass,
+        );
         cache = { at: Date.now(), value: staleValue, isError: true };
         return staleValue;
       }
@@ -287,4 +413,6 @@ export function __resetPagasaBulletinsCache() {
   cache = null;
   lastHealthy = null;
   inFlight = null;
+  swbProbeCache = null;
+  swbInFlight = null;
 }

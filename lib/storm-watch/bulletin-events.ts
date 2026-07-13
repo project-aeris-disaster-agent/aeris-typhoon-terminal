@@ -37,6 +37,8 @@ export function diffPagasaBulletinEvents(
   if (!payload) return [];
 
   const bulletinsToCheck = payload.bulletins.filter((bulletin) => {
+    // Archive SWB PDFs are quiet-PAR UI only — never email triggers.
+    if (bulletin.archive) return false;
     if (!bulletin.final) return true;
     const previous = cyclesBySlug.get(cycloneSlug(bulletin.name));
     return previous?.cycle_status === "active";

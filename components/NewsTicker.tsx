@@ -5,10 +5,16 @@ import { clsx } from "clsx";
 import { fetchNews, type NewsItem } from "@/services/news";
 import { useVisiblePolling } from "@/hooks/useVisiblePolling";
 
-const TICKER_HEADLINE_LIMIT = 24;
+const TICKER_HEADLINE_LIMIT = 20;
 const POLL_MS = 10 * 60 * 1000;
 
-function TickerSegment({ item }: { item: NewsItem }) {
+function TickerSegment({
+  item,
+  hidden = false,
+}: {
+  item: NewsItem;
+  hidden?: boolean;
+}) {
   return (
     <a
       href={item.url}
@@ -16,6 +22,8 @@ function TickerSegment({ item }: { item: NewsItem }) {
       rel="noopener noreferrer"
       className="inline-flex shrink-0 items-center gap-2 max-w-[min(42vw,28rem)] text-body-sm text-aeris-text transition-colors hover:text-aeris-accent"
       title={item.title}
+      aria-hidden={hidden || undefined}
+      tabIndex={hidden ? -1 : undefined}
     >
       <span className="text-body-sm font-semibold text-aeris-accent shrink-0">
         {item.source}
@@ -27,6 +35,31 @@ function TickerSegment({ item }: { item: NewsItem }) {
     </a>
   );
 }
+
+function TickerTrack({
+  items,
+  durationSec,
+}: {
+  items: NewsItem[];
+  durationSec: number;
+}) {
+  // Duplicate the list once so translateX(-50%) loops seamlessly. The clone
+  // is aria-hidden so screen readers only announce each headline once.
+  return (
+    <div
+      className="news-ticker-track"
+      style={{ animationDuration: `${durationSec}s` }}
+    >
+      {items.map((item) => (
+        <TickerSegment key={`a-${item.id}`} item={item} />
+      ))}
+      {items.map((item) => (
+        <TickerSegment key={`b-${item.id}`} item={item} hidden />
+      ))}
+    </div>
+  );
+}
+
 
 export function NewsTicker({ className }: { className?: string }) {
   const [items, setItems] = useState<NewsItem[]>([]);
@@ -45,10 +78,10 @@ export function NewsTicker({ className }: { className?: string }) {
     })();
   }, POLL_MS);
 
-  const loopItems = useMemo(() => {
-    if (items.length === 0) return [];
-    return [...items, ...items];
-  }, [items]);
+  const durationSec = useMemo(
+    () => Math.max(48, items.length * 7),
+    [items.length],
+  );
 
   if (!loading && items.length === 0) {
     return null;
@@ -70,16 +103,7 @@ export function NewsTicker({ className }: { className?: string }) {
           Loading headlines…
         </span>
       ) : (
-        <div
-          className="news-ticker-track"
-          style={{
-            animationDuration: `${Math.max(48, items.length * 7)}s`,
-          }}
-        >
-          {loopItems.map((item, index) => (
-            <TickerSegment key={`${item.id}-${index}`} item={item} />
-          ))}
-        </div>
+        <TickerTrack items={items} durationSec={durationSec} />
       )}
     </div>
   );

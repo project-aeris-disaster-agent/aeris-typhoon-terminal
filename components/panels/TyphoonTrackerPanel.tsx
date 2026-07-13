@@ -35,8 +35,10 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
     fetchedAt: null,
     indexAgeSeconds: null,
     hasActive: false,
+    quiet: false,
     stale: false,
     warning: null,
+    unavailable: false,
   });
   const [bulletinRefreshing, setBulletinRefreshing] = useState(false);
   const [pdfPreview, setPdfPreview] = useState<PdfOverlayConfig | null>(null);
@@ -52,21 +54,31 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
 
   const outsideParThreats: OutsideParThreatItem[] = outsidePar
     ? [
-        {
-          key: "pagasa",
-          name: formatPagasaStormName(outsidePar.name),
-          windKph: outsidePar.windKph,
-          source: "pagasa",
-        },
+        (() => {
+          const names = resolveStormDisplayNames(
+            formatPagasaStormName(outsidePar.name),
+          );
+          return {
+            key: "pagasa",
+            name: names.primary,
+            subName: names.secondary,
+            windKph: outsidePar.windKph,
+            source: "pagasa" as const,
+          };
+        })(),
       ]
-    : outsideParGdacs.map((s) => ({
-        key: s.id,
-        name: s.name,
-        windKph: s.windKph,
-        distanceToParKm: s.distanceToParKm,
-        approachingPar: s.approachingPar,
-        source: "gdacs" as const,
-      }));
+    : outsideParGdacs.map((s) => {
+        const names = resolveStormDisplayNames(s.name, s.localName);
+        return {
+          key: s.id,
+          name: names.primary,
+          subName: names.secondary,
+          windKph: s.windKph,
+          distanceToParKm: s.distanceToParKm,
+          approachingPar: s.approachingPar,
+          source: "gdacs" as const,
+        };
+      });
 
   const statusBadge = useMemo(() => {
     if (loading) return <Pill>loading</Pill>;
@@ -224,6 +236,7 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
       {storms.map((s) => {
         const threat = threatFromWind(s.windKph);
         const isFocused = focusedId === s.id;
+        const names = resolveStormDisplayNames(s.name, s.localName);
         return (
           <button
             key={s.id}
@@ -236,8 +249,8 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
             }`}
           >
             <StormHero
-              name={s.localName ?? s.name}
-              subName={s.localName && s.name !== s.localName ? s.name : undefined}
+              name={names.primary}
+              subName={names.secondary}
               category={s.category}
               windKph={s.windKph}
               threat={threat}
@@ -279,65 +292,73 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
         </div>
       )}
 
-      {(visibleBulletins.length > 0 ||
-        bulletinMeta.stale ||
-        bulletinMeta.warning) && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between gap-2 px-0.5">
-            <span className="text-chrome uppercase tracking-wider text-aeris-muted">
-              Official PAGASA bulletins
-            </span>
-            <div className="flex items-center gap-2">
-              {visibleBulletins.length > 0 && (
-                <span className="text-chrome tracking-wider text-aeris-muted/80">
-                  {visibleBulletins.length}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => void handleRefreshBulletins()}
-                disabled={bulletinRefreshing}
-                className="shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
-                aria-label="Sync PAGASA bulletins"
-              >
-                <RefreshCw
-                  size={10}
-                  className={bulletinRefreshing ? "animate-spin" : ""}
-                />
-                Sync
-              </button>
-            </div>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2 px-0.5">
+          <span className="text-chrome uppercase tracking-wider text-aeris-muted">
+            Official PAGASA bulletins
+          </span>
+          <div className="flex items-center gap-2">
+            {visibleBulletins.length > 0 && (
+              <span className="text-chrome tracking-wider text-aeris-muted/80">
+                {visibleBulletins.length}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleRefreshBulletins()}
+              disabled={bulletinRefreshing}
+              className="shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
+              aria-label="Sync PAGASA bulletins"
+            >
+              <RefreshCw
+                size={10}
+                className={bulletinRefreshing ? "animate-spin" : ""}
+              />
+              Sync
+            </button>
           </div>
-          {bulletinMeta.warning && (
+        </div>
+        {bulletinMeta.warning && (
+          <div className="px-0.5 text-body-sm text-aeris-warn">
+            {bulletinMeta.warning}
+          </div>
+        )}
+        {bulletinMeta.indexAgeSeconds != null &&
+          bulletinMeta.indexAgeSeconds > 900 &&
+          bulletinMeta.hasActive && (
             <div className="px-0.5 text-body-sm text-aeris-warn">
-              {bulletinMeta.warning}
+              Parser index is {Math.round(bulletinMeta.indexAgeSeconds / 60)}m
+              old — new bulletins may not appear yet.
             </div>
           )}
-          {bulletinMeta.indexAgeSeconds != null &&
-            bulletinMeta.indexAgeSeconds > 900 &&
-            bulletinMeta.hasActive && (
-              <div className="px-0.5 text-body-sm text-aeris-warn">
-                Parser index is {Math.round(bulletinMeta.indexAgeSeconds / 60)}m
-                old — new bulletins may not appear yet.
-              </div>
-            )}
-          {visibleBulletins.map((b) => (
+        {visibleBulletins.length > 0 ? (
+          visibleBulletins.map((b) => (
             <BulletinRow
-              key={`${b.name}-${b.number}`}
+              key={`${b.archive ? "archive" : "active"}-${b.name}-${b.number}`}
               {...b}
               onOpen={() =>
                 setPdfPreview({
                   url: b.pdfUrl,
-                  title: `${b.name} — Bulletin #${b.number}`,
-                  subtitle: b.final
-                    ? "PAGASA Tropical Cyclone Bulletin · Final"
-                    : "PAGASA Tropical Cyclone Bulletin",
+                  title: b.archive
+                    ? `${b.name} — Severe Weather Bulletin #${b.number}`
+                    : `${b.name} — Bulletin #${b.number}`,
+                  subtitle: b.archive
+                    ? "PAGASA Severe Weather Bulletin · Latest"
+                    : b.final
+                      ? "PAGASA Tropical Cyclone Bulletin · Final"
+                      : "PAGASA Tropical Cyclone Bulletin",
                 })
               }
             />
-          ))}
-        </div>
-      )}
+          ))
+        ) : (
+          <p className="px-0.5 text-body-sm text-aeris-muted leading-snug">
+            {bulletinMeta.unavailable
+              ? "Bulletin index unavailable — try Sync shortly."
+              : "No PAGASA severe weather bulletin available."}
+          </p>
+        )}
+      </div>
 
       <PdfOverlay
         open={pdfPreview !== null}
@@ -364,7 +385,10 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
 
 type OutsideParThreatItem = {
   key: string;
+  /** Filipino / PAGASA name when known; otherwise international. */
   name: string;
+  /** International name shown under the primary title. */
+  subName?: string;
   windKph?: number | null;
   distanceToParKm?: number;
   approachingPar?: boolean;
@@ -378,6 +402,7 @@ type OutsideParThreatItem = {
  */
 function OutsideParThreatRow({
   name,
+  subName,
   windKph,
   distanceToParKm,
   approachingPar,
@@ -406,6 +431,11 @@ function OutsideParThreatRow({
         <div className="truncate font-mono text-body-sm text-aeris-text">
           {name}
         </div>
+        {subName ? (
+          <div className="truncate font-mono text-chrome uppercase tracking-wider text-aeris-muted">
+            {subName}
+          </div>
+        ) : null}
         <div
           className={`truncate text-chrome uppercase tracking-wider ${statusClass}`}
         >
@@ -424,16 +454,17 @@ function OutsideParThreatRow({
 }
 
 /**
- * One-line row that opens an official PAGASA Tropical Cyclone Bulletin PDF in
- * an in-app popup. "final" bulletins are dimmed and tagged; active ones get an
- * accent dot.
+ * One-line row that opens an official PAGASA bulletin PDF in an in-app popup.
+ * Archive (quiet-PAR) and final bulletins are dimmed; active ones get an accent dot.
  */
 function BulletinRow({
   name,
   number,
   final,
+  archive,
   onOpen,
 }: PagasaBulletinItem & { onOpen: () => void }) {
+  const muted = Boolean(archive || final);
   return (
     <button
       type="button"
@@ -442,7 +473,7 @@ function BulletinRow({
     >
       <span
         className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-          final
+          muted
             ? "bg-aeris-muted"
             : "bg-aeris-warn shadow-[0_0_6px_rgba(245,158,11,0.7)]"
         }`}
@@ -453,8 +484,9 @@ function BulletinRow({
           {name}
         </div>
         <div className="truncate text-chrome uppercase tracking-wider text-aeris-muted">
-          Bulletin #{number}
-          {final ? " · Final" : ""}
+          {archive
+            ? `Severe Weather Bulletin #${number} · Latest`
+            : `Bulletin #${number}${final ? " · Final" : ""}`}
         </div>
       </div>
       <span className="shrink-0 font-mono text-chrome uppercase tracking-wider text-aeris-accent">
@@ -613,7 +645,47 @@ function StormHero({
 function formatPagasaStormName(raw: string): string {
   return decodePagasaText(raw)
     .replace(/^TROPICAL\s+(?:STORM|DEPRESSION|CYCLONE|TYPHOON)\s+/i, "")
+    .replace(/^SEVERE\s+TROPICAL\s+STORM\s+/i, "")
+    .replace(/^SUPER\s+TYPHOON\s+/i, "")
     .trim();
+}
+
+/**
+ * Filipino / PAGASA name first; international name as secondary when known.
+ * Handles GDACS `localName` + `name`, and PAGASA "Local (International)" strings.
+ * Numeric parentheses like "(2611)" are JTWC designations, not names.
+ */
+function resolveStormDisplayNames(
+  internationalOrRaw: string,
+  localName?: string | null,
+): { primary: string; secondary?: string } {
+  const intlRaw = decodePagasaText(internationalOrRaw).trim();
+  const local = localName?.trim() || null;
+
+  if (local) {
+    const intl = stripStormDesignation(intlRaw) || intlRaw;
+    if (intl && local.toLowerCase() !== intl.toLowerCase()) {
+      return { primary: local, secondary: intl };
+    }
+    return { primary: local };
+  }
+
+  const cleaned = formatPagasaStormName(intlRaw);
+  const paired = cleaned.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+  if (!paired) return { primary: cleaned || intlRaw };
+
+  const outer = paired[1].trim();
+  const inner = paired[2].trim();
+  if (/^\d{2,4}[A-Z]?$/i.test(inner)) {
+    // "HAISHEN (2611)" — international only until PAGASA assigns a local name.
+    return { primary: outer };
+  }
+  // PAGASA convention: Local (International)
+  return { primary: outer, secondary: inner };
+}
+
+function stripStormDesignation(raw: string): string {
+  return raw.replace(/\s*\(\d{2,4}[A-Z]?\)\s*$/i, "").trim();
 }
 
 function decodePagasaText(raw: string): string {

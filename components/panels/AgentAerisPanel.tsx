@@ -214,7 +214,7 @@ export function AgentAerisPanel({
     [selectedLocation],
   );
 
-  const { mouthLevel, emotion, voiceStatus, voiceEngine } = useAgentSpeech({
+  const { mouthLevel, emotion } = useAgentSpeech({
     messages,
     isActive,
     muted,
@@ -457,8 +457,6 @@ export function AgentAerisPanel({
             <AgentSpeechControls
               muted={muted}
               onToggleMute={() => setMuted((m) => !m)}
-              voiceStatus={voiceStatus}
-              voiceEngine={voiceEngine}
             />
             <AerisVrmAvatar
               isActive={isActive}

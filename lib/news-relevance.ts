@@ -163,8 +163,90 @@ export function splitGoogleNewsTitle(title: string): {
   return { title: match[1].trim(), source: outlet };
 }
 
+/** Stable key for collapsing the same headline across feeds/outlets. */
+export function newsTitleDedupeKey(title: string): string {
+  return normalizeNewsTitle(title)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isAggregatorUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    return host === "news.google.com" || host.endsWith(".google.com");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Prefer a direct publisher link over a Google News redirect when the same
+ * story appears in both aggregator and outlet feeds.
+ */
+export function preferNewsItem<
+  T extends { url: string; publishedAt?: string; relevance?: number },
+>(a: T, b: T): T {
+  const aAgg = isAggregatorUrl(a.url);
+  const bAgg = isAggregatorUrl(b.url);
+  if (aAgg !== bAgg) return aAgg ? b : a;
+
+  const aRel = a.relevance ?? 0;
+  const bRel = b.relevance ?? 0;
+  if (aRel !== bRel) return bRel > aRel ? b : a;
+
+  const aTime = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+  const bTime = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+  if (aTime !== bTime) return bTime > aTime ? b : a;
+
+  return a;
+}
+
+/**
+ * Collapse duplicate headlines that arrive from multiple RSS sources
+ * (e.g. Google News + Rappler) under the same normalized title or URL.
+ * Preserves first-seen order so callers should pass relevance-ranked lists.
+ */
+export function dedupeNewsItems<
+  T extends { title: string; url: string; publishedAt?: string; relevance?: number },
+>(items: T[]): T[] {
+  const byTitle = new Map<string, T>();
+  const byUrl = new Map<string, string>();
+  const order: string[] = [];
+
+  for (const item of items) {
+    const titleKey = newsTitleDedupeKey(item.title);
+    if (!titleKey) continue;
+    const urlKey = item.url.trim().toLowerCase();
+
+    const titleOwner = byUrl.get(urlKey);
+    if (titleOwner && titleOwner !== titleKey) {
+      // Same URL already kept under another title key — skip.
+      continue;
+    }
+
+    const existing = byTitle.get(titleKey);
+    if (existing) {
+      const kept = preferNewsItem(existing, item);
+      if (kept !== existing) {
+        byUrl.delete(existing.url.trim().toLowerCase());
+        byTitle.set(titleKey, kept);
+        byUrl.set(kept.url.trim().toLowerCase(), titleKey);
+      }
+      continue;
+    }
+
+    byTitle.set(titleKey, item);
+    byUrl.set(urlKey, titleKey);
+    order.push(titleKey);
+  }
+
+  return order.map((key) => byTitle.get(key)!);
+}
+
 export function rankAndFilterNewsItems<
-  T extends { title: string; publishedAt: string },
+  T extends { title: string; url: string; publishedAt: string },
 >(
   items: T[],
   options?: { minItems?: number; preFiltered?: boolean },
@@ -187,15 +269,22 @@ export function rankAndFilterNewsItems<
       );
     });
 
+  let ranked: Array<T & { relevance: number }>;
   if (options?.preFiltered) {
-    return sorted;
+    ranked = sorted;
+  } else {
+    const strict = sorted.filter((item) => item.relevance >= 2);
+    if (strict.length >= minItems) {
+      ranked = strict;
+    } else {
+      const relaxed = sorted.filter((item) => item.relevance >= 1);
+      ranked =
+        relaxed.length >= minItems
+          ? relaxed
+          : sorted.slice(0, Math.max(minItems, 15));
+    }
   }
 
-  const strict = sorted.filter((item) => item.relevance >= 2);
-  if (strict.length >= minItems) return strict;
-
-  const relaxed = sorted.filter((item) => item.relevance >= 1);
-  if (relaxed.length >= minItems) return relaxed;
-
-  return sorted.slice(0, Math.max(minItems, 15));
+  // Dedupe after ranking so the highest-scoring / preferred URL wins.
+  return dedupeNewsItems(ranked);
 }

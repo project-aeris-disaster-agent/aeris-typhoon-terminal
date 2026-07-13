@@ -5,18 +5,14 @@ import { Volume2, VolumeX } from "lucide-react";
 type AgentSpeechControlsProps = {
   muted: boolean;
   onToggleMute: () => void;
-  voiceStatus?: string | null;
-  voiceEngine?: string | null;
 };
 
 export function AgentSpeechControls({
   muted,
   onToggleMute,
-  voiceStatus,
-  voiceEngine,
 }: AgentSpeechControlsProps) {
   return (
-    <div className="absolute top-1.5 right-1.5 z-20 flex flex-col items-end gap-1">
+    <div className="absolute top-1.5 right-1.5 z-20">
       <button
         type="button"
         onClick={onToggleMute}
@@ -30,11 +26,6 @@ export function AgentSpeechControls({
           <Volume2 className="h-3.5 w-3.5" aria-hidden />
         )}
       </button>
-      {(voiceStatus || voiceEngine) && (
-        <span className="max-w-[100px] truncate rounded bg-aeris-bg/90 px-1 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted">
-          {voiceStatus ?? voiceEngine}
-        </span>
-      )}
     </div>
   );
 }

@@ -179,8 +179,10 @@ reference, not a direct code lift.
   bulletins are published only as PDFs. Daily TC context comes from
   `/api/pagasa-daily` (HTML scrape); the active in-PAR Tropical Cyclone Bulletin
   index comes from `/api/pagasa-bulletins`, which reads the public-domain
-  `pagasa-parser` JSON index (links point back to the official PAGASA PDFs).
-  Both degrade gracefully to `null` (circuit-broken) if the upstream changes.
+  `pagasa-parser` JSON index and gates it against the official PAGASA Severe
+  Weather Bulletin page. When PAR is quiet, the latest archive TCB PDF from that
+  page is shown instead. PDF links point back to official PAGASA pubfiles. Both
+  degrade gracefully to `null` (circuit-broken) if the upstream changes.
 - **Project NOAH WMS** endpoints have had uptime issues historically. Drop
   static GeoJSON snapshots into `public/hazards/` as a fallback.
 - **RainViewer** free tier has modest rate limits. Edge-cached for 5 minutes.

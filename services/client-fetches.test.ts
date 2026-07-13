@@ -26,6 +26,13 @@ describe("client data services", () => {
             url: "https://example.com",
             publishedAt: "2026-04-23T00:00:00.000Z",
           },
+          {
+            id: "2",
+            source: "ABS-CBN",
+            title: "Typhoon update",
+            url: "https://news.google.com/articles/typhoon",
+            publishedAt: "2026-04-23T00:00:00.000Z",
+          },
         ],
         errors: ["cnn: timeout"],
       }),
@@ -35,6 +42,7 @@ describe("client data services", () => {
       items: [
         expect.objectContaining({
           title: "Typhoon update",
+          url: "https://example.com",
         }),
       ],
       warnings: ["cnn: timeout"],
