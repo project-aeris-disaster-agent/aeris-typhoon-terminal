@@ -450,59 +450,76 @@ export function AgentAerisPanel({
   return (
     <div className="relative z-10 flex flex-1 min-h-0 flex-col overflow-hidden rounded-lg border border-aeris-border/60 bg-aeris-bg/40">
       <div className="flex min-w-0 min-h-0 flex-1 flex-col">
-        <div
-          ref={scrollRef}
-          className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3"
-        >
-          {messages.map((message) => {
-            const isUser = message.role === "user";
-            const isUrgentBroadcast =
-              message.role === "system" && message.source === "system";
-            const isWeather = message.source === "weather_report";
-            const isOperatorReply = message.source === "operator";
-            const label = isUser
-              ? "Operator"
-              : isOperatorReply
-                ? `Operator → Chat${message.operatorName ? ` (${message.operatorName})` : ""}`
-                : isUrgentBroadcast
-                  ? "Urgent Incident"
-                  : isWeather
-                    ? "Weather Brief"
-                    : "Agent Aeris";
+        {/* Avatar (left) + chat transcript (right), side by side. Generate
+            Report and the chat input stay full-width below this row. */}
+        <div className="flex min-h-0 flex-1">
+          <div className="relative w-28 shrink-0 overflow-hidden border-r border-aeris-border/50 bg-aeris-bg/30">
+            <AgentSpeechControls
+              muted={muted}
+              onToggleMute={() => setMuted((m) => !m)}
+              voiceStatus={voiceStatus}
+              voiceEngine={voiceEngine}
+            />
+            <AerisVrmAvatar
+              isActive={isActive}
+              mouthLevel={mouthLevel}
+              emotion={emotion}
+            />
+          </div>
+          <div
+            ref={scrollRef}
+            className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3"
+          >
+            {messages.map((message) => {
+              const isUser = message.role === "user";
+              const isUrgentBroadcast =
+                message.role === "system" && message.source === "system";
+              const isWeather = message.source === "weather_report";
+              const isOperatorReply = message.source === "operator";
+              const label = isUser
+                ? "Operator"
+                : isOperatorReply
+                  ? `Operator → Chat${message.operatorName ? ` (${message.operatorName})` : ""}`
+                  : isUrgentBroadcast
+                    ? "Urgent Incident"
+                    : isWeather
+                      ? "Weather Brief"
+                      : "Agent Aeris";
 
-            return (
-              <div
-                key={message.id}
-                className={clsx(
-                  "max-w-[92%] rounded-lg border px-3 py-2 text-body-sm leading-relaxed whitespace-pre-wrap",
-                  isUser
-                    ? "ml-auto border-aeris-accent/30 bg-aeris-accent/10 text-aeris-text"
-                    : isOperatorReply
-                      ? "border-emerald-500/40 bg-emerald-500/10 text-aeris-text"
-                      : isUrgentBroadcast
-                        ? "border-aeris-danger/50 bg-aeris-danger/10 text-aeris-text"
-                        : isWeather
-                          ? "border-aeris-warn/40 bg-aeris-warn/5 text-aeris-text/90"
-                          : "border-aeris-border/50 bg-aeris-surface/60 text-aeris-text/90",
-                )}
-              >
-                <div className="mb-1 flex items-center gap-2 text-label text-aeris-muted/80">
-                  <span>{label}</span>
-                  {isWeather && (
-                    <span className="rounded border border-aeris-warn/30 px-1 py-0.5 text-aeris-warn">
-                      Auto
-                    </span>
+              return (
+                <div
+                  key={message.id}
+                  className={clsx(
+                    "max-w-[92%] rounded-lg border px-3 py-2 text-body-sm leading-relaxed whitespace-pre-wrap",
+                    isUser
+                      ? "ml-auto border-aeris-accent/30 bg-aeris-accent/10 text-aeris-text"
+                      : isOperatorReply
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-aeris-text"
+                        : isUrgentBroadcast
+                          ? "border-aeris-danger/50 bg-aeris-danger/10 text-aeris-text"
+                          : isWeather
+                            ? "border-aeris-warn/40 bg-aeris-warn/5 text-aeris-text/90"
+                            : "border-aeris-border/50 bg-aeris-surface/60 text-aeris-text/90",
                   )}
-                  {isUrgentBroadcast && (
-                    <span className="rounded border border-aeris-danger/40 px-1 py-0.5 text-aeris-danger">
-                      Auto · Urgent
-                    </span>
-                  )}
+                >
+                  <div className="mb-1 flex items-center gap-2 text-label text-aeris-muted/80">
+                    <span>{label}</span>
+                    {isWeather && (
+                      <span className="rounded border border-aeris-warn/30 px-1 py-0.5 text-aeris-warn">
+                        Auto
+                      </span>
+                    )}
+                    {isUrgentBroadcast && (
+                      <span className="rounded border border-aeris-danger/40 px-1 py-0.5 text-aeris-danger">
+                        Auto · Urgent
+                      </span>
+                    )}
+                  </div>
+                  {message.content}
                 </div>
-                {message.content}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
 
         {error && (
@@ -540,24 +557,6 @@ export function AgentAerisPanel({
             </span>
           </label>
         )}
-
-        {/* 3D companion window — docked directly above the Generate Report
-            button and chat input, full width so the character is centered.
-            Height caps at 38% of the panel so short (landscape) bars keep
-            room for the conversation. */}
-        <div className="relative h-32 max-h-[38%] shrink-0 overflow-hidden border-t border-aeris-border/50">
-          <AgentSpeechControls
-            muted={muted}
-            onToggleMute={() => setMuted((m) => !m)}
-            voiceStatus={voiceStatus}
-            voiceEngine={voiceEngine}
-          />
-          <AerisVrmAvatar
-            isActive={isActive}
-            mouthLevel={mouthLevel}
-            emotion={emotion}
-          />
-        </div>
 
         <div className="border-t border-aeris-border/50 px-2 pt-2">
           <button
