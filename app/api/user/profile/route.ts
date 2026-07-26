@@ -1,7 +1,7 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { rateLimit } from "@/lib/rate-limit";
 import { sanitizeText, isSafeUrl } from "@/lib/sanitize";
-import { resolveSessionUserId } from "@/lib/session-user";
+import { resolveSessionUserId } from "@/lib/session-auth";
 import { validateUsername } from "@/lib/username";
 import {
   type EditableProfileFields,

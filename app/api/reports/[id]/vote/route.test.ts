@@ -2,7 +2,7 @@
 
 import { NextRequest } from "next/server";
 
-jest.mock("@/lib/session-user", () => ({
+jest.mock("@/lib/session-auth", () => ({
   resolveSessionUserId: jest.fn(),
 }));
 jest.mock("@/lib/supabase-reports", () => ({
@@ -17,7 +17,7 @@ jest.mock("@/lib/gamification", () => ({
 }));
 
 import { POST } from "./route";
-import { resolveSessionUserId } from "@/lib/session-user";
+import { resolveSessionUserId } from "@/lib/session-auth";
 import { getSupabaseReportById } from "@/lib/supabase-reports";
 import { reportVotesEnabled, upsertReportVote } from "@/lib/report-votes";
 import { awardXp } from "@/lib/gamification";

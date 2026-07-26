@@ -1,11 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import {
-  resolveAerisRole,
-  type AerisRole,
-  type AerisUserRoleRow,
-} from "@/lib/aeris-roles";
 
+/**
+ * Cookie-bound Supabase client for server contexts. Session identity and role
+ * resolution live in `@/lib/session-auth`; this module only builds the client.
+ */
 export async function createSupabaseServerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -32,34 +31,3 @@ export async function createSupabaseServerClient() {
   });
 }
 
-export async function getSessionUserId(): Promise<string | null> {
-  const { getSessionUserId: resolveSessionUserId } = await import(
-    "@/lib/session-auth"
-  );
-  return resolveSessionUserId();
-}
-
-export async function lookupAerisRoleForUser(userId: string): Promise<AerisRole> {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from("aeris_user_roles")
-    .select("user_id, role")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  return resolveAerisRole(data as AerisUserRoleRow | null);
-}
-
-export async function getSessionAerisRole(): Promise<{
-  userId: string | null;
-  role: AerisRole;
-}> {
-  const { getSessionAerisRole: resolveSessionAerisRole } = await import(
-    "@/lib/session-auth"
-  );
-  return resolveSessionAerisRole();
-}
-
-export function isDashboardAuthDisabled() {
-  return process.env.DASHBOARD_AUTH_DISABLED === "true";
-}

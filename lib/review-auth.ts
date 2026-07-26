@@ -1,8 +1,6 @@
 import type { NextRequest } from "next/server";
-import {
-  getSessionAerisRole,
-  isDashboardAuthDisabled,
-} from "@/lib/supabase-server";
+import { isDashboardAuthDisabled } from "@/lib/auth-config";
+import { getSessionAerisRole } from "@/lib/session-auth";
 
 export async function authorizeReportReview(
   req: NextRequest,

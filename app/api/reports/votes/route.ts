@@ -1,6 +1,6 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { getReportVotesByUser, reportVotesEnabled } from "@/lib/report-votes";
-import { resolveSessionUserId } from "@/lib/session-user";
+import { resolveSessionUserId } from "@/lib/session-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

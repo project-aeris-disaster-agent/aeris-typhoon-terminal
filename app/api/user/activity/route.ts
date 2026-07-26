@@ -1,6 +1,6 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { rateLimit } from "@/lib/rate-limit";
-import { resolveSessionUserId } from "@/lib/session-user";
+import { resolveSessionUserId } from "@/lib/session-auth";
 import { awardXp } from "@/lib/gamification";
 import { touchUserLastActive } from "@/lib/storm-watch/recipients";
 import { userProfilesEnabled } from "@/lib/user-profiles";

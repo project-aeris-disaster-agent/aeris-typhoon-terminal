@@ -1,10 +1,7 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { rateLimit } from "@/lib/rate-limit";
 import { sanitizeText, isSpam } from "@/lib/sanitize";
-import {
-  getSessionUserId,
-  isDashboardAuthDisabled,
-} from "@/lib/supabase-server";
+import { resolveSessionUserId } from "@/lib/session-auth";
 import {
   COMMUNITY_CHAT_ROOM,
   communityChatEnabled,
@@ -18,21 +15,11 @@ export const dynamic = "force-dynamic";
 
 const MAX_BODY_LEN = 280;
 
-/** Stable pseudo-identity for local dev when dashboard auth is disabled. */
-const DEV_USER_ID = "00000000-0000-4000-8000-000000000d3b";
-
-async function resolveUserId(): Promise<string | null> {
-  const userId = await getSessionUserId().catch(() => null);
-  if (userId) return userId;
-  if (isDashboardAuthDisabled()) return DEV_USER_ID;
-  return null;
-}
-
 export async function GET() {
   if (!communityChatEnabled()) {
     return jsonError("Community chat is not configured.", 503);
   }
-  const userId = await resolveUserId();
+  const userId = await resolveSessionUserId();
   if (!userId) return jsonError("Authentication required.", 401);
 
   const messages = await listChatMessages(COMMUNITY_CHAT_ROOM, 100);
@@ -44,7 +31,7 @@ export async function POST(request: Request) {
     return jsonError("Community chat is not configured.", 503);
   }
 
-  const userId = await resolveUserId();
+  const userId = await resolveSessionUserId();
   if (!userId) return jsonError("Authentication required.", 401);
 
   const limit = await rateLimit({

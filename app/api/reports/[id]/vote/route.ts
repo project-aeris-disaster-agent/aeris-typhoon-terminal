@@ -7,7 +7,7 @@ import {
   upsertReportVote,
   type ReportVoteValue,
 } from "@/lib/report-votes";
-import { resolveSessionUserId } from "@/lib/session-user";
+import { resolveSessionUserId } from "@/lib/session-auth";
 import { getSupabaseReportById } from "@/lib/supabase-reports";
 
 export const runtime = "nodejs";

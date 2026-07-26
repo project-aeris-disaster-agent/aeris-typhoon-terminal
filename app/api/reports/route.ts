@@ -9,7 +9,7 @@ import {
   listSupabaseReports,
   supabaseReportsEnabled,
 } from "@/lib/supabase-reports";
-import { resolveSessionUserId } from "@/lib/session-user";
+import { resolveSessionUserId } from "@/lib/session-auth";
 import { awardXp } from "@/lib/gamification";
 
 export const runtime = "nodejs";

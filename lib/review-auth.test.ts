@@ -2,12 +2,15 @@
 
 import { authorizeReportReview } from "@/lib/review-auth";
 
-jest.mock("@/lib/supabase-server", () => ({
+jest.mock("@/lib/session-auth", () => ({
   getSessionAerisRole: jest.fn(),
+}));
+jest.mock("@/lib/auth-config", () => ({
   isDashboardAuthDisabled: jest.fn(),
 }));
 
-import { getSessionAerisRole, isDashboardAuthDisabled } from "@/lib/supabase-server";
+import { isDashboardAuthDisabled } from "@/lib/auth-config";
+import { getSessionAerisRole } from "@/lib/session-auth";
 
 function mockRequest(headers: Record<string, string> = {}) {
   return {

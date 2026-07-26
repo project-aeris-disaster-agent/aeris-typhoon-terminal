@@ -1,8 +1,6 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
-import {
-  getSessionAerisRole,
-  isDashboardAuthDisabled,
-} from "@/lib/supabase-server";
+import { isDashboardAuthDisabled } from "@/lib/auth-config";
+import { getSessionAerisRole } from "@/lib/session-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

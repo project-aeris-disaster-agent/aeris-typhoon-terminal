@@ -1,10 +1,7 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { rateLimit } from "@/lib/rate-limit";
 import { sanitizeText } from "@/lib/sanitize";
-import {
-  getSessionUserId,
-  isDashboardAuthDisabled,
-} from "@/lib/supabase-server";
+import { resolveSessionUserId } from "@/lib/session-auth";
 import {
   communityChatEnabled,
   getChatProfile,
@@ -20,21 +17,11 @@ const NICK_MAX = 24;
 // Letters, numbers, and common IRC-ish separators; no whitespace.
 const NICK_PATTERN = /^[A-Za-z0-9_\-.[\]]+$/;
 
-/** Stable pseudo-identity for local dev when dashboard auth is disabled. */
-const DEV_USER_ID = "00000000-0000-4000-8000-000000000d3b";
-
-async function resolveUserId(): Promise<string | null> {
-  const userId = await getSessionUserId().catch(() => null);
-  if (userId) return userId;
-  if (isDashboardAuthDisabled()) return DEV_USER_ID;
-  return null;
-}
-
 export async function GET() {
   if (!communityChatEnabled()) {
     return jsonError("Community chat is not configured.", 503);
   }
-  const userId = await resolveUserId();
+  const userId = await resolveSessionUserId();
   if (!userId) return jsonError("Authentication required.", 401);
 
   const profile = await getChatProfile(userId);
@@ -66,7 +53,7 @@ export async function POST(request: Request) {
     return jsonError("Community chat is not configured.", 503);
   }
 
-  const userId = await resolveUserId();
+  const userId = await resolveSessionUserId();
   if (!userId) return jsonError("Authentication required.", 401);
 
   const limit = await rateLimit({

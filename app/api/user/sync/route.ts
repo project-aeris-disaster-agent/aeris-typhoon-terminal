@@ -1,6 +1,6 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { fetchPrivyUserInfo } from "@/lib/privy-users";
-import { resolveSessionUserId, DEV_USER_ID } from "@/lib/session-user";
+import { resolveSessionUserId, DEV_USER_ID } from "@/lib/session-auth";
 import { touchUserLastActive } from "@/lib/storm-watch/recipients";
 import { maybeRunStormWatchOnSync } from "@/services/storm-watch-runner";
 import {
