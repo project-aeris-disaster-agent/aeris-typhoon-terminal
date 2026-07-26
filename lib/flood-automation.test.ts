@@ -106,7 +106,7 @@ describe("flood-automation", () => {
     });
     expect(rain.enabled).toBe(true);
     expect(rain.returnPeriod).toBe("5yr");
-    expect(rain.reason).toContain("Auto on");
+    expect(rain.reason).toContain("Automated:");
 
     const typhoon = computeFloodAutomation({
       forecast: quietForecast,

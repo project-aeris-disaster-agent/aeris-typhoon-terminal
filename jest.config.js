@@ -17,6 +17,9 @@ const customJestConfig = {
     "<rootDir>/.next/",
     "<rootDir>/node_modules/",
     "<rootDir>/e2e/",
+    // Agent worktrees are checkouts of this same repo nested inside it; without
+    // this, every suite runs twice and unmerged branches fail the local run.
+    "<rootDir>/.claude/",
   ],
   collectCoverageFrom: [
     "app/**/*.{ts,tsx}",

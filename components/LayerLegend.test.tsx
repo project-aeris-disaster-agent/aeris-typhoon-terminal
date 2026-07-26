@@ -240,7 +240,9 @@ describe("LayerLegend", () => {
     const user = userEvent.setup();
     renderLayerLegend(createMapStub(), "2d");
 
-    const toggle = screen.getByRole("button", { name: /Layers/ });
+    // Anchor to the start of the accessible name: the adjacent HelpHint button
+    // is named "Help: Map Layers…", which a bare /Layers/ also matches.
+    const toggle = screen.getByRole("button", { name: /^Layers/ });
     expect(screen.getByText("Hazard")).toBeInTheDocument();
 
     await user.click(toggle);

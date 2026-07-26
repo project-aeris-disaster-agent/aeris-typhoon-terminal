@@ -42,9 +42,15 @@ export function installCanvas2dShim() {
     return image;
   }
 
-  const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+  // `getContext` is a heavily overloaded DOM signature; the shim only models
+  // the "2d" arm, so both the native passthrough and the assignment back onto
+  // the prototype go through a single deliberate cast.
+  type GetContextFn = HTMLCanvasElement["getContext"];
+  const nativeGetContext = HTMLCanvasElement.prototype
+    .getContext as (this: HTMLCanvasElement, type: string, ...args: unknown[]) => unknown;
 
   HTMLCanvasElement.prototype.getContext = function getContext(
+    this: HTMLCanvasElement,
     type: string,
     ..._args: unknown[]
   ) {
@@ -83,5 +89,5 @@ export function installCanvas2dShim() {
     };
     contexts.set(canvas, ctx);
     return ctx as unknown as CanvasRenderingContext2D;
-  };
+  } as GetContextFn;
 }

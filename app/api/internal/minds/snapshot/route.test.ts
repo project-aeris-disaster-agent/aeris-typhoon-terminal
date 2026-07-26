@@ -38,7 +38,20 @@ describe("GET /api/internal/minds/snapshot", () => {
         },
         elevatedRivers: [],
       },
+      pagasaDaily: null,
+      pagasaBulletins: null,
       selectedLocation: null,
+      freshness: {
+        gdacs: null,
+        openMeteo: "2026-05-27T14:00:00.000Z",
+        waterLevels: null,
+        pagasaDaily: null,
+        pagasaBulletins: null,
+        pagasaBulletinsIndexAgeSeconds: null,
+        pagasaBulletinsStale: false,
+        pagasaBulletinsWarning: null,
+        snapshot: "2026-05-27T14:00:00.000Z",
+      },
     });
   });
 
