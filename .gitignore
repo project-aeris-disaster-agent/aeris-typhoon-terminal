@@ -28,5 +28,23 @@ __pycache__/
 next-env.d.ts.bak
 
 coverage/
+test-results/
+playwright-report/
 # Separate repo; do not nest as submodule unless intentional
 AERIS CHAT/06 AERIS CHAT/
+
+# Agent scratch: .claude/worktrees holds full checkouts of this repo, which
+# both bloat the tree and get picked up by jest/tsc if ever committed.
+.claude/
+.cursor/
+supabase/.temp/
+
+# Raw GIS source data (~570 MB of .shp/.zip). These are one-time build inputs
+# for scripts/convert_flood_shapefile.py; the runtime artifacts it produces
+# live in public/flood-hazard/. Keep the originals in object storage, not git.
+mapfiles/
+
+# Local scratch that has accumulated in the repo root.
+*.crdownload
+body.txt
+overpass_test.json
