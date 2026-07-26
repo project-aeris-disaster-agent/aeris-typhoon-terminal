@@ -1,3 +1,4 @@
+import { serviceAuthHeaders, supabaseRestConfig } from "@/lib/supabase-rest";
 import { YOUTUBE_WEBCAM_HANDLE } from "@/lib/youtube-feed/constants";
 import { extractCctvLocation } from "@/services/cctv-locations";
 import type { YtFeedResult, YtVideo } from "@/lib/youtube-feed/types";
@@ -58,24 +59,9 @@ const LIVE_SEARCH_TTL = 5 * 60 * 1000;
 /** TTL for the Supabase-persisted live-search cache (10 minutes). */
 const SUPABASE_LIVE_CACHE_TTL_MS = 10 * 60 * 1000;
 
-function supabaseCacheConfig() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) return null;
-  return { url: url.replace(/\/$/, ""), serviceKey };
-}
-
-function supabaseHeaders(serviceKey: string) {
-  return {
-    apikey: serviceKey,
-    authorization: `Bearer ${serviceKey}`,
-    "content-type": "application/json",
-  };
-}
-
 /** Read a cached live-search result from Supabase. Returns null on miss or error. */
 async function readSupabaseLiveCache(channelId: string): Promise<YtVideo[] | null> {
-  const cfg = supabaseCacheConfig();
+  const cfg = supabaseRestConfig();
   if (!cfg) return null;
   try {
     const params = new URLSearchParams({
@@ -85,7 +71,7 @@ async function readSupabaseLiveCache(channelId: string): Promise<YtVideo[] | nul
     });
     const res = await fetch(
       `${cfg.url}/rest/v1/youtube_feed_cache?${params}`,
-      { headers: supabaseHeaders(cfg.serviceKey), cache: "no-store" },
+      { headers: serviceAuthHeaders(cfg.serviceKey), cache: "no-store" },
     );
     if (!res.ok) return null;
     const rows = (await res.json()) as Array<{
@@ -108,14 +94,14 @@ async function writeSupabaseLiveCache(
   channelHandle: string,
   videos: YtVideo[],
 ): Promise<void> {
-  const cfg = supabaseCacheConfig();
+  const cfg = supabaseRestConfig();
   if (!cfg || videos.length === 0) return;
   const expiresAt = new Date(Date.now() + SUPABASE_LIVE_CACHE_TTL_MS).toISOString();
   try {
     await fetch(`${cfg.url}/rest/v1/youtube_feed_cache`, {
       method: "POST",
       headers: {
-        ...supabaseHeaders(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "resolution=merge-duplicates",
       },
       body: JSON.stringify({

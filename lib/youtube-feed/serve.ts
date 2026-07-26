@@ -7,11 +7,11 @@ import {
   isLockHeld,
   readChannelCaches,
   releaseRefreshLock,
-  supabaseCacheConfig,
   tryAcquireRefreshLock,
   writeChannelCache,
 } from "@/lib/youtube-feed/cache";
 import { pollYoutubeChannel, pollYoutubeChannels } from "@/lib/youtube-feed/poll";
+import { supabaseRestConfig } from "@/lib/supabase-rest";
 import type { ChannelCacheRow, YtFeedResult, YtVideo } from "@/lib/youtube-feed/types";
 
 function normalizeHandle(handle: string): string {
@@ -147,7 +147,7 @@ export async function serveYoutubeFeed(
     return { videos: [], errors: ["No channels requested"] };
   }
 
-  if (!supabaseCacheConfig()) {
+  if (!supabaseRestConfig()) {
     return pollYoutubeChannels(handles);
   }
 

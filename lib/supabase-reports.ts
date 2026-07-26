@@ -1,6 +1,10 @@
+import type {
+  AiPriority,
+  ReportOnchainInfo,
+  ReportReviewAction,
+} from "@/lib/report-types";
+import { serviceAuthHeaders } from "@/lib/supabase-rest";
 import { computeDedupeHash } from "@/lib/dedupe-hash";
-
-export type AiPriority = "pending" | "urgent" | "low_priority" | "rejected";
 
 type SupabaseReportRow = {
   id: string;
@@ -39,6 +43,8 @@ type SupabaseReportRow = {
   created_at: string;
 };
 
+export type { AiPriority, ReportReviewAction };
+
 export type PublicReport = {
   id: string;
   messageId?: string;
@@ -67,22 +73,7 @@ export type PublicReport = {
   sessionId?: string;
   anonymousId?: string;
   metadata?: Record<string, unknown>;
-  onchain?: {
-    proxyWallet?: {
-      id?: string;
-      address?: string;
-      network: string;
-      chainId: number;
-    };
-    mint: {
-      network: string;
-      chainId: number;
-      status: string;
-      txHash?: string;
-      tokenId?: string;
-      mintedAt?: string;
-    };
-  };
+  onchain?: ReportOnchainInfo;
 };
 
 export type ReportInsert = {
@@ -99,17 +90,6 @@ export type ReportInsert = {
   /** Privy DID of the authenticated reporter, when signed in. */
   reporterUserId?: string;
 };
-
-export type ReportReviewAction =
-  | "verify"
-  | "reject"
-  | "duplicate"
-  | "hide"
-  | "unhide"
-  | "needs_review"
-  | "unverify"
-  | "note"
-  | "confidence_adjust";
 
 export type ReportReviewInput = {
   reportId: string;
@@ -209,6 +189,14 @@ const REPORT_COLUMNS_WITHOUT_AI = [
   "created_at",
 ].join(",");
 
+/**
+ * Local config rather than `supabaseRestConfig()`: this module needs the
+ * service and anon keys as *separate* fields, because reads try the anon key
+ * first (falling back to service role) while writes require service role and
+ * additionally assert the JWT's role claim. The shared helper deliberately
+ * collapses that distinction; header construction is still shared via
+ * `serviceAuthHeaders`.
+ */
 function supabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -228,14 +216,6 @@ export function supabaseReportsEnabled() {
 export function supabaseServiceRoleEnabled() {
   const cfg = supabaseConfig();
   return cfg !== null && decodeJwtRole(cfg.serviceKey) === "service_role";
-}
-
-function headers(serviceKey: string) {
-  return {
-    apikey: serviceKey,
-    authorization: `Bearer ${serviceKey}`,
-    "content-type": "application/json",
-  };
 }
 
 export async function listSupabaseReports(): Promise<PublicReport[]> {
@@ -324,7 +304,7 @@ export async function createSupabaseReport(
   let res = await fetch(`${cfg.url}/rest/v1/disaster_reports?select=${REPORT_COLUMNS}`, {
     method: "POST",
     headers: {
-      ...headers(cfg.serviceKey),
+      ...serviceAuthHeaders(cfg.serviceKey),
       prefer: "return=representation",
     },
     body: JSON.stringify(insertPayload),
@@ -335,7 +315,7 @@ export async function createSupabaseReport(
     res = await fetch(`${cfg.url}/rest/v1/disaster_reports?select=${REPORT_COLUMNS_WITHOUT_AI}`, {
       method: "POST",
       headers: {
-        ...headers(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify(withoutAi),
@@ -346,7 +326,7 @@ export async function createSupabaseReport(
     res = await fetch(`${cfg.url}/rest/v1/disaster_reports?select=${LEGACY_REPORT_COLUMNS}`, {
       method: "POST",
       headers: {
-        ...headers(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify(toLegacyInsertPayload(insertPayload)),
@@ -391,7 +371,7 @@ export async function reviewSupabaseReport(
     {
       method: "PATCH",
       headers: {
-        ...headers(writeCfg.serviceKey),
+        ...serviceAuthHeaders(writeCfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify(updatePayload),
@@ -426,7 +406,7 @@ export async function reviewSupabaseReport(
         `${writeCfg.url}/rest/v1/disaster_reports?id=eq.${encodeURIComponent(input.reportId)}`,
         {
           method: "PATCH",
-          headers: { ...headers(writeCfg.serviceKey), prefer: "return=minimal" },
+          headers: { ...serviceAuthHeaders(writeCfg.serviceKey), prefer: "return=minimal" },
           body: JSON.stringify({ onchain_mint_status: "queued" }),
         },
       );
@@ -459,7 +439,7 @@ export async function listPendingTriageReports(limit = 25): Promise<PublicReport
   });
 
   let res = await fetch(`${cfg.url}/rest/v1/disaster_reports?${params}`, {
-    headers: headers(cfg.serviceKey),
+    headers: serviceAuthHeaders(cfg.serviceKey),
     cache: "no-store",
   });
 
@@ -491,7 +471,7 @@ export async function findDuplicateReport(
   });
 
   let res = await fetch(`${cfg.url}/rest/v1/disaster_reports?${params}`, {
-    headers: headers(cfg.serviceKey),
+    headers: serviceAuthHeaders(cfg.serviceKey),
     cache: "no-store",
   });
 
@@ -521,7 +501,7 @@ export async function patchAiTriageFields(
     `${cfg.url}/rest/v1/disaster_reports?id=eq.${encodeURIComponent(reportId)}`,
     {
       method: "PATCH",
-      headers: headers(cfg.serviceKey),
+      headers: serviceAuthHeaders(cfg.serviceKey),
       body: JSON.stringify({
         ai_priority: fields.aiPriority,
         ai_triage_at: fields.aiTriageAt,
@@ -555,7 +535,7 @@ export async function listSupabaseReportsByAnonymousId(
   });
 
   let res = await fetch(`${cfg.url}/rest/v1/disaster_reports?${params}`, {
-    headers: headers(cfg.serviceKey),
+    headers: serviceAuthHeaders(cfg.serviceKey),
     cache: "no-store",
   });
 
@@ -567,7 +547,7 @@ export async function listSupabaseReportsByAnonymousId(
         order: "created_at.desc",
         limit: "100",
       })}`,
-      { headers: headers(cfg.serviceKey), cache: "no-store" },
+      { headers: serviceAuthHeaders(cfg.serviceKey), cache: "no-store" },
     );
   }
 
@@ -654,7 +634,7 @@ function fetchReportsWithColumns(url: string, key: string, columns: string) {
   });
 
   return fetch(`${url}/rest/v1/disaster_reports?${params}`, {
-    headers: headers(key),
+    headers: serviceAuthHeaders(key),
     cache: "no-store",
   });
 }
@@ -669,7 +649,7 @@ async function getSupabaseReportRow(
     limit: "1",
   });
   const res = await fetch(`${cfg.url}/rest/v1/disaster_reports?${params}`, {
-    headers: headers(cfg.serviceKey),
+    headers: serviceAuthHeaders(cfg.serviceKey),
     cache: "no-store",
   });
 
@@ -748,7 +728,7 @@ async function insertReviewEvent(
 ) {
   const res = await fetch(`${cfg.url}/rest/v1/report_review_events`, {
     method: "POST",
-    headers: headers(cfg.serviceKey),
+    headers: serviceAuthHeaders(cfg.serviceKey),
     body: JSON.stringify({
       report_id: input.reportId,
       actor_type: input.actorType,

@@ -1,24 +1,9 @@
+import { serviceAuthHeaders, supabaseRestConfig } from "@/lib/supabase-rest";
 import {
   CHANNEL_FEED_CACHE_TTL_MS,
   CHANNEL_FEED_LOCK_MS,
 } from "@/lib/youtube-feed/constants";
 import type { ChannelCacheRow, YtFeedResult } from "@/lib/youtube-feed/types";
-
-export function supabaseCacheConfig() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) return null;
-  return { url: url.replace(/\/$/, ""), serviceKey };
-}
-
-function supabaseHeaders(serviceKey: string, extra?: Record<string, string>) {
-  return {
-    apikey: serviceKey,
-    authorization: `Bearer ${serviceKey}`,
-    "content-type": "application/json",
-    ...extra,
-  };
-}
 
 function parseRow(row: {
   channel_handle: string;
@@ -52,7 +37,7 @@ export function isLockHeld(row: ChannelCacheRow, now = Date.now()): boolean {
 export async function readChannelCaches(
   handles: string[],
 ): Promise<Map<string, ChannelCacheRow>> {
-  const cfg = supabaseCacheConfig();
+  const cfg = supabaseRestConfig();
   const map = new Map<string, ChannelCacheRow>();
   if (!cfg || handles.length === 0) return map;
 
@@ -65,7 +50,7 @@ export async function readChannelCaches(
   try {
     const res = await fetch(
       `${cfg.url}/rest/v1/youtube_feed_channel_cache?${params}`,
-      { headers: supabaseHeaders(cfg.serviceKey), cache: "no-store" },
+      { headers: serviceAuthHeaders(cfg.serviceKey), cache: "no-store" },
     );
     if (!res.ok) return map;
     const rows = (await res.json()) as Array<{
@@ -94,7 +79,7 @@ function lockTimesMatch(a: string | null | undefined, b: string): boolean {
 
 /** Try to become the single refresher for a stale/missing channel. */
 export async function tryAcquireRefreshLock(handle: string): Promise<boolean> {
-  const cfg = supabaseCacheConfig();
+  const cfg = supabaseRestConfig();
   if (!cfg) return true;
 
   const now = new Date().toISOString();
@@ -110,7 +95,7 @@ export async function tryAcquireRefreshLock(handle: string): Promise<boolean> {
       `${cfg.url}/rest/v1/youtube_feed_channel_cache?${staleParams}`,
       {
         method: "PATCH",
-        headers: supabaseHeaders(cfg.serviceKey, {
+        headers: serviceAuthHeaders(cfg.serviceKey, {
           prefer: "return=representation",
         }),
         body: JSON.stringify({ refreshing_until: lockUntil }),
@@ -132,7 +117,7 @@ export async function tryAcquireRefreshLock(handle: string): Promise<boolean> {
     const expiresAt = new Date(0).toISOString();
     const res = await fetch(`${cfg.url}/rest/v1/youtube_feed_channel_cache`, {
       method: "POST",
-      headers: supabaseHeaders(cfg.serviceKey, {
+      headers: serviceAuthHeaders(cfg.serviceKey, {
         prefer: "resolution=merge-duplicates,return=representation",
       }),
       body: JSON.stringify({
@@ -157,7 +142,7 @@ export async function writeChannelCache(
   handle: string,
   result: YtFeedResult,
 ): Promise<void> {
-  const cfg = supabaseCacheConfig();
+  const cfg = supabaseRestConfig();
   if (!cfg) return;
 
   const now = new Date();
@@ -168,7 +153,7 @@ export async function writeChannelCache(
   try {
     await fetch(`${cfg.url}/rest/v1/youtube_feed_channel_cache`, {
       method: "POST",
-      headers: supabaseHeaders(cfg.serviceKey, {
+      headers: serviceAuthHeaders(cfg.serviceKey, {
         prefer: "resolution=merge-duplicates",
       }),
       body: JSON.stringify({
@@ -186,7 +171,7 @@ export async function writeChannelCache(
 }
 
 export async function releaseRefreshLock(handle: string): Promise<void> {
-  const cfg = supabaseCacheConfig();
+  const cfg = supabaseRestConfig();
   if (!cfg) return;
 
   const params = new URLSearchParams({ channel_handle: `eq.${handle}` });
@@ -195,7 +180,7 @@ export async function releaseRefreshLock(handle: string): Promise<void> {
       `${cfg.url}/rest/v1/youtube_feed_channel_cache?${params}`,
       {
         method: "PATCH",
-        headers: supabaseHeaders(cfg.serviceKey),
+        headers: serviceAuthHeaders(cfg.serviceKey),
         body: JSON.stringify({ refreshing_until: null }),
       },
     );

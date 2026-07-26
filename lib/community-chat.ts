@@ -6,6 +6,8 @@
  * history through the API and receive live INSERTs via Supabase Realtime.
  */
 
+import { serviceAuthHeaders, supabaseRestConfig } from "@/lib/supabase-rest";
+
 export const COMMUNITY_CHAT_ROOM = "global";
 
 export type ChatMessageRow = {
@@ -27,30 +29,15 @@ export type ChatProfileRow = {
 const MESSAGE_COLUMNS = "id,room,user_id,display_name,body,created_at";
 const PROFILE_COLUMNS = "user_id,display_name,created_at,updated_at";
 
-function supabaseConfig() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) return null;
-  return { url: url.replace(/\/$/, ""), serviceKey };
-}
-
 export function communityChatEnabled(): boolean {
-  return supabaseConfig() !== null;
-}
-
-function authHeaders(key: string) {
-  return {
-    apikey: key,
-    authorization: `Bearer ${key}`,
-    "content-type": "application/json",
-  };
+  return supabaseRestConfig() !== null;
 }
 
 export async function listChatMessages(
   room = COMMUNITY_CHAT_ROOM,
   limit = 100,
 ): Promise<ChatMessageRow[]> {
-  const cfg = supabaseConfig();
+  const cfg = supabaseRestConfig();
   if (!cfg) return [];
 
   const url = new URL(`${cfg.url}/rest/v1/community_chat_messages`);
@@ -60,7 +47,7 @@ export async function listChatMessages(
   url.searchParams.set("limit", String(Math.min(limit, 200)));
 
   const res = await fetch(url.toString(), {
-    headers: authHeaders(cfg.serviceKey),
+    headers: serviceAuthHeaders(cfg.serviceKey),
     cache: "no-store",
   });
 
@@ -78,7 +65,7 @@ export async function insertChatMessage(args: {
   /** Optional caller-supplied UUID for optimistic-UI reconciliation. */
   id?: string;
 }): Promise<ChatMessageRow | null> {
-  const cfg = supabaseConfig();
+  const cfg = supabaseRestConfig();
   if (!cfg) return null;
 
   const payload: Record<string, unknown> = {
@@ -94,7 +81,7 @@ export async function insertChatMessage(args: {
     {
       method: "POST",
       headers: {
-        ...authHeaders(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify(payload),
@@ -110,7 +97,7 @@ export async function insertChatMessage(args: {
 export async function getChatProfile(
   userId: string,
 ): Promise<ChatProfileRow | null> {
-  const cfg = supabaseConfig();
+  const cfg = supabaseRestConfig();
   if (!cfg) return null;
 
   const url = new URL(`${cfg.url}/rest/v1/community_chat_profiles`);
@@ -119,7 +106,7 @@ export async function getChatProfile(
   url.searchParams.set("limit", "1");
 
   const res = await fetch(url.toString(), {
-    headers: authHeaders(cfg.serviceKey),
+    headers: serviceAuthHeaders(cfg.serviceKey),
     cache: "no-store",
   });
 
@@ -137,7 +124,7 @@ export async function upsertChatProfile(
   userId: string,
   displayName: string,
 ): Promise<UpsertProfileResult> {
-  const cfg = supabaseConfig();
+  const cfg = supabaseRestConfig();
   if (!cfg) return { ok: false, reason: "error" };
 
   const res = await fetch(
@@ -145,7 +132,7 @@ export async function upsertChatProfile(
     {
       method: "POST",
       headers: {
-        ...authHeaders(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "return=representation,resolution=merge-duplicates",
       },
       body: JSON.stringify({

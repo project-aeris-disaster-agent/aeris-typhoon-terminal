@@ -13,6 +13,7 @@
  * so it works on Edge or Node runtimes alike.
  */
 
+import { serviceAuthHeaders, supabaseRestConfig } from "@/lib/supabase-rest";
 import type { PublicReport } from "@/lib/supabase-reports";
 
 const MINT_COLUMNS = [
@@ -42,21 +43,6 @@ const MINT_COLUMNS = [
 ].join(",");
 
 type Row = Record<string, unknown>;
-
-function cfg() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) return null;
-  return { url, serviceKey };
-}
-
-function headers(serviceKey: string) {
-  return {
-    apikey: serviceKey,
-    authorization: `Bearer ${serviceKey}`,
-    "content-type": "application/json",
-  };
-}
 
 function rowToPublic(row: Row): PublicReport {
   const metadata =
@@ -128,14 +114,14 @@ function rowToPublic(row: Row): PublicReport {
 export async function getReportForMint(
   reportId: string,
 ): Promise<PublicReport | null> {
-  const c = cfg();
+  const c = supabaseRestConfig();
   if (!c) return null;
   const url = new URL(`${c.url}/rest/v1/disaster_reports`);
   url.searchParams.set("select", MINT_COLUMNS);
   url.searchParams.set("id", `eq.${reportId}`);
   url.searchParams.set("limit", "1");
   const res = await fetch(url.toString(), {
-    headers: headers(c.serviceKey),
+    headers: serviceAuthHeaders(c.serviceKey),
     cache: "no-store",
   });
   if (!res.ok) return null;
@@ -153,7 +139,7 @@ export async function listStaleQueuedMintReports(
   minAgeSeconds: number,
   limit = 10,
 ): Promise<PublicReport[]> {
-  const c = cfg();
+  const c = supabaseRestConfig();
   if (!c) return [];
   const cutoffIso = new Date(Date.now() - minAgeSeconds * 1000).toISOString();
   const url = new URL(`${c.url}/rest/v1/disaster_reports`);
@@ -165,7 +151,7 @@ export async function listStaleQueuedMintReports(
   url.searchParams.set("order", "created_at.asc");
   url.searchParams.set("limit", String(Math.min(Math.max(1, limit), 50)));
   const res = await fetch(url.toString(), {
-    headers: headers(c.serviceKey),
+    headers: serviceAuthHeaders(c.serviceKey),
     cache: "no-store",
   });
   if (!res.ok) return [];
@@ -198,7 +184,7 @@ export function isVerifiedPendingMint(status: string | undefined | null): boolea
  * yet confirmed on-chain (`minted` / in-flight `minting`).
  */
 export async function countVerifiedPendingMint(): Promise<number> {
-  const c = cfg();
+  const c = supabaseRestConfig();
   if (!c) return 0;
   const url = new URL(`${c.url}/rest/v1/disaster_reports`);
   url.searchParams.set("select", "id");
@@ -209,7 +195,7 @@ export async function countVerifiedPendingMint(): Promise<number> {
   );
   const res = await fetch(url.toString(), {
     headers: {
-      ...headers(c.serviceKey),
+      ...serviceAuthHeaders(c.serviceKey),
       prefer: "count=exact",
     },
     cache: "no-store",
@@ -226,7 +212,7 @@ export async function countVerifiedPendingMint(): Promise<number> {
  * (or Supabase push webhook) can pick them up.
  */
 export async function queueVerifiedReportsForMint(): Promise<number> {
-  const c = cfg();
+  const c = supabaseRestConfig();
   if (!c) return 0;
   const url = new URL(`${c.url}/rest/v1/disaster_reports`);
   url.searchParams.set("verification_status", "eq.verified");
@@ -237,7 +223,7 @@ export async function queueVerifiedReportsForMint(): Promise<number> {
   const res = await fetch(url.toString(), {
     method: "PATCH",
     headers: {
-      ...headers(c.serviceKey),
+      ...serviceAuthHeaders(c.serviceKey),
       prefer: "return=representation",
     },
     body: JSON.stringify({ onchain_mint_status: "queued" }),
@@ -248,7 +234,7 @@ export async function queueVerifiedReportsForMint(): Promise<number> {
 }
 
 export async function listQueuedMintReports(limit = 10): Promise<PublicReport[]> {
-  const c = cfg();
+  const c = supabaseRestConfig();
   if (!c) return [];
   const url = new URL(`${c.url}/rest/v1/disaster_reports`);
   url.searchParams.set("select", MINT_COLUMNS);
@@ -257,7 +243,7 @@ export async function listQueuedMintReports(limit = 10): Promise<PublicReport[]>
   url.searchParams.set("limit", String(Math.min(Math.max(1, limit), 50)));
 
   const res = await fetch(url.toString(), {
-    headers: headers(c.serviceKey),
+    headers: serviceAuthHeaders(c.serviceKey),
     cache: "no-store",
   });
   if (!res.ok) return [];
@@ -284,7 +270,7 @@ export async function applyMintTransition(
   reportId: string,
   update: MintTransitionUpdate,
 ): Promise<boolean> {
-  const c = cfg();
+  const c = supabaseRestConfig();
   if (!c) return false;
   const payload: Record<string, unknown> = {
     onchain_mint_status: update.status,
@@ -319,7 +305,7 @@ export async function applyMintTransition(
     readUrl.searchParams.set("id", `eq.${reportId}`);
     readUrl.searchParams.set("limit", "1");
     const readRes = await fetch(readUrl.toString(), {
-      headers: headers(c.serviceKey),
+      headers: serviceAuthHeaders(c.serviceKey),
       cache: "no-store",
     });
     if (readRes.ok) {
@@ -363,21 +349,21 @@ export async function applyMintTransition(
   patchUrl.searchParams.set("id", `eq.${reportId}`);
   const res = await fetch(patchUrl.toString(), {
     method: "PATCH",
-    headers: { ...headers(c.serviceKey), prefer: "return=minimal" },
+    headers: { ...serviceAuthHeaders(c.serviceKey), prefer: "return=minimal" },
     body: JSON.stringify(payload),
   });
   return res.ok;
 }
 
 export async function attemptCountFor(reportId: string): Promise<number> {
-  const c = cfg();
+  const c = supabaseRestConfig();
   if (!c) return 0;
   const url = new URL(`${c.url}/rest/v1/disaster_reports`);
   url.searchParams.set("select", "metadata");
   url.searchParams.set("id", `eq.${reportId}`);
   url.searchParams.set("limit", "1");
   const res = await fetch(url.toString(), {
-    headers: headers(c.serviceKey),
+    headers: serviceAuthHeaders(c.serviceKey),
     cache: "no-store",
   });
   if (!res.ok) return 0;

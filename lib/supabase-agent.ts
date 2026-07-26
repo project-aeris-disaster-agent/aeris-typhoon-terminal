@@ -1,3 +1,4 @@
+import { serviceAuthHeaders } from "@/lib/supabase-rest";
 import type { NationalWeatherSnapshot } from "@/services/weather-snapshot";
 import type { WeatherReportType } from "@/services/weather-report-triggers";
 import type { ComposedWeatherReport } from "@/services/weather-report-compose";
@@ -70,14 +71,6 @@ export function supabaseAgentEnabled(): boolean {
   return supabaseConfig() !== null;
 }
 
-function authHeaders(key: string) {
-  return {
-    apikey: key,
-    authorization: `Bearer ${key}`,
-    "content-type": "application/json",
-  };
-}
-
 function toPersisted(row: WeatherReportRow): PersistedWeatherReport {
   return {
     id: row.id,
@@ -107,7 +100,7 @@ export async function listAgentMessages(limit = 50): Promise<AgentMessageRow[]> 
   url.searchParams.set("limit", String(Math.min(limit, 100)));
 
   const res = await fetch(url.toString(), {
-    headers: authHeaders(key),
+    headers: serviceAuthHeaders(key),
     cache: "no-store",
   });
 
@@ -131,7 +124,7 @@ export async function listWeatherReports(limit = 20): Promise<PersistedWeatherRe
   url.searchParams.set("limit", String(Math.min(limit, 50)));
 
   const res = await fetch(url.toString(), {
-    headers: authHeaders(key),
+    headers: serviceAuthHeaders(key),
     cache: "no-store",
   });
 
@@ -158,7 +151,7 @@ export async function getLatestNationalReport(
   url.searchParams.set("limit", "1");
 
   const res = await fetch(url.toString(), {
-    headers: authHeaders(key),
+    headers: serviceAuthHeaders(key),
     cache: "no-store",
   });
 
@@ -198,7 +191,7 @@ export async function persistWeatherReportBundle(args: {
     {
       method: "POST",
       headers: {
-        ...authHeaders(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify(reportPayload),
@@ -219,7 +212,7 @@ export async function persistWeatherReportBundle(args: {
     {
       method: "POST",
       headers: {
-        ...authHeaders(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify({
@@ -268,7 +261,7 @@ export async function insertUserAgentMessage(
     {
       method: "POST",
       headers: {
-        ...authHeaders(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify(payload),
@@ -310,7 +303,7 @@ export async function insertUrgentReportAgentMessage(
     {
       method: "POST",
       headers: {
-        ...authHeaders(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify(payload),
@@ -360,7 +353,7 @@ export async function insertOperatorReplyAgentMessage(
     {
       method: "POST",
       headers: {
-        ...authHeaders(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify(payload),
@@ -387,7 +380,7 @@ export async function getLatestUrgentMessageForSession(
   url.searchParams.set("limit", "1");
 
   const res = await fetch(url.toString(), {
-    headers: authHeaders(cfg.serviceKey),
+    headers: serviceAuthHeaders(cfg.serviceKey),
     cache: "no-store",
   });
 
@@ -415,7 +408,7 @@ export async function insertAssistantAgentMessage(
     {
       method: "POST",
       headers: {
-        ...authHeaders(cfg.serviceKey),
+        ...serviceAuthHeaders(cfg.serviceKey),
         prefer: "return=representation",
       },
       body: JSON.stringify(payload),
