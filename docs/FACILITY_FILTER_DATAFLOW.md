@@ -1,4 +1,10 @@
-# Implementation Architecture Diagram
+# Critical-facility filter — data flow
+
+Scope note: this is a walkthrough of one feature — how the "Critical Only"
+facility toggle travels from `LayerLegend` through `map-scene` into the
+Three.js layer. It was previously named `ARCHITECTURE.md` at the repo root,
+which implied whole-system coverage it has never had. For system-level
+orientation see [README.md](../README.md).
 
 ## Component Data Flow
 
