@@ -1,4 +1,5 @@
 import { formatPhTimestamp } from "@/lib/weather-risk";
+import { formatMindsEmailTask } from "@/lib/minds-email-dispatch";
 import { getDashboardPublicUrl } from "@/lib/minds-config";
 import type { PagasaBulletin } from "@/lib/pagasa-bulletins";
 import type { StormEmailEventType } from "@/lib/storm-watch/types";
@@ -86,15 +87,5 @@ export function formatMindsStormEmailTask(input: {
   subject: string;
   body: string;
 }): string {
-  const recipientBlock = input.recipients.join(", ");
-  return [
-    "AERIS STORM EMAIL TASK",
-    "Send one email per recipient below. Do not reply in chat — email only.",
-    "",
-    `Recipients: ${recipientBlock}`,
-    `Subject: ${input.subject}`,
-    "",
-    "Body:",
-    input.body,
-  ].join("\n");
+  return formatMindsEmailTask({ kind: "STORM", ...input });
 }

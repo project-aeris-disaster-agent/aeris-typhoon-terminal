@@ -1,54 +1,28 @@
-import {
-  describeMindsApiError,
-  mindsClientAvailable,
-  sendWatchMessage,
-} from "@/lib/minds-client";
-import { isMindsNotifyEnabled } from "@/lib/minds-config";
-import {
-  formatMindsStormEmailTask,
-  stormEmailBody,
-  stormEmailSubject,
-} from "@/lib/storm-watch/email-templates";
+import { dispatchEmailViaMinds } from "@/lib/minds-email-dispatch";
+import { stormEmailBody, stormEmailSubject } from "@/lib/storm-watch/email-templates";
 import type { StormBulletinEvent, StormEmailRecipient } from "@/lib/storm-watch/types";
 
+/** Renders a storm bulletin into subject/body and hands it to the shared dispatcher. */
 export async function dispatchStormEmailViaMinds(input: {
   event: StormBulletinEvent;
   recipients: StormEmailRecipient[];
   issuedAt: string;
 }): Promise<{ sent: boolean; fingerprint?: string }> {
-  if (!isMindsNotifyEnabled() || !mindsClientAvailable()) {
-    console.warn("[storm-watch] Minds not configured; skipping email dispatch.");
-    return { sent: false };
-  }
-
-  if (input.recipients.length === 0) return { sent: false };
-
-  const subject = stormEmailSubject(
-    input.event.cycloneName,
-    input.event.bulletin,
-    input.event.eventType,
-  );
-  const body = stormEmailBody({
-    cycloneName: input.event.cycloneName,
-    bulletin: input.event.bulletin,
-    eventType: input.event.eventType,
-    issuedAt: input.issuedAt,
-    previousBulletinNumber: input.event.previousBulletinNumber,
-  });
-
-  const messageText = formatMindsStormEmailTask({
+  return dispatchEmailViaMinds({
+    kind: "STORM",
+    logScope: "storm-watch",
     recipients: input.recipients.map((r) => r.email),
-    subject,
-    body,
+    subject: stormEmailSubject(
+      input.event.cycloneName,
+      input.event.bulletin,
+      input.event.eventType,
+    ),
+    body: stormEmailBody({
+      cycloneName: input.event.cycloneName,
+      bulletin: input.event.bulletin,
+      eventType: input.event.eventType,
+      issuedAt: input.issuedAt,
+      previousBulletinNumber: input.event.previousBulletinNumber,
+    }),
   });
-
-  try {
-    const { fingerprint } = await sendWatchMessage({ messageText });
-    return { sent: true, fingerprint };
-  } catch (error) {
-    console.error(
-      `[storm-watch] Minds dispatch failed: ${describeMindsApiError(error)}`,
-    );
-    return { sent: false };
-  }
 }

@@ -3,6 +3,11 @@
 import type { Map as MLMap } from "maplibre-gl";
 import { layerBeforeDynamicOverlays, whenStyleReady } from "@/config/map-layers";
 import type { LngLat } from "@/config/region";
+import type {
+  AiPriority,
+  ReportOnchainInfo,
+  ReportReviewAction,
+} from "@/lib/report-types";
 import { recordFailure, recordSuccess } from "@/services/data-freshness";
 
 export const REPORT_CATEGORIES = [
@@ -31,25 +36,10 @@ export type IncidentReport = {
   confidence?: number;
   verificationStatus?: string;
   phoneVerificationStatus?: string;
-  aiPriority?: "pending" | "urgent" | "low_priority" | "rejected";
+  aiPriority?: AiPriority;
   aiTriageRationale?: string;
   aiTriageConfidence?: number;
-  onchain?: {
-    proxyWallet?: {
-      id?: string;
-      address?: string;
-      network: string;
-      chainId: number;
-    };
-    mint: {
-      network: string;
-      chainId: number;
-      status: string;
-      txHash?: string;
-      tokenId?: string;
-      mintedAt?: string;
-    };
-  };
+  onchain?: ReportOnchainInfo;
 };
 
 export type ReportSubmission = {
@@ -59,16 +49,7 @@ export type ReportSubmission = {
   photoUrl?: string;
 };
 
-export type ReportReviewAction =
-  | "verify"
-  | "reject"
-  | "duplicate"
-  | "hide"
-  | "unhide"
-  | "needs_review"
-  | "unverify"
-  | "note"
-  | "confidence_adjust";
+export type { ReportReviewAction };
 
 const REPORTS_SOURCE_ID = "src-reports";
 /** Solid ping center (top of stack for hit area). */

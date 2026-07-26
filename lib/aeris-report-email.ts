@@ -7,12 +7,8 @@
  * report, deduped per user per report in aeris_report_email_log.
  */
 
-import {
-  describeMindsApiError,
-  mindsClientAvailable,
-  sendWatchMessage,
-} from "@/lib/minds-client";
-import { getDashboardPublicUrl, isMindsNotifyEnabled } from "@/lib/minds-config";
+import { dispatchEmailViaMinds, formatMindsEmailTask } from "@/lib/minds-email-dispatch";
+import { getDashboardPublicUrl } from "@/lib/minds-config";
 import { parseActiveDays } from "@/lib/storm-watch/recipients";
 import { serviceAuthHeaders, supabaseRestConfig } from "@/lib/supabase-rest";
 import { formatPhTimestamp } from "@/lib/weather-risk";
@@ -182,16 +178,7 @@ export function formatMindsReportEmailTask(input: {
   subject: string;
   body: string;
 }): string {
-  return [
-    "AERIS REPORT EMAIL TASK",
-    "Send one email per recipient below. Do not reply in chat — email only.",
-    "",
-    `Recipients: ${input.recipients.join(", ")}`,
-    `Subject: ${input.subject}`,
-    "",
-    "Body:",
-    input.body,
-  ].join("\n");
+  return formatMindsEmailTask({ kind: "REPORT", ...input });
 }
 
 export async function dispatchAerisReportEmailViaMinds(input: {
@@ -199,25 +186,11 @@ export async function dispatchAerisReportEmailViaMinds(input: {
   subject: string;
   body: string;
 }): Promise<{ sent: boolean; fingerprint?: string }> {
-  if (!isMindsNotifyEnabled() || !mindsClientAvailable()) {
-    console.warn("[aeris-reports] Minds not configured; skipping email dispatch.");
-    return { sent: false };
-  }
-  if (input.recipients.length === 0) return { sent: false };
-
-  const messageText = formatMindsReportEmailTask({
+  return dispatchEmailViaMinds({
+    kind: "REPORT",
+    logScope: "aeris-reports",
     recipients: input.recipients.map((r) => r.email),
     subject: input.subject,
     body: input.body,
   });
-
-  try {
-    const { fingerprint } = await sendWatchMessage({ messageText });
-    return { sent: true, fingerprint };
-  } catch (error) {
-    console.error(
-      `[aeris-reports] Minds dispatch failed: ${describeMindsApiError(error)}`,
-    );
-    return { sent: false };
-  }
 }
