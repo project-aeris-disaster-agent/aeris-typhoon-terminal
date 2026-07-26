@@ -29,6 +29,40 @@ function now() {
   return Date.now();
 }
 
+/**
+ * Expired entries are otherwise only reclaimed lazily, on a `get` of that exact
+ * key. The rate limiter never reads its keys — it only `incr`s and `expire`s
+ * them, and its fixed-window scheme mints a fresh key per (route, IP, window).
+ * Those entries therefore never expired and grew without bound for the lifetime
+ * of a warm instance, which is the default state whenever KV is unprovisioned.
+ *
+ * Sweeping on write, throttled, bounds the map to roughly one sweep interval's
+ * worth of keys instead.
+ */
+const SWEEP_INTERVAL_MS = 60_000;
+let lastSweepAt = 0;
+
+function sweepExpiredEntries(force = false): void {
+  const current = now();
+  if (!force && current - lastSweepAt < SWEEP_INTERVAL_MS) return;
+  lastSweepAt = current;
+  for (const [key, entry] of memory) {
+    if (entry.expiresAt !== undefined && entry.expiresAt < current) {
+      memory.delete(key);
+    }
+  }
+}
+
+/** Diagnostic: live entry count in the in-memory fallback. */
+export function memoryStoreSize(): number {
+  return memory.size;
+}
+
+/** Force a sweep, bypassing the throttle. Exposed for tests and diagnostics. */
+export function sweepMemoryStore(): void {
+  sweepExpiredEntries(true);
+}
+
 const memoryStore: Store = {
   async get<T>(key: string): Promise<T | null> {
     const entry = memory.get(key);
@@ -40,6 +74,7 @@ const memoryStore: Store = {
     return entry.value as T;
   },
   async set(key, value, ttlSeconds) {
+    sweepExpiredEntries();
     memory.set(key, {
       value,
       expiresAt: ttlSeconds ? now() + ttlSeconds * 1000 : undefined,
@@ -64,6 +99,7 @@ const memoryStore: Store = {
     memoryLists.set(key, list.slice(start, end));
   },
   async incr(key) {
+    sweepExpiredEntries();
     const entry = memory.get(key);
     const current =
       entry && (!entry.expiresAt || entry.expiresAt >= now())
