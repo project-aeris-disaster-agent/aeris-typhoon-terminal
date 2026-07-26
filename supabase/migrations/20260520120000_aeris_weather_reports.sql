@@ -40,11 +40,16 @@ CREATE INDEX IF NOT EXISTS idx_aeris_agent_messages_created
 ALTER TABLE public.aeris_weather_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.aeris_agent_messages ENABLE ROW LEVEL SECURITY;
 
+-- Guarded so the whole migration set can be replayed. Without the DROPs,
+-- `supabase db push` against a project whose history was applied by hand
+-- aborts here with 42710 (policy already exists).
+DROP POLICY IF EXISTS "Public read national weather reports" ON public.aeris_weather_reports;
 CREATE POLICY "Public read national weather reports"
   ON public.aeris_weather_reports
   FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "Public read agent broadcast messages" ON public.aeris_agent_messages;
 CREATE POLICY "Public read agent broadcast messages"
   ON public.aeris_agent_messages
   FOR SELECT

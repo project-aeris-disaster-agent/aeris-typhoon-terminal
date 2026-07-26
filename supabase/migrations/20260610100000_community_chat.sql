@@ -32,12 +32,16 @@ ALTER TABLE public.community_chat_messages ENABLE ROW LEVEL SECURITY;
 
 -- Reads: any authenticated session (anon key + session JWT). Writes happen
 -- only via the service role from API routes, so no INSERT policies exist.
+-- Guarded so the whole migration set can be replayed; see the note in
+-- 20260520120000_aeris_weather_reports.sql.
+DROP POLICY IF EXISTS "Authenticated read chat messages" ON public.community_chat_messages;
 CREATE POLICY "Authenticated read chat messages"
   ON public.community_chat_messages
   FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Authenticated read chat profiles" ON public.community_chat_profiles;
 CREATE POLICY "Authenticated read chat profiles"
   ON public.community_chat_profiles
   FOR SELECT
