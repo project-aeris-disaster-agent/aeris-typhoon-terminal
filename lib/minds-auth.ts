@@ -1,12 +1,7 @@
+import { requestPresentsSecret } from "@/lib/internal-auth";
 import { getMindsApiSecret } from "@/lib/minds-config";
 
+/** Minds routes carry their own secret so agent traffic can be revoked alone. */
 export function authorizeMindsApiRequest(request: Request): boolean {
-  const secret = getMindsApiSecret();
-  if (!secret) return false;
-
-  const auth = request.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-
-  const headerSecret = request.headers.get("x-minds-api-secret");
-  return headerSecret === secret;
+  return requestPresentsSecret(request, getMindsApiSecret(), "x-minds-api-secret");
 }

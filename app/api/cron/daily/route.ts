@@ -14,6 +14,7 @@
  * remaining sweeps are idempotent — the next day's run catches up.
  */
 
+import { authorizeCronRequest } from "@/lib/internal-auth";
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { runStormWatchCycle } from "@/services/storm-watch-runner";
 import {
@@ -34,15 +35,6 @@ import { isMindsNotifyEnabled } from "@/lib/minds-config";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-function authorizeCron(request: Request): boolean {
-  const auth = request.headers.get("authorization") ?? "";
-  const cronSecret = process.env.CRON_SECRET?.trim();
-  if (cronSecret && auth === `Bearer ${cronSecret}`) return true;
-  const triageSecret = process.env.INTERNAL_TRIAGE_SECRET?.trim();
-  if (triageSecret && auth === `Bearer ${triageSecret}`) return true;
-  return false;
-}
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
@@ -150,7 +142,7 @@ async function runOnchainMintJob(deadlineAt: number) {
 }
 
 export async function GET(request: Request) {
-  if (!authorizeCron(request)) {
+  if (!authorizeCronRequest(request)) {
     return jsonError("Unauthorized.", 401);
   }
 

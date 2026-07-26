@@ -26,6 +26,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { authorizeInternalRequest } from "@/lib/internal-auth";
 import {
   mintQueuedReports,
   mintReportById,
@@ -77,9 +78,7 @@ function extractTargetReportId(body: AnyPayload): string | null {
 }
 
 export async function POST(request: Request) {
-  const secret = process.env.INTERNAL_TRIAGE_SECRET;
-  const auth = request.headers.get("authorization") ?? "";
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!authorizeInternalRequest(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

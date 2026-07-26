@@ -1,3 +1,4 @@
+import { authorizeCronRequest } from "@/lib/internal-auth";
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import {
   notifyWatchOfficerDetailed,
@@ -17,28 +18,13 @@ export const dynamic = "force-dynamic";
  */
 export const maxDuration = 10;
 
-function authorizeCron(request: Request): boolean {
-  const cronSecret = process.env.CRON_SECRET?.trim();
-  if (cronSecret) {
-    const auth = request.headers.get("authorization");
-    if (auth === `Bearer ${cronSecret}`) return true;
-  }
-
-  const triageSecret = process.env.INTERNAL_TRIAGE_SECRET?.trim();
-  if (triageSecret && request.headers.get("x-internal-triage-secret") === triageSecret) {
-    return true;
-  }
-
-  return false;
-}
-
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 export async function GET(request: Request) {
-  if (!authorizeCron(request)) {
+  if (!authorizeCronRequest(request)) {
     return jsonError("Unauthorized.", 401);
   }
 

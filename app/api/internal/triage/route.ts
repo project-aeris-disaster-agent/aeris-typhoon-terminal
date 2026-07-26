@@ -1,3 +1,4 @@
+import { authorizeInternalRequest } from "@/lib/internal-auth";
 import { NextRequest } from "next/server";
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { triageOneReport, triagePendingBatchDetailed } from "@/services/triage-runner";
@@ -13,12 +14,6 @@ export const dynamic = "force-dynamic";
  */
 export const maxDuration = 10;
 
-function authorizeInternal(req: NextRequest) {
-  const secret = process.env.INTERNAL_TRIAGE_SECRET?.trim();
-  if (!secret) return false;
-  return req.headers.get("x-internal-triage-secret") === secret;
-}
-
 function clampLimit(raw: unknown, fallback: number): number {
   const n = Number(raw ?? fallback);
   if (!Number.isFinite(n)) return fallback;
@@ -31,7 +26,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 }
 
 export async function POST(req: NextRequest) {
-  if (!authorizeInternal(req)) {
+  if (!authorizeInternalRequest(req)) {
     return jsonError("Unauthorized.", 401);
   }
 
