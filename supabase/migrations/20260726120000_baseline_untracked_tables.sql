@@ -118,19 +118,18 @@ CREATE INDEX IF NOT EXISTS disaster_reports_reporter_user_id_idx
 -- ---------------------------------------------------------------------------
 -- aeris_user_roles — RBAC for the dashboard
 -- ---------------------------------------------------------------------------
--- ⚠️ KNOWN DEFECT — user_id is uuid, but the app authenticates with Privy,
--- whose user ids are DIDs ("did:privy:..."). A DID is not a valid uuid, so
--- every role lookup for a Privy session returns PostgREST 22P02 (400) and
--- fails closed to guest_viewer. Combined with this table being empty, NO USER
--- CAN CURRENTLY HOLD THE admin ROLE, which disables report review
--- (lib/review-auth.ts) and hard-blocks Privy users on mobile (middleware.ts).
+-- OWNED BY AERIS CHAT, which creates it in
+-- 20260521120000_add_ai_triage_and_user_roles.sql but never reads it. Mirrored
+-- here (IF NOT EXISTS, so it is a no-op against the real database) because the
+-- dashboard is its only consumer.
 --
--- The fix is a deliberate schema decision, so it is NOT applied here. See
--- docs/AUTH_ROLES.md for the two options and the migration to run once chosen.
+-- Reproduced as originally defined, including the auth.users foreign key.
+-- 20260726130000 then converts user_id to text — see that migration and
+-- docs/AUTH_ROLES.md for why.
 CREATE TABLE IF NOT EXISTS public.aeris_user_roles (
-  user_id    uuid PRIMARY KEY,
-  role       text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  user_id    uuid PRIMARY KEY REFERENCES auth.users (id) ON DELETE CASCADE,
+  role       text NOT NULL CHECK (role IN ('volunteer', 'admin')),
+  created_at timestamptz NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
 -- ---------------------------------------------------------------------------
