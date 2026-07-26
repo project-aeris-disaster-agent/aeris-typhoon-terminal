@@ -133,11 +133,7 @@ export async function middleware(request: NextRequest) {
       const mobileBlock = await blockMobileNonAdminApi(request, verified.userId);
       if (mobileBlock) return mobileBlock;
 
-      const response = NextResponse.next({
-        request: { headers: request.headers },
-      });
-      response.headers.set("x-aeris-user-id", verified.userId);
-      return response;
+      return NextResponse.next({ request: { headers: request.headers } });
     }
   }
 
@@ -153,11 +149,7 @@ export async function middleware(request: NextRequest) {
     const mobileBlock = await blockMobileNonAdminApi(request, supabaseUserId);
     if (mobileBlock) return mobileBlock;
 
-    const response = NextResponse.next({
-      request: { headers: request.headers },
-    });
-    response.headers.set("x-aeris-user-id", supabaseUserId);
-    return response;
+    return NextResponse.next({ request: { headers: request.headers } });
   }
 
   if (pathname.startsWith("/api/")) {
