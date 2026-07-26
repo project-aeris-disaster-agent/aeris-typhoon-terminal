@@ -36,15 +36,21 @@ describe("/api/health", () => {
     expect(body.checks.cron).toBe("configured");
   });
 
-  it("returns 503 on production when KV is missing", async () => {
+  it("warns but stays healthy on production when KV is missing", async () => {
+    // KV degrades rather than breaks — lib/kv.ts falls back to an in-memory
+    // store — so an unprovisioned KV must not take the whole probe to 503.
+    // It still has to be *visible*: checks.kv reports absent and a warning
+    // explains the consequence.
     setProdEnv();
     delete process.env.KV_REST_API_URL;
     const { GET } = await import("./route");
     const res = await GET();
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.ok).toBe(false);
-    expect(body.checks.missing).toContain("KV_REST_API_URL");
+    expect(body.ok).toBe(true);
+    expect(body.checks.missing).not.toContain("KV_REST_API_URL");
+    expect(body.checks.kv).toBe("absent");
+    expect(body.checks.warnings.join(" ")).toContain("KV not provisioned");
   });
 
   it("returns 503 on production when CRON_SECRET is missing", async () => {

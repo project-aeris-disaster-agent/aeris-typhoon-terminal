@@ -36,16 +36,27 @@ export async function GET() {
   const required: string[] = [];
   const warnings: string[] = [];
 
+  // KV is a warning, not a hard failure, in every environment. lib/kv.ts falls
+  // back to an in-memory store, so an unprovisioned KV degrades rather than
+  // breaks: rate limits become per-instance instead of shared, and the
+  // geocode/osm/open-meteo caches stop being reused across instances. Both cost
+  // efficiency, not correctness. Auth and CRON_SECRET stay hard requirements —
+  // without those, requests are unauthenticated and every /api/cron/* route
+  // 401s, which silently disables storm-watch and weather-report alerts.
+  if (missing(PROD_KV).length > 0) {
+    warnings.push(
+      production
+        ? "KV not provisioned (per-instance in-memory store; rate limits are not shared across instances)"
+        : "KV not configured (in-memory store in dev)",
+    );
+  }
+
   if (production) {
-    required.push(...missing(PROD_KV));
     if (!authDisabled) {
       required.push(...missing(PROD_AUTH));
     }
     required.push(...missing(PROD_CRON));
   } else {
-    if (missing(PROD_KV).length > 0) {
-      warnings.push("KV not configured (in-memory store in dev)");
-    }
     if (!authDisabled && supabaseAuthEnvMissing()) {
       warnings.push("Supabase auth env missing");
     }
