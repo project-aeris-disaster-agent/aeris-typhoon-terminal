@@ -5,7 +5,12 @@ export const AERIS_BRAND = {
   char: "/assets/AERIS_char.svg",
 } as const;
 
-export const BAGYO_LOGO = "/assets/Bagyo%20Logo@5x.png";
+// `@` must be percent-encoded as %40: Next's static handler 404s the literal
+// form. Verified against a production build — /assets/Bagyo%20Logo@5x.png
+// returns 404, /assets/Bagyo%20Logo%405x.png returns 200. The sidebar logo
+// (components/Sidebar.tsx) has been rendering broken; the login page and the
+// mobile gate already hardcoded the encoded form, which is why it went unseen.
+export const BAGYO_LOGO = "/assets/Bagyo%20Logo%405x.png";
 export const SIDEBAR_AD_GIF = "/assets/ads_v2_2026.gif";
 
 export const AERIS_GLYPH_DIM = { width: 1065, height: 1214 } as const;

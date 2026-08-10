@@ -43,6 +43,13 @@ const CSP_BASE_DIRECTIVES = [
     "https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com",
     "https://tile.openstreetmap.org https://*.tile.openstreetmap.org",
     "https://gibs.earthdata.nasa.gov https://*.rainviewer.com",
+    // Piper TTS fetches its ONNX voice model from HuggingFace on first use;
+    // the host is baked into the vendored piper-tts-web bundle, not
+    // configurable. `resolve/` 302s to the LFS CDN, and browsers re-check
+    // connect-src on the redirect target, so the CDN hosts are listed too.
+    // Enforcing without these silently downgrades the agent to Web Speech —
+    // found by running the policy enforced, not by reading it.
+    "https://huggingface.co https://*.huggingface.co https://*.hf.co",
   ].join(" "),
   // youtube: webcam + livestream embeds. panahon.gov.ph: the external map
   // frame. privy.io: the auth iframe. 'self': the PAGASA PDF proxy.
