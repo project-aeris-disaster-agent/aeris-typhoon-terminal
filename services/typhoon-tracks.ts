@@ -12,6 +12,7 @@ import {
   parseMovementText,
   type StormMotion,
 } from "@/lib/tc-projection";
+import { estimateWindField } from "@/lib/tc-windfield";
 import { recordFailure, recordSuccess } from "@/services/data-freshness";
 
 export type TyphoonPoint = {
@@ -212,7 +213,11 @@ type TrackKind =
   | "proj"
   | "projpts"
   | "arrow"
-  | "label";
+  | "label"
+  | "windfield"
+  | "windfieldline"
+  | "windfieldlabel"
+  | "halo";
 
 const TRACK_KINDS: readonly TrackKind[] = [
   "best",
@@ -224,6 +229,10 @@ const TRACK_KINDS: readonly TrackKind[] = [
   "projpts",
   "arrow",
   "label",
+  "windfield",
+  "windfieldline",
+  "windfieldlabel",
+  "halo",
 ];
 
 function trackSourceId(id: string, kind: TrackKind) {
@@ -265,6 +274,110 @@ const EMPTY_COLLECTION: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
   features: [],
 };
+
+/**
+ * Estimated wind-field discs (see lib/tc-windfield.ts). Dashed outline and an
+ * on-ring "(EST.)" label: on this map solid means reported, dashed means
+ * derived, and a wind field sized from intensity climatology is derived.
+ */
+function windFieldFeatures(
+  position: LngLat,
+  windKph: number | null | undefined,
+): GeoJSON.FeatureCollection {
+  const estimate = estimateWindField(windKph);
+  if (!estimate) return EMPTY_COLLECTION;
+
+  const features: GeoJSON.Feature[] = [
+    {
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [circlePolygon(position, estimate.galeKm)],
+      },
+      properties: {
+        band: "gale",
+        label: `GALE WINDS TO ~${estimate.galeKm} KM (EST.)`,
+      },
+    },
+  ];
+  if (estimate.stormKm) {
+    features.push({
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [circlePolygon(position, estimate.stormKm)],
+      },
+      properties: {
+        band: "storm",
+        label: `STORM WINDS TO ~${estimate.stormKm} KM (EST.)`,
+      },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
+/**
+ * Wind-field + marker-glow layers, shared by the storm and advisory
+ * renderers. Call order matters: this runs before the track/point layers so
+ * the discs sit underneath everything else.
+ */
+function addWindFieldLayers(map: MLMap, id: string, accent: string) {
+  ensureLayer(map, trackLayerId(id, "windfield"), {
+    id: trackLayerId(id, "windfield"),
+    type: "fill",
+    source: trackSourceId(id, "windfield"),
+    paint: {
+      // Storm-force band reads stronger than the gale band without needing a
+      // second color — layered opacity does the graduation.
+      "fill-color": accent,
+      "fill-opacity": ["match", ["get", "band"], "storm", 0.16, 0.09],
+    },
+  });
+  ensureLayer(map, trackLayerId(id, "windfieldline"), {
+    id: trackLayerId(id, "windfieldline"),
+    type: "line",
+    source: trackSourceId(id, "windfield"),
+    paint: {
+      "line-color": accent,
+      "line-width": 1.25,
+      "line-dasharray": [3, 3],
+      "line-opacity": 0.7,
+    },
+  });
+  ensureLayer(map, trackLayerId(id, "windfieldlabel"), {
+    id: trackLayerId(id, "windfieldlabel"),
+    type: "symbol",
+    source: trackSourceId(id, "windfield"),
+    layout: {
+      "symbol-placement": "line",
+      "text-field": ["get", "label"],
+      "text-size": 9,
+      "text-allow-overlap": false,
+      "text-padding": 2,
+    },
+    paint: {
+      "text-color": accent,
+      "text-halo-color": "#0b1220",
+      "text-halo-width": 1.2,
+      "text-opacity": 0.9,
+    },
+  });
+}
+
+/** Soft glow under the storm marker so the center reads at a glance. */
+function addHaloLayer(map: MLMap, id: string, accent: string) {
+  ensureLayer(map, trackLayerId(id, "halo"), {
+    id: trackLayerId(id, "halo"),
+    type: "circle",
+    source: trackSourceId(id, "point"),
+    paint: {
+      "circle-radius": 16,
+      "circle-color": accent,
+      "circle-blur": 1,
+      "circle-opacity": 0.45,
+    },
+  });
+}
 
 function projectionFeatures(
   position: LngLat,
@@ -360,7 +473,15 @@ export function renderTyphoonOnMap(
   setOrUpdateGeoJson(map, trackSourceId(storm.id, "proj"), projection.line);
   setOrUpdateGeoJson(map, trackSourceId(storm.id, "projpts"), projection.points);
   setOrUpdateGeoJson(map, trackSourceId(storm.id, "arrow"), projection.arrow);
+  setOrUpdateGeoJson(
+    map,
+    trackSourceId(storm.id, "windfield"),
+    windFieldFeatures(storm.position, storm.windKph),
+  );
 
+  // First in, bottom of the stack: the estimated wind-field discs must sit
+  // under the track, projection, and marker layers.
+  addWindFieldLayers(map, storm.id, style.accent);
   ensureLayer(map, trackLayerId(storm.id, "cone"), {
     id: trackLayerId(storm.id, "cone"),
     type: "fill",
@@ -411,6 +532,7 @@ export function renderTyphoonOnMap(
       "line-opacity": 0.65,
     },
   });
+  addHaloLayer(map, storm.id, style.accent);
   ensureLayer(map, trackLayerId(storm.id, "point"), {
     id: trackLayerId(storm.id, "point"),
     type: "circle",
@@ -552,8 +674,16 @@ export function renderOutsideParAdvisoryOnMap(
   setOrUpdateGeoJson(map, trackSourceId(id, "proj"), projection.line);
   setOrUpdateGeoJson(map, trackSourceId(id, "projpts"), projection.points);
   setOrUpdateGeoJson(map, trackSourceId(id, "arrow"), projection.arrow);
+  setOrUpdateGeoJson(
+    map,
+    trackSourceId(id, "windfield"),
+    windFieldFeatures(advisory.position, advisory.windKph),
+  );
 
+  // Discs first so they sit under the projection and marker.
+  addWindFieldLayers(map, id, style.accent);
   addProjectionLayers(map, id, style.accent);
+  addHaloLayer(map, id, style.accent);
   ensureLayer(map, trackLayerId(id, "point"), {
     id: trackLayerId(id, "point"),
     type: "circle",
