@@ -202,27 +202,93 @@ async function enqueueReport(body) {
   });
 }
 
-async function flushQueuedReports() {
-  const db = await openQueueDb();
-  const tx = db.transaction(QUEUE_STORE, "readwrite");
-  const store = tx.objectStore(QUEUE_STORE);
-  const all = await new Promise((resolve, reject) => {
-    const req = store.getAll();
+/** Read the whole queue inside one short-lived transaction. */
+async function readQueue(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(QUEUE_STORE, "readonly");
+    const req = tx.objectStore(QUEUE_STORE).getAll();
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+}
+
+/** Delete a batch of ids inside one fresh transaction. */
+async function dropQueued(db, ids) {
+  if (!ids.length) return;
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(QUEUE_STORE, "readwrite");
+    const store = tx.objectStore(QUEUE_STORE);
+    for (const id of ids) store.delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * A queued report older than this is dropped unsent. It matches the 72h
+ * operational TTL on the reports feed: a report about conditions three days
+ * ago is not actionable, and replaying it wastes an operator's attention
+ * during the next event.
+ */
+const QUEUE_MAX_AGE_MS = 72 * 60 * 60 * 1000;
+
+/**
+ * Flush the offline queue.
+ *
+ * This used to hold a single transaction open across the whole loop:
+ *
+ *     const tx = db.transaction(...);            // opened once
+ *     const all = await getAll();
+ *     for (...) { await fetch(...); store.delete(entry.id); }
+ *
+ * An IndexedDB transaction auto-commits as soon as the event loop yields, so
+ * the first `await fetch` ended it and every `store.delete` afterwards threw
+ * TransactionInactiveError — straight into the `catch` labelled "keep queued".
+ * The POST had succeeded; the entry was simply never removed. Every later sync
+ * replayed the entire backlog, so one report filed offline became a duplicate
+ * incident on every reconnect, forever, and the queue never drained.
+ *
+ * Reads and deletes now each get their own transaction, with the network calls
+ * strictly between them.
+ */
+async function flushQueuedReports() {
+  const db = await openQueueDb();
+  let all;
+  try {
+    all = await readQueue(db);
+  } catch {
+    return;
+  }
+
+  const now = Date.now();
+  const done = [];
+
   for (const entry of all) {
+    if (typeof entry.ts === "number" && now - entry.ts > QUEUE_MAX_AGE_MS) {
+      done.push(entry.id);
+      continue;
+    }
     try {
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(entry.body),
       });
-      if (res.ok) store.delete(entry.id);
+      // 2xx means stored. A 400 means the server will never accept this body
+      // (bad category, coordinates outside PH, spam filter), so retrying it on
+      // every reconnect is pointless. Everything else stays queued —
+      // especially 401/403, which usually mean the session lapsed while the
+      // reporter was offline and will succeed once they sign back in. Losing a
+      // citizen's report to an expired cookie is the worse failure.
+      if (res.ok || res.status === 400) {
+        done.push(entry.id);
+      }
     } catch {
-      /* keep queued, try again later */
+      /* offline again — keep queued, try on the next sync */
     }
   }
+
+  await dropQueued(db, done).catch(() => undefined);
 }
 
 self.addEventListener("sync", (event) => {
