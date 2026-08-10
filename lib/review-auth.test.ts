@@ -43,6 +43,31 @@ describe("authorizeReportReview", () => {
     if (!auth.ok) expect(auth.status).toBe(403);
   });
 
+  // Guards the constant-time comparison: a prefix match must not pass, and a
+  // length mismatch must not throw. secretsMatch digests both sides first.
+  it.each([
+    ["a wrong secret of the same length", "secret-124"],
+    ["a correct prefix", "secret-12"],
+    ["a longer superstring", "secret-1234567890"],
+    ["an empty string", ""],
+  ])("rejects ai_agent presenting %s", async (_label, presented) => {
+    process.env.INTERNAL_TRIAGE_SECRET = "secret-123";
+    const auth = await authorizeReportReview(
+      mockRequest({ "x-internal-triage-secret": presented }),
+      "ai_agent",
+    );
+    expect(auth.ok).toBe(false);
+    if (!auth.ok) expect(auth.status).toBe(403);
+  });
+
+  it("rejects ai_agent when no internal secret is configured", async () => {
+    const auth = await authorizeReportReview(
+      mockRequest({ "x-internal-triage-secret": "anything" }),
+      "ai_agent",
+    );
+    expect(auth.ok).toBe(false);
+  });
+
   it("allows human_operator when session role is admin", async () => {
     (getSessionAerisRole as jest.Mock).mockResolvedValue({
       userId: "user-1",

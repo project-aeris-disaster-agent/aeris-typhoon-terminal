@@ -1,11 +1,24 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { lookupAerisRoleByUserId } from "@/lib/aeris-role-lookup";
-import { productionAuthMisconfigured } from "@/lib/auth-config";
+import { isDashboardAuthDisabled, productionAuthMisconfigured } from "@/lib/auth-config";
 import { isMobileUserAgent } from "@/lib/mobile-access";
 import { verifyPrivyAccessToken } from "@/lib/privy-server";
 import { safePostLoginPath } from "@/lib/safe-redirect";
 
+/**
+ * Paths that skip the session gate. Everything here must carry its own guard:
+ * `/api/cron` and `/api/internal` authenticate with an operator secret (see
+ * lib/internal-auth.ts, lib/minds-auth.ts), `/api/health` is deliberately
+ * anonymous for uptime probes, and the rest are the login surfaces themselves.
+ *
+ * `/api/geocode` used to be here. Its only callers are components/MapSearchBar
+ * and lib/resolve-user-location, both of which run on the authenticated
+ * dashboard — so the exemption bought nothing and left an open Nominatim /
+ * Photon proxy whose per-IP limiter degrades to per-instance counters whenever
+ * KV is unprovisioned. Abuse there gets our egress IP banned by OSM, which
+ * takes location search down exactly when it is needed.
+ */
 const PUBLIC_PATHS = [
   "/login",
   "/refresh",
@@ -13,7 +26,6 @@ const PUBLIC_PATHS = [
   "/api/health",
   "/api/cron",
   "/api/internal",
-  "/api/geocode",
   "/auth",
 ];
 
@@ -96,7 +108,10 @@ async function getSupabaseUserId(request: NextRequest): Promise<string | null> {
 }
 
 export async function middleware(request: NextRequest) {
-  if (process.env.DASHBOARD_AUTH_DISABLED === "true") {
+  // Via the helper, not the raw env var: the helper refuses to honour the flag
+  // on a production deploy. Reading process.env directly here is what let a
+  // single misset variable disable the gate in production.
+  if (isDashboardAuthDisabled()) {
     return NextResponse.next();
   }
 

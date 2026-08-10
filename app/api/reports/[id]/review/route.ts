@@ -55,14 +55,27 @@ export async function POST(
   const auth = await authorizeReportReview(req, validated.data.actorType);
   if (!auth.ok) return jsonError(auth.error, auth.status);
 
+  // The audit trail records the *authenticated* principal, never the one the
+  // body asked for. `actorId` used to fall back to `validated.data.actorId`,
+  // so any admin (or anything holding INTERNAL_TRIAGE_SECRET) could attribute
+  // a verify/reject to an arbitrary id and pay `review_report` XP to any user
+  // — while report_review_events recorded the claimed actor as fact. The
+  // claim is kept, clearly labelled, in the event metadata.
+  const actorId = auth.actorId;
+  const claimedActorId =
+    validated.data.actorId && validated.data.actorId !== actorId
+      ? validated.data.actorId
+      : undefined;
+
   try {
     const report = await reviewSupabaseReport({
       reportId,
       ...validated.data,
-      actorId: validated.data.actorId ?? auth.actorId,
+      actorId,
       metadata: {
         ...validated.data.metadata,
         requestSource: "aeris-dashboard-api",
+        ...(claimedActorId ? { claimedActorId } : {}),
       },
     });
 
@@ -70,7 +83,7 @@ export async function POST(
     // placeholder operator are excluded):
     if (validated.data.action === "verify") {
       //  • reward the human operator for verifying the report
-      const operatorId = validated.data.actorId ?? auth.actorId;
+      const operatorId = actorId;
       if (
         validated.data.actorType === "human_operator" &&
         operatorId &&

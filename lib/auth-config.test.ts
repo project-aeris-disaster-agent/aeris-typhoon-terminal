@@ -45,11 +45,20 @@ describe("auth-config", () => {
     expect(productionAuthMisconfigured()).toBe(false);
   });
 
-  it("does not require Supabase when auth is disabled", () => {
+  it("honours the auth-disabled flag outside production", () => {
+    process.env.VERCEL_ENV = "preview";
+    process.env.DASHBOARD_AUTH_DISABLED = "true";
+    expect(isDashboardAuthDisabled()).toBe(true);
+    expect(productionAuthMisconfigured()).toBe(false);
+  });
+
+  it("ignores the auth-disabled flag on a production deploy", () => {
     process.env.VERCEL_ENV = "production";
     process.env.DASHBOARD_AUTH_DISABLED = "true";
-    expect(productionAuthMisconfigured()).toBe(false);
-    expect(isDashboardAuthDisabled()).toBe(true);
+    expect(isDashboardAuthDisabled()).toBe(false);
+    // With the flag ignored, production must still prove its auth env is
+    // complete rather than being waved through by the escape hatch.
+    expect(productionAuthMisconfigured()).toBe(true);
   });
 
   it("reports missing Supabase env", () => {
