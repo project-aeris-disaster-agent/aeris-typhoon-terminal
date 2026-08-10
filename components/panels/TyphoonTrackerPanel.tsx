@@ -12,6 +12,8 @@ import {
   fetchPagasaBulletins,
   renderTyphoonOnMap,
   clearTyphoonFromMap,
+  renderOutsideParAdvisoryOnMap,
+  clearOutsideParAdvisoryFromMap,
   type OutsideParAdvisory,
   type PagasaBulletinItem,
   type PagasaBulletinsFetchResult,
@@ -200,13 +202,24 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
     };
   }, []);
 
+  // Everything the tracker knows about goes on the map, not just in-PAR
+  // storms: red for systems inside PAR, amber for outside-PAR monitors, and
+  // the PAGASA advisory storm when its location text parsed to coordinates.
+  // Each carries a projected-motion ray (see lib/tc-projection.ts) — a
+  // dead-reckoned direction indicator, deliberately styled apart from the
+  // official track.
   useEffect(() => {
     if (!map) return;
-    for (const s of storms) renderTyphoonOnMap(map, s);
+    for (const s of storms) renderTyphoonOnMap(map, s, { variant: "par" });
+    for (const s of outsideParGdacs)
+      renderTyphoonOnMap(map, s, { variant: "monitor" });
+    if (outsidePar) renderOutsideParAdvisoryOnMap(map, outsidePar);
     return () => {
       for (const s of storms) clearTyphoonFromMap(map, s.id);
+      for (const s of outsideParGdacs) clearTyphoonFromMap(map, s.id);
+      clearOutsideParAdvisoryFromMap(map);
     };
-  }, [map, storms]);
+  }, [map, storms, outsideParGdacs, outsidePar]);
 
   return (
     <div className="space-y-2">
