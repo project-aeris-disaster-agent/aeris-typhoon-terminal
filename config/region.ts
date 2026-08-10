@@ -43,10 +43,15 @@ export const PH_MAX_BOUNDS: [[number, number], [number, number]] = [
  * 165°E covers the WestPac genesis region where PH-bound TCs actually form;
  * the far half to 180°E stays card-only on purpose (empty ocean at that
  * distance has no operational value on this map).
+ *
+ * North: 31.5° covers the Taiwan Strait / Ryukyu band that recurving systems
+ * pass through while still influencing PH weather (verified need: a live
+ * monitor storm at 30.1°N sat just past the old 29° cap). Storms at Japan
+ * latitudes stay card-only for the same no-operational-value reason.
  */
 export const MAP_2D_MAX_BOUNDS: [[number, number], [number, number]] = [
   [108.0, 1.5],
-  [165.0, 29.0],
+  [165.0, 31.5],
 ];
 
 export const DEFAULT_ZOOM = 5.4;

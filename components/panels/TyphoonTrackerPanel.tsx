@@ -52,35 +52,51 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
 
   const hasOutsidePar = Boolean(outsidePar) || outsideParGdacs.length > 0;
   const hasAnyTc = storms.length > 0 || hasOutsidePar;
-  const monitorCount = (outsidePar ? 1 : 0) + outsideParGdacs.length;
+  // The PAGASA advisory and a tracked storm can be the same system (linked by
+  // coveredByStormId). Cards: one entry — the PAGASA card, carrying the
+  // tracked storm's approach data. Map: the tracked storm renders (real track
+  // and forecast); the advisory's single parsed point does not.
+  const coveringStorm = outsidePar?.coveredByStormId
+    ? (outsideParGdacs.find((s) => s.id === outsidePar.coveredByStormId) ?? null)
+    : null;
+  const uncoveredMonitors = outsideParGdacs.filter(
+    (s) => s.id !== outsidePar?.coveredByStormId,
+  );
 
-  const outsideParThreats: OutsideParThreatItem[] = outsidePar
-    ? [
-        (() => {
-          const names = resolveStormDisplayNames(
-            formatPagasaStormName(outsidePar.name),
-          );
-          return {
-            key: "pagasa",
-            name: names.primary,
-            subName: names.secondary,
-            windKph: outsidePar.windKph,
-            source: "pagasa" as const,
-          };
-        })(),
-      ]
-    : outsideParGdacs.map((s) => {
-        const names = resolveStormDisplayNames(s.name, s.localName);
-        return {
-          key: s.id,
-          name: names.primary,
-          subName: names.secondary,
-          windKph: s.windKph,
-          distanceToParKm: s.distanceToParKm,
-          approachingPar: s.approachingPar,
-          source: "gdacs" as const,
-        };
-      });
+  const outsideParThreats: OutsideParThreatItem[] = [
+    ...(outsidePar
+      ? [
+          (() => {
+            const names = resolveStormDisplayNames(
+              formatPagasaStormName(outsidePar.name),
+            );
+            return {
+              key: "pagasa",
+              name: names.primary,
+              subName: names.secondary,
+              windKph: outsidePar.windKph,
+              distanceToParKm: coveringStorm?.distanceToParKm,
+              approachingPar: coveringStorm?.approachingPar,
+              source: "pagasa" as const,
+            };
+          })(),
+        ]
+      : []),
+    ...uncoveredMonitors.map((s) => {
+      const names = resolveStormDisplayNames(s.name, s.localName);
+      return {
+        key: s.id,
+        name: names.primary,
+        subName: names.secondary,
+        windKph: s.windKph,
+        distanceToParKm: s.distanceToParKm,
+        approachingPar: s.approachingPar,
+        source: "gdacs" as const,
+      };
+    }),
+  ];
+
+  const monitorCount = outsideParThreats.length;
 
   const statusBadge = useMemo(() => {
     if (loading) return <Pill>loading</Pill>;
@@ -213,7 +229,11 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
     for (const s of storms) renderTyphoonOnMap(map, s, { variant: "par" });
     for (const s of outsideParGdacs)
       renderTyphoonOnMap(map, s, { variant: "monitor" });
-    if (outsidePar) renderOutsideParAdvisoryOnMap(map, outsidePar);
+    // The advisory's single parsed point only renders when no tracked storm
+    // covers the same system — a real track and forecast beat dead reckoning.
+    if (outsidePar && !outsidePar.coveredByStormId) {
+      renderOutsideParAdvisoryOnMap(map, outsidePar);
+    }
     return () => {
       for (const s of storms) clearTyphoonFromMap(map, s.id);
       for (const s of outsideParGdacs) clearTyphoonFromMap(map, s.id);

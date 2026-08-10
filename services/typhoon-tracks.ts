@@ -20,6 +20,10 @@ export type TyphoonPoint = {
   time?: string | null;
   windKph?: number | null;
   pressureHpa?: number | null;
+  /** Hours ahead of analysis, for forecast points. */
+  hoursAhead?: number | null;
+  /** JMA 70% position-probability circle, km — reported, not derived. */
+  probabilityRadiusKm?: number | null;
   radiusKm?: {
     kt60?: number;
     kt30?: number;
@@ -40,6 +44,8 @@ export type Typhoon = {
   landfallEta?: string | null;
   bestTrack: TyphoonPoint[];
   forecast: TyphoonPoint[];
+  /** Four-digit basin storm number when known (JMA); PAGASA prints it too. */
+  typhoonNumber?: string;
   /** Distance (km) to PAR — only set for outside-PAR monitor systems. */
   distanceToParKm?: number;
   /** Whether an outside-PAR system is tracking toward PAR. */
@@ -57,6 +63,12 @@ export type OutsideParAdvisory = {
   issuedAt: string | null;
   windKph: number | null;
   position: LngLat | null;
+  /**
+   * Id of the tracked storm covering the same system. When set, the panel
+   * keeps the PAGASA card but renders that storm on the map instead of the
+   * advisory's single parsed point.
+   */
+  coveredByStormId?: string | null;
 };
 
 /** A single official PAGASA Tropical Cyclone Bulletin (index entry). */
@@ -217,7 +229,9 @@ type TrackKind =
   | "windfield"
   | "windfieldline"
   | "windfieldlabel"
-  | "halo";
+  | "halo"
+  | "probcircles"
+  | "ringslabel";
 
 const TRACK_KINDS: readonly TrackKind[] = [
   "best",
@@ -233,6 +247,8 @@ const TRACK_KINDS: readonly TrackKind[] = [
   "windfieldline",
   "windfieldlabel",
   "halo",
+  "probcircles",
+  "ringslabel",
 ];
 
 function trackSourceId(id: string, kind: TrackKind) {
@@ -431,6 +447,44 @@ function projectionFeatures(
   };
 }
 
+const EMPTY_PROJECTION = {
+  line: EMPTY_COLLECTION,
+  points: EMPTY_COLLECTION,
+  arrow: EMPTY_COLLECTION,
+};
+
+/** Official probability circles at forecast points (JMA), as dashed rings. */
+function probabilityCircleFeatures(forecast: TyphoonPoint[]): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = forecast
+    .filter((p) => p.probabilityRadiusKm && p.probabilityRadiusKm > 0)
+    .map((p) => ({
+      type: "Feature" as const,
+      geometry: {
+        type: "Polygon" as const,
+        coordinates: [circlePolygon(p.position, p.probabilityRadiusKm!)],
+      },
+      properties: { hoursAhead: p.hoursAhead ?? null },
+    }));
+  return features.length ? { type: "FeatureCollection", features } : EMPTY_COLLECTION;
+}
+
+/** Time marks along a real forecast track, reusing the projpts styling. */
+function forecastTimeMarks(forecast: TyphoonPoint[]): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = forecast
+    .filter((p) => typeof p.hoursAhead === "number" && p.hoursAhead > 0)
+    .map((p) => ({
+      type: "Feature" as const,
+      geometry: { type: "Point" as const, coordinates: p.position },
+      properties: { t: `+${p.hoursAhead}h` },
+    }));
+  return features.length ? { type: "FeatureCollection", features } : EMPTY_COLLECTION;
+}
+
+function hasReportedRadii(storm: Typhoon): boolean {
+  const r = storm.bestTrack[storm.bestTrack.length - 1]?.radiusKm;
+  return Boolean(r && (r.kt60 || r.kt30 || r.kt15));
+}
+
 export function renderTyphoonOnMap(
   map: MLMap,
   storm: Typhoon,
@@ -440,7 +494,20 @@ export function renderTyphoonOnMap(
   const style = VARIANT_STYLE[variant];
   const bestCoords = storm.bestTrack.map((p) => p.position);
   const fcstCoords = storm.forecast.map((p) => p.position);
-  const projection = projectionFeatures(storm.position, motionForStorm(storm));
+
+  // The grammar rule that governs everything below: reported data replaces
+  // derived visuals, never coexists with them. A real forecast track retires
+  // the dead-reckoned ray; official probability circles retire the synthetic
+  // cone; reported wind radii retire the climatological wind-field estimate.
+  const hasRealForecast = fcstCoords.length > 0;
+  const probCircles = probabilityCircleFeatures(storm.forecast);
+  const hasProbCircles = probCircles.features.length > 0;
+  const projection = hasRealForecast
+    ? EMPTY_PROJECTION
+    : projectionFeatures(storm.position, motionForStorm(storm));
+  const timeMarks = hasRealForecast
+    ? forecastTimeMarks(storm.forecast)
+    : projection.points;
 
   setOrUpdateGeoJson(map, trackSourceId(storm.id, "best"), {
     type: "Feature",
@@ -452,11 +519,22 @@ export function renderTyphoonOnMap(
     geometry: { type: "LineString", coordinates: fcstCoords },
     properties: {},
   });
-  setOrUpdateGeoJson(map, trackSourceId(storm.id, "cone"), {
-    type: "Feature",
-    geometry: { type: "Polygon", coordinates: [buildForecastCone(storm.forecast)] },
-    properties: {},
-  });
+  setOrUpdateGeoJson(
+    map,
+    trackSourceId(storm.id, "cone"),
+    // Official probability circles retire the synthetic widening cone.
+    hasProbCircles
+      ? EMPTY_COLLECTION
+      : {
+          type: "Feature",
+          geometry: {
+            type: "Polygon",
+            coordinates: [buildForecastCone(storm.forecast)],
+          },
+          properties: {},
+        },
+  );
+  setOrUpdateGeoJson(map, trackSourceId(storm.id, "probcircles"), probCircles);
   setOrUpdateGeoJson(map, trackSourceId(storm.id, "point"), {
     type: "Feature",
     geometry: { type: "Point", coordinates: storm.position },
@@ -471,12 +549,15 @@ export function renderTyphoonOnMap(
     features: buildWindRings(storm),
   });
   setOrUpdateGeoJson(map, trackSourceId(storm.id, "proj"), projection.line);
-  setOrUpdateGeoJson(map, trackSourceId(storm.id, "projpts"), projection.points);
+  setOrUpdateGeoJson(map, trackSourceId(storm.id, "projpts"), timeMarks);
   setOrUpdateGeoJson(map, trackSourceId(storm.id, "arrow"), projection.arrow);
   setOrUpdateGeoJson(
     map,
     trackSourceId(storm.id, "windfield"),
-    windFieldFeatures(storm.position, storm.windKph),
+    // Reported radii (rings layer) retire the climatological estimate.
+    hasReportedRadii(storm)
+      ? EMPTY_COLLECTION
+      : windFieldFeatures(storm.position, storm.windKph),
   );
 
   // First in, bottom of the stack: the estimated wind-field discs must sit
@@ -511,6 +592,19 @@ export function renderTyphoonOnMap(
       "line-dasharray": [2, 2],
     },
   });
+  // Official JMA position-probability circles at each forecast point. Thin and
+  // faint on purpose: they are context for the forecast line, not competition.
+  ensureLayer(map, trackLayerId(storm.id, "probcircles"), {
+    id: trackLayerId(storm.id, "probcircles"),
+    type: "line",
+    source: trackSourceId(storm.id, "probcircles"),
+    paint: {
+      "line-color": style.accent,
+      "line-width": 1,
+      "line-dasharray": [2, 3],
+      "line-opacity": 0.5,
+    },
+  });
   addProjectionLayers(map, storm.id, style.accent);
   ensureLayer(map, trackLayerId(storm.id, "rings"), {
     id: trackLayerId(storm.id, "rings"),
@@ -530,6 +624,26 @@ export function renderTyphoonOnMap(
       ],
       "line-width": 1.25,
       "line-opacity": 0.65,
+    },
+  });
+  // On-ring caption for *reported* radii, mirroring the estimated disc's
+  // "(EST.)" caption — the reader should always know which kind they see.
+  ensureLayer(map, trackLayerId(storm.id, "ringslabel"), {
+    id: trackLayerId(storm.id, "ringslabel"),
+    type: "symbol",
+    source: trackSourceId(storm.id, "rings"),
+    layout: {
+      "symbol-placement": "line",
+      "text-field": ["get", "label"],
+      "text-size": 9,
+      "text-allow-overlap": false,
+      "text-padding": 2,
+    },
+    paint: {
+      "text-color": style.accent,
+      "text-halo-color": "#0b1220",
+      "text-halo-width": 1.2,
+      "text-opacity": 0.9,
     },
   });
   addHaloLayer(map, storm.id, style.accent);
@@ -737,6 +851,12 @@ function ensureLayer(map: MLMap, id: string, spec: maplibregl.AddLayerObject) {
   map.addLayer(spec, layerBeforeDynamicOverlays(map));
 }
 
+const RING_BAND_LABEL: Record<number, string> = {
+  60: "STORM",
+  30: "GALE",
+  15: "STRONG",
+};
+
 function buildWindRings(storm: Typhoon): GeoJSON.Feature[] {
   const [lng, lat] = storm.position;
   const rings: GeoJSON.Feature[] = [];
@@ -754,7 +874,10 @@ function buildWindRings(storm: Typhoon): GeoJSON.Feature[] {
         type: "Polygon",
         coordinates: [circlePolygon([lng, lat], radiusKm)],
       },
-      properties: { speed },
+      properties: {
+        speed,
+        label: `${RING_BAND_LABEL[speed] ?? "WIND"} WINDS TO ${Math.round(radiusKm)} KM (REPORTED)`,
+      },
     });
   }
   return rings;

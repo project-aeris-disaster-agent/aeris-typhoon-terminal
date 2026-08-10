@@ -22,6 +22,11 @@ import {
   fetchGdacsRssXml,
   firstRssMatch,
 } from "@/lib/gdacs-rss";
+import {
+  fetchJmaStorms,
+  typhoonNumberFromText,
+  type JmaStorm,
+} from "@/lib/jma-typhoon";
 import { assessOutsideParThreat } from "@/lib/tc-threat";
 
 export const runtime = "nodejs";
@@ -32,9 +37,15 @@ export const revalidate = 600;
 
 type StormPoint = {
   position: [number, number];
-  time?: string;
-  windKph?: number;
+  time?: string | null;
+  windKph?: number | null;
   pressureHpa?: number;
+  /** Hours ahead of analysis, for forecast points. */
+  hoursAhead?: number;
+  /** JMA 70% position-probability circle, km — reported, not derived. */
+  probabilityRadiusKm?: number | null;
+  /** Reported wind radii, km — lights up the map's real rings layer. */
+  radiusKm?: { kt60?: number; kt30?: number; kt15?: number };
 };
 
 type Storm = {
@@ -50,6 +61,8 @@ type Storm = {
   landfallEta: string | null;
   bestTrack: StormPoint[];
   forecast: StormPoint[];
+  /** Four-digit basin storm number when known (JMA); PAGASA prints it too. */
+  typhoonNumber?: string;
   /** Distance (km) to PAR — only set for outside-PAR monitor systems. */
   distanceToParKm?: number;
   /** Whether an outside-PAR system is tracking toward PAR. */
@@ -66,6 +79,13 @@ type OutsideParAdvisory = {
   issuedAt: string | null;
   windKph: number | null;
   position: [number, number] | null;
+  /**
+   * Id of the tracked storm covering the same system, when one exists. The
+   * panel keeps the PAGASA card but renders the storm on the map instead of
+   * the advisory's single point — real track and forecast beat a parsed
+   * location string.
+   */
+  coveredByStormId?: string | null;
 };
 
 type JtwcPayload = {
@@ -92,8 +112,19 @@ const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 export async function GET() {
-  const pagasaOutsidePar = await buildPagasaOutsideParAdvisory();
+  // JMA runs alongside GDACS, not behind it: GDACS has been unreachable from
+  // this deployment region for stretches ("GDACS: fetch failed" in the alerts
+  // panel), and JMA — the WMO forecast authority for this basin — carries the
+  // real tracks, forecasts, and wind radii regardless.
+  const [pagasaOutsidePar, jmaStorms] = await Promise.all([
+    buildPagasaOutsideParAdvisory(),
+    fetchJmaStorms(),
+  ]);
+
+  let split: { storms: Storm[]; outsideParGdacs: Storm[] } | null = null;
   let primaryError: string | null = null;
+  let fallbackError: string | null = null;
+
   try {
     const url =
       "https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP?eventtypes=TC";
@@ -110,30 +141,144 @@ export async function GET() {
     if (!isGdacsCollection(payload)) {
       throw new Error("GDACS returned an invalid tropical cyclone payload.");
     }
-    const data = payload;
-    return jsonOk(
-      finalizeJtwcPayload(mapGeoJsonStorms(data), pagasaOutsidePar),
-      600,
-    );
+    split = mapGeoJsonStorms(payload);
   } catch (e) {
     primaryError = (e as Error).message;
   }
 
-  try {
-    const xml = await fetchGdacsRssXml();
-    const split = parseRssStorms(xml);
-    return jsonOk(
-      finalizeJtwcPayload(split, pagasaOutsidePar),
-      600,
-    );
-  } catch (fallbackError) {
+  if (!split) {
+    try {
+      split = parseRssStorms(await fetchGdacsRssXml());
+    } catch (e) {
+      fallbackError = (e as Error).message;
+      split = { storms: [], outsideParGdacs: [] };
+    }
+  }
+
+  mergeJmaStorms(split, jmaStorms, pagasaOutsidePar);
+  const payload = finalizeJtwcPayload(split, pagasaOutsidePar);
+
+  if (fallbackError) {
+    // GDACS fully down. With JMA storms flowing this is a degraded-source
+    // note, not an outage — cache normally so the tracker stays stable.
+    const hasStorms =
+      payload.storms.length > 0 || payload.outsideParGdacs.length > 0;
     return jsonOk(
       {
-        ...finalizeJtwcPayload({ storms: [], outsideParGdacs: [] }, pagasaOutsidePar),
-        _error: `${primaryError} | RSS fallback: ${(fallbackError as Error).message}`,
+        ...payload,
+        _error: `${primaryError} | RSS fallback: ${fallbackError}`,
       },
-      30,
+      hasStorms ? 600 : 30,
     );
+  }
+
+  return jsonOk(payload, 600);
+}
+
+/** True when the tracked storm and the PAGASA advisory are the same system. */
+function stormMatchesAdvisory(storm: Storm, advisory: OutsideParAdvisory): boolean {
+  const advisoryNumber = typhoonNumberFromText(advisory.name);
+  if (advisoryNumber && storm.typhoonNumber === advisoryNumber) return true;
+  // Name heuristic for GDACS storms (no number): GDACS names run "PEILOU-26",
+  // PAGASA runs "TROPICAL STORM PEILOU (2616)" — compare on the letter stem.
+  const stem = storm.name.toUpperCase().replace(/[^A-Z].*$/, "");
+  return stem.length >= 3 && advisory.name.toUpperCase().includes(stem);
+}
+
+function jmaTrackPoints(jma: JmaStorm): StormPoint[] {
+  const points: StormPoint[] = jma.track.map((position) => ({ position }));
+  const last = points[points.length - 1];
+  if (last && jma.galeRadiusKm) {
+    // The renderer's rings layer reads radii off the final best-track point.
+    // This is a *reported* radius (JMA gale-warning sector max), which also
+    // tells the renderer to drop the climatological wind-field estimate.
+    last.radiusKm = { kt30: jma.galeRadiusKm };
+  }
+  return points;
+}
+
+function jmaForecastPoints(jma: JmaStorm): StormPoint[] {
+  return jma.forecast.map((p) => ({
+    position: p.position,
+    time: p.validTimeUtc,
+    windKph: p.windKph,
+    hoursAhead: p.hoursAhead,
+    probabilityRadiusKm: p.probabilityRadiusKm,
+  }));
+}
+
+/** Overwrite a GDACS storm's guesses with JMA's reported values. */
+function enrichStormFromJma(storm: Storm, jma: JmaStorm): void {
+  storm.position = jma.position;
+  storm.category = jma.category;
+  if (jma.windKph > 0) storm.windKph = jma.windKph;
+  if (jma.gustKph) storm.gustKph = jma.gustKph;
+  if (jma.pressureHpa > 0) storm.pressureHpa = jma.pressureHpa;
+  if (jma.heading) storm.heading = jma.heading;
+  storm.typhoonNumber = jma.typhoonNumber;
+  storm.bestTrack = jmaTrackPoints(jma);
+  storm.forecast = jmaForecastPoints(jma);
+}
+
+function jmaToStorm(jma: JmaStorm): Storm {
+  return {
+    id: `jma-${jma.tcId}`,
+    name: jma.name.toUpperCase(),
+    localName: null,
+    category: jma.category,
+    position: jma.position,
+    windKph: jma.windKph,
+    pressureHpa: jma.pressureHpa,
+    gustKph: jma.gustKph ?? gustKphFromWind(jma.windKph),
+    heading: jma.heading,
+    landfallEta: null,
+    bestTrack: jmaTrackPoints(jma),
+    forecast: jmaForecastPoints(jma),
+    typhoonNumber: jma.typhoonNumber,
+  };
+}
+
+/**
+ * Fold JMA's catalogue into the GDACS buckets. A storm GDACS already tracks
+ * gets enriched in place (same id, so the map re-renders seamlessly); new
+ * storms are bucketed by position. A storm matching the PAGASA advisory is
+ * always kept as a monitor — PAGASA flagging it is the relevance judgment,
+ * and its real track should replace the advisory's dead-reckoned point.
+ */
+function mergeJmaStorms(
+  split: { storms: Storm[]; outsideParGdacs: Storm[] },
+  jmaStorms: JmaStorm[],
+  advisory: OutsideParAdvisory | null,
+): void {
+  for (const jma of jmaStorms) {
+    const jmaName = jma.name.toUpperCase();
+    const existing =
+      split.storms.find((s) => s.name.toUpperCase().includes(jmaName)) ??
+      split.outsideParGdacs.find((s) => s.name.toUpperCase().includes(jmaName));
+    if (existing) {
+      enrichStormFromJma(existing, jma);
+      continue;
+    }
+
+    const storm = jmaToStorm(jma);
+    if (isInParBbox(storm.position[0], storm.position[1])) {
+      split.storms.push(storm);
+      continue;
+    }
+
+    if (advisory && stormMatchesAdvisory(storm, advisory)) {
+      const threat = assessOutsideParThreat({
+        position: storm.position,
+        track: storm.bestTrack.map((p) => p.position),
+        heading: storm.heading,
+      });
+      storm.distanceToParKm = threat.distanceToParKm;
+      storm.approachingPar = threat.approachingPar;
+      split.outsideParGdacs.push(storm);
+      continue;
+    }
+
+    maybePushOutsideParMonitor(storm, split.outsideParGdacs);
   }
 }
 
@@ -166,15 +311,26 @@ function finalizeJtwcPayload(
   split: { storms: Storm[]; outsideParGdacs: Storm[] },
   pagasaOutsidePar: OutsideParAdvisory | null,
 ): JtwcPayload {
-  const monitors = pagasaOutsidePar
-    ? []
-    : [...split.outsideParGdacs].sort(
-        (a, b) =>
-          (a.distanceToParKm ?? Infinity) - (b.distanceToParKm ?? Infinity),
-      );
+  const monitors = [...split.outsideParGdacs].sort(
+    (a, b) => (a.distanceToParKm ?? Infinity) - (b.distanceToParKm ?? Infinity),
+  );
+
+  // Previously the advisory suppressed the whole monitor list to avoid showing
+  // the same storm twice. Now the storm and the advisory are *linked* instead:
+  // the panel keeps the PAGASA card and renders the tracked storm on the map
+  // (real track and forecast beat a position parsed out of advisory prose).
+  let outsidePar = pagasaOutsidePar;
+  if (outsidePar) {
+    const covering =
+      monitors.find((s) => stormMatchesAdvisory(s, outsidePar!)) ??
+      split.storms.find((s) => stormMatchesAdvisory(s, outsidePar!)) ??
+      null;
+    outsidePar = { ...outsidePar, coveredByStormId: covering?.id ?? null };
+  }
+
   return {
     storms: split.storms,
-    outsidePar: pagasaOutsidePar,
+    outsidePar,
     outsideParGdacs: monitors,
   };
 }
