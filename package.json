@@ -45,7 +45,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "three": "^0.169.0",
-    "viem": "^2.51.0"
+    "viem": "^2.55.13"
   },
   "devDependencies": {
     "@openzeppelin/contracts": "^5.6.1",
@@ -75,6 +75,14 @@
     "glob": "^10.5.0",
     "tmp": "^0.2.7",
     "postcss": "^8.5.23",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.3",
+    "test-exclude": "^7.0.1",
+    "ws": "^8.21.3",
+    "axios": "^1.19.0",
+    "eslint": {
+      "minimatch": {
+        "brace-expansion": "^1.1.18"
+      }
+    }
   }
 }
