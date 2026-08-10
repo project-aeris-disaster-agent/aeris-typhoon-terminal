@@ -27,6 +27,19 @@ export const maxDuration = 15;
 type ProbeResult = {
   name: string;
   status: "ok" | "degraded" | "failed" | "skipped";
+  /**
+   * Whether a failure here means the dashboard cannot do its job.
+   *
+   * Only Supabase is critical: without it no incident report can be recorded
+   * or reviewed, which is the product. A dead AERIS CHAT costs agent chat,
+   * triage, and weather narratives — real, but the map, alerts, hazard layers,
+   * and report intake all keep working. Unprovisioned KV costs shared rate
+   * limits and caches.
+   *
+   * `ok` is computed from critical probes alone so this endpoint can be paged
+   * on directly. Everything else lands in `degraded` for a ticket, not a page.
+   */
+  critical: boolean;
   latencyMs?: number;
   detail?: string;
 };
@@ -35,18 +48,22 @@ const PROBE_TIMEOUT_MS = 5_000;
 
 async function timed(
   name: string,
-  fn: (signal: AbortSignal) => Promise<Omit<ProbeResult, "name" | "latencyMs">>,
+  critical: boolean,
+  fn: (
+    signal: AbortSignal,
+  ) => Promise<Omit<ProbeResult, "name" | "latencyMs" | "critical">>,
 ): Promise<ProbeResult> {
   const startedAt = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
     const result = await fn(controller.signal);
-    return { name, ...result, latencyMs: Date.now() - startedAt };
+    return { name, critical, ...result, latencyMs: Date.now() - startedAt };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
       name,
+      critical,
       status: "failed",
       detail: controller.signal.aborted ? `timeout after ${PROBE_TIMEOUT_MS}ms` : message,
       latencyMs: Date.now() - startedAt,
@@ -134,15 +151,17 @@ export async function GET(request: Request) {
 
   const startedAt = Date.now();
   const probes = await Promise.all([
-    timed("supabase", probeSupabase),
-    timed("kv", probeKv),
-    timed("aeris-chat", probeAerisChat),
+    timed("supabase", true, probeSupabase),
+    timed("kv", false, probeKv),
+    timed("aeris-chat", false, probeAerisChat),
   ]);
 
-  // `degraded` and `skipped` are informational: KV absent or AERIS CHAT
-  // unconfigured are documented, survivable states. Only a real failure to
-  // reach a configured dependency flips ok.
-  const failed = probes.filter((probe) => probe.status === "failed");
+  const unhealthy = probes.filter(
+    (probe) => probe.status === "failed" || probe.status === "degraded",
+  );
+  // Page-worthy: a critical dependency is unreachable. Everything else is a
+  // ticket. Alert on `ok`; track `degraded` on a dashboard.
+  const failed = unhealthy.filter((probe) => probe.critical && probe.status === "failed");
   const ok = failed.length === 0;
 
   return jsonOkNoStore(
@@ -152,6 +171,9 @@ export async function GET(request: Request) {
       elapsedMs: Date.now() - startedAt,
       checkedAt: new Date().toISOString(),
       failed: failed.map((probe) => probe.name),
+      degraded: unhealthy
+        .filter((probe) => !failed.includes(probe))
+        .map((probe) => probe.name),
       probes,
     },
     ok ? 200 : 503,
