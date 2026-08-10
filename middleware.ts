@@ -2,40 +2,12 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { lookupAerisRoleByUserId } from "@/lib/aeris-role-lookup";
 import { isDashboardAuthDisabled, productionAuthMisconfigured } from "@/lib/auth-config";
+import { isPublicPath, isStaticAssetPath } from "@/lib/middleware-paths";
 import { isMobileUserAgent } from "@/lib/mobile-access";
 import { verifyPrivyAccessToken } from "@/lib/privy-server";
 import { safePostLoginPath } from "@/lib/safe-redirect";
 
-/**
- * Paths that skip the session gate. Everything here must carry its own guard:
- * `/api/cron` and `/api/internal` authenticate with an operator secret (see
- * lib/internal-auth.ts, lib/minds-auth.ts), `/api/health` is deliberately
- * anonymous for uptime probes, and the rest are the login surfaces themselves.
- *
- * `/api/geocode` used to be here. Its only callers are components/MapSearchBar
- * and lib/resolve-user-location, both of which run on the authenticated
- * dashboard — so the exemption bought nothing and left an open Nominatim /
- * Photon proxy whose per-IP limiter degrades to per-instance counters whenever
- * KV is unprovisioned. Abuse there gets our egress IP banned by OSM, which
- * takes location search down exactly when it is needed.
- */
-const PUBLIC_PATHS = [
-  "/login",
-  "/refresh",
-  "/api/auth",
-  "/api/health",
-  "/api/cron",
-  "/api/internal",
-  "/auth",
-];
-
 const PRIVY_OAUTH_PARAMS = ["privy_oauth_code", "privy_oauth_state", "privy_oauth_provider"];
-
-function isPublicPath(pathname: string) {
-  return PUBLIC_PATHS.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
-}
 
 function misconfiguredResponse(pathname: string) {
   if (pathname.startsWith("/api/")) {
@@ -116,18 +88,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
-  if (
-    isPublicPath(pathname) ||
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon") ||
-    pathname.endsWith(".ico") ||
-    pathname.endsWith(".svg") ||
-    pathname.endsWith(".json") ||
-    pathname.endsWith(".js") ||
-    pathname.endsWith(".css") ||
-    pathname.endsWith(".webp") ||
-    pathname.endsWith(".png")
-  ) {
+  if (isPublicPath(pathname) || isStaticAssetPath(pathname)) {
     return NextResponse.next();
   }
 
@@ -177,6 +138,20 @@ export async function middleware(request: NextRequest) {
   return NextResponse.redirect(loginUrl);
 }
 
+/**
+ * Keep middleware off the static asset paths entirely. It is a 167 kB edge
+ * bundle that verifies a Privy JWT (remote JWKS) and may hit Supabase, so
+ * every megabyte of hazard GeoJSON, DEM tile, and VRM model that reaches it
+ * costs latency for nothing.
+ *
+ * Excluding a directory here is also strictly safer than exempting it inside
+ * the handler: these are literal path prefixes, not extension suffixes, so a
+ * route cannot back into the exemption by ending in the right characters.
+ * A new asset directory that is not listed simply gets gated — it fails
+ * closed, which is the correct direction for this control.
+ */
 export const config = {
-  matcher: ["/((?!_next/static|_next/image).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon\\.ico|sw\\.js|manifest\\.json|icon\\.svg|icon-\\d+\\.png|ph-outline\\.json|admin-boundaries/|ads/|assets/|dem/|flood-hazard/|hazards/|models/|osm-context/|textures/|vendor/).*)",
+  ],
 };
