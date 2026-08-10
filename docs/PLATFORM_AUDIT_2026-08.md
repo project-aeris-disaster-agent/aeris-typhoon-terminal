@@ -24,7 +24,7 @@ output; nothing is inferred from documentation alone.
 > | R8 broken coverage | ✅ fixed — coverage now runs: **29.06% stmts / 22.59% branches** |
 > | R9 CI red | ✅ fixed — 13 high → **0 high** (10 moderate remain, all in the Privy wallet tree) |
 > | R10 non-constant-time compare | ✅ fixed — + 5 tests |
-> | R11 no CSP/HSTS | ✅ fixed — HSTS + Permissions-Policy enforced, CSP Report-Only |
+> | R11 no CSP/HSTS | ✅ fixed — HSTS, Permissions-Policy, and CSP all **enforcing** in production |
 > | R12 public geocode | ✅ fixed |
 > | R13 extension bypass | ✅ fixed — matcher exclusion + `/api/` never suffix-exempt, 37 tests |
 > | R14 auth-disabled flag | ✅ fixed — ignored on production deploys |
@@ -34,21 +34,36 @@ output; nothing is inferred from documentation alone.
 > `lint` ✅ · `test` ✅ **81 suites / 458 tests** · `build` ✅ · `e2e` ✅ ·
 > `npm audit --audit-level=high` ✅.
 >
-> **On enforcing the CSP.** Report-Only was measured against a production build
-> in the browser, not assumed. Findings: the `unsafe-eval` violations appear
-> only under `next dev` (webpack HMR evaluates strings) and are **absent from
-> the production bundle**, so `script-src` does not need `'unsafe-eval'`; and
-> `connect-src` was missing the apex `basemaps.cartocdn.com`, which the policy
-> caught and which is now fixed. With those two settled, the production build
-> raises **zero CSP violations**, so `CSP_ENFORCE=true` looks safe — flip it
-> after a few days of real traffic, since news-thumbnail hosts and the wallet
-> stack are the paths this local check cannot exercise.
+> **The CSP is enforcing in production**, and every step of getting there was
+> measured in a browser against a production build rather than reasoned about.
+> Four things only running it could have found:
+>
+> 1. The `unsafe-eval` violations appear **only under `next dev`** (webpack HMR
+>    evaluates strings) and are absent from the production bundle — so
+>    `script-src` does not need `'unsafe-eval'`. Judging from dev output alone
+>    would have permanently weakened the policy.
+> 2. `connect-src` was missing the apex `basemaps.cartocdn.com`; MapLibre
+>    fetches `style.json` there and tiles from the a/b/c/d shards.
+> 3. Piper TTS downloads its ONNX voice from `huggingface.co` on first use. The
+>    host is baked into the vendored bundle. Enforcing without it blocked the
+>    download and silently downgraded the agent to Web Speech — a quality
+>    regression no user would report as a CSP problem.
+> 4. `CSP_ENFORCE` set via the CLI stored as `"true\n"`, and the strict
+>    `=== "true"` no-matched. The deploy reported success while the policy
+>    stayed report-only. Now trimmed before comparing.
 >
 > Two costs worth naming. Bumping `viem` 2.52 → 2.55 (to clear the `ws`
 > advisories) grew `/login` from 687 kB to **772 kB**, which sharpens the case
 > for §7 item 17 (lazy-load Privy). And §5.1's `settleReportVotes` fix needs
-> `20260810140000_settle_report_votes_rpc.sql` applied; until then the code
-> falls back to a bounded per-voter loop that logs when it truncates.
+> `20260810140000_settle_report_votes_rpc.sql` — applied and verified.
+>
+> **Still outstanding: Vercel KV is not provisioned in production.** Every
+> `rateLimit()` call therefore counts per warm lambda instead of globally, so
+> the real ceiling is roughly *(configured limit × instances)*, and the
+> geocode/Overpass/snapshot caches are not shared. `GET /api/internal/health`
+> reports it as `degraded: ["kv"]`. Provisioning it is a Marketplace
+> integration on the Vercel account — it creates a billable resource and
+> requires accepting the provider's terms, so it needs a human.
 
 ---
 
