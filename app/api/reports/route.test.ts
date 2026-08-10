@@ -8,7 +8,9 @@ const REPORTS_KEY = "reports:list";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-function makeRequest(body: unknown, ip = "10.0.0.1") {
+const TEST_CLIENT_IP = "10.0.0.1";
+
+function makeRequest(body: unknown, ip = TEST_CLIENT_IP) {
   return new NextRequest("http://localhost/api/reports", {
     method: "POST",
     headers: {
@@ -57,8 +59,33 @@ describe("/api/reports", () => {
       confirmations: 0,
     });
     expect(body.report.ipHash).toBeUndefined();
-    expect(saved.ipHash).toMatch(/^[a-f0-9]{16}$/);
+    // Full SHA-256, not the old 8-byte prefix. Truncated to 16 hex chars and
+    // salted with a constant committed to this repo, the "hash" was reversible
+    // across the whole IPv4 space in seconds.
+    expect(saved.ipHash).toMatch(/^[a-f0-9]{64}$/);
     expect(saved.description).toBe("Flooded road near school");
+  });
+
+  it("never persists the raw reporter IP alongside the hash", async () => {
+    const { POST } = await import("./route");
+    const response = await POST(
+      makeRequest({
+        category: "flood",
+        description: "Water rising fast on the main road",
+        position: [120.9842, 14.5995],
+      }),
+    );
+    expect(response.status).toBe(201);
+
+    const stored = await store.lrange(REPORTS_KEY, 0, -1);
+    const saved = JSON.parse(stored[0]);
+
+    // The raw IP used to sit next to ipHash in metadata, which made the
+    // pseudonymization decorative. Nothing ever read it.
+    expect(saved.metadata).toBeDefined();
+    expect(saved.metadata.ipAddress).toBeUndefined();
+    expect(saved.metadata.ipHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(saved)).not.toContain(TEST_CLIENT_IP);
   });
 
   it("accepts reports exactly on the Philippines bounding box boundary", async () => {
