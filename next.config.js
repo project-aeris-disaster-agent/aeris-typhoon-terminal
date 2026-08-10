@@ -62,7 +62,12 @@ const CSP_BASE_DIRECTIVES = [
   "form-action 'self'",
 ];
 
-const CSP_ENFORCED = process.env.CSP_ENFORCE === "true";
+// Trimmed on purpose. A bare `=== "true"` silently no-matched a value stored
+// as "true\n" (a trailing newline from the CLI), leaving the policy in
+// report-only while the deploy looked successful. A security toggle that fails
+// closed *and* silently on invisible whitespace is the wrong failure mode:
+// whoever sets it gets no signal that it did nothing.
+const CSP_ENFORCED = process.env.CSP_ENFORCE?.trim() === "true";
 
 // Browsers ignore `upgrade-insecure-requests` in a report-only policy and log
 // an error saying so on every page load. Only emit it when enforcing, so the
