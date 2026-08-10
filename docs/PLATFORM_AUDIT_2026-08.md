@@ -15,27 +15,40 @@ output; nothing is inferred from documentation alone.
 > | Finding | Status |
 > |---|---|
 > | R1 operator impersonation | ✅ fixed — admin/internal-secret gate + 7 tests |
-> | R2 anon read exposure | 🟡 mostly fixed — migration applied and verified against the live DB with the anon key: the Privy DID is gone from `aeris_leaderboard`, `aeris_agent_messages` returns 0 rows, and the chat archive returns 0 rows where it previously returned all of them. **One follow-up outstanding:** the leaderboard `REVOKE` was ordered before the `DROP`/`CREATE`, so Supabase's default privileges re-granted `SELECT` to `anon` — username/level/xp/rank are still readable. Apply `20260810130000_revoke_leaderboard_anon_grant.sql`. |
-> | R3 LLM email transport | ❌ open — needs a real provider (1–2 days) |
+> | R2 anon read exposure | ✅ fixed — both migrations applied, verified with the anon key: `aeris_leaderboard` now answers `42501 permission denied`, `aeris_agent_messages` 0 rows, chat archive 0 rows where 3 exist under the service role |
+> | R3 LLM email transport | ⏸️ **deferred by the owner** — still the largest reliability gap |
 > | R4 SW queue re-submission | ✅ fixed |
 > | R5 cleartext Overpass | ✅ fixed |
 > | R6 triage prompt injection | ✅ fixed — deterministic floor + 5 tests |
-> | R7 IP retention | ❌ open |
+> | R7 IP retention | ✅ fixed — raw IP no longer stored, full digest, env-var salt |
 > | R8 broken coverage | ✅ fixed — coverage now runs: **29.06% stmts / 22.59% branches** |
 > | R9 CI red | ✅ fixed — 13 high → **0 high** (10 moderate remain, all in the Privy wallet tree) |
 > | R10 non-constant-time compare | ✅ fixed — + 5 tests |
-> | R11 no CSP/HSTS | ❌ open |
+> | R11 no CSP/HSTS | ✅ fixed — HSTS + Permissions-Policy enforced, CSP Report-Only |
 > | R12 public geocode | ✅ fixed |
-> | R13 extension bypass | ❌ open |
+> | R13 extension bypass | ✅ fixed — matcher exclusion + `/api/` never suffix-exempt, 37 tests |
 > | R14 auth-disabled flag | ✅ fixed — ignored on production deploys |
 > | R15 client-chosen actorId | ✅ fixed |
 >
-> Post-fix chain: `typecheck` ✅ · `lint` ✅ · `test` ✅ **80 suites / 420 tests**
-> · `build` ✅ · `e2e` ✅ · `npm audit --audit-level=high` ✅.
+> Fourteen of fifteen closed; R3 deferred. Post-fix chain: `typecheck` ✅ ·
+> `lint` ✅ · `test` ✅ **81 suites / 458 tests** · `build` ✅ · `e2e` ✅ ·
+> `npm audit --audit-level=high` ✅.
 >
-> One regression to note: bumping `viem` 2.52 → 2.55 (to clear the `ws`
+> **On enforcing the CSP.** Report-Only was measured against a production build
+> in the browser, not assumed. Findings: the `unsafe-eval` violations appear
+> only under `next dev` (webpack HMR evaluates strings) and are **absent from
+> the production bundle**, so `script-src` does not need `'unsafe-eval'`; and
+> `connect-src` was missing the apex `basemaps.cartocdn.com`, which the policy
+> caught and which is now fixed. With those two settled, the production build
+> raises **zero CSP violations**, so `CSP_ENFORCE=true` looks safe — flip it
+> after a few days of real traffic, since news-thumbnail hosts and the wallet
+> stack are the paths this local check cannot exercise.
+>
+> Two costs worth naming. Bumping `viem` 2.52 → 2.55 (to clear the `ws`
 > advisories) grew `/login` from 687 kB to **772 kB**, which sharpens the case
-> for §7 item 17 (lazy-load Privy).
+> for §7 item 17 (lazy-load Privy). And §5.1's `settleReportVotes` fix needs
+> `20260810140000_settle_report_votes_rpc.sql` applied; until then the code
+> falls back to a bounded per-voter loop that logs when it truncates.
 
 ---
 
