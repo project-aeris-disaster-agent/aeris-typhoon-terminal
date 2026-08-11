@@ -28,10 +28,17 @@ type OverpassResponse = {
 
 type FeatureProperties = Record<string, string | number | boolean | null>;
 
+/**
+ * HTTPS only. This route supplies hospital, evacuation-centre, and critical-
+ * facility positions to the operator map and to the AGENT AERIS live context,
+ * and the response is cached for 10 minutes with a 6-hour stale fallback — so
+ * a single tampered cleartext response would persist. All three mirrors serve
+ * TLS; there is no reason to accept a downgradeable transport here.
+ */
 const OVERPASS_ENDPOINTS = [
-  "http://overpass-api.de/api/interpreter",
-  "http://lz4.overpass-api.de/api/interpreter",
-  "http://overpass.kumi.systems/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
+  "https://lz4.overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
 ];
 const CACHE_TTL_SECONDS = 10 * 60;
 /** Long-lived "last good" copy served when every Overpass mirror is down. */

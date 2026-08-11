@@ -42,7 +42,7 @@ type StoredReport = {
 
 // Strips reporter-identity fields that no map/panel consumer needs and that
 // are re-identification vectors: reporterUserId (Privy DID) and metadata
-// (carries raw ipAddress/userAgent on the Supabase-backed path). Exact
+// (carries the salted ipHash and userAgent on the Supabase-backed path). Exact
 // position and photoUrl are intentionally retained — /api/reports is
 // auth-gated (see middleware.ts; it is NOT in PUBLIC_PATHS, so unauthenticated
 // callers get 401), and the operator map/review panel needs both for incident
@@ -136,9 +136,12 @@ export async function POST(req: NextRequest) {
 
   const { category, description, position, photoUrl, locationAccuracyM, metadata } = validated.data;
   const ipHash = await hashIp(ip);
+  // No `ipAddress` here. The raw IP used to be persisted alongside the hash,
+  // which made the pseudonymization pointless — and nothing ever read it.
+  // `ip_hash` is the abuse-tracking field; `userAgent` is kept because spam
+  // triage genuinely uses it.
   const reportMetadata = {
     userAgent: req.headers.get("user-agent"),
-    ipAddress: ip,
     ipHash,
     client: metadata ?? null,
   };
@@ -313,11 +316,41 @@ function sanitizeJsonValue(value: unknown, depth: number): unknown {
   return undefined;
 }
 
+let runtimeIpSalt: string | null = null;
+
+/**
+ * Secret used to pseudonymize reporter IPs.
+ *
+ * The previous salt was the literal string `"aeris-salt"`, in this public
+ * repository, and the digest was truncated to 8 bytes. IPv4 is 2^32 addresses,
+ * so anyone holding the source could rebuild the entire table in seconds — the
+ * "hash" identified the reporter exactly as well as the address did.
+ *
+ * With no `REPORT_IP_HASH_SALT` configured we mint a random one per process
+ * rather than falling back to a constant. That degrades the feature honestly:
+ * hashes stop correlating across instances and restarts, so repeat-abuser
+ * tracking weakens, but no hash is ever reversible. Set the env var in any
+ * deployment that relies on rate-limit or abuse forensics.
+ */
+function ipHashSalt(): string {
+  const configured = process.env.REPORT_IP_HASH_SALT?.trim();
+  if (configured) return configured;
+
+  if (!runtimeIpSalt) {
+    runtimeIpSalt = crypto.randomUUID() + crypto.randomUUID();
+    console.warn(
+      "[reports] REPORT_IP_HASH_SALT is not set; using a random per-process salt. " +
+        "IP hashes will not correlate across instances or restarts.",
+    );
+  }
+  return runtimeIpSalt;
+}
+
+/** Full SHA-256 of the salted IP. Never truncated — see ipHashSalt(). */
 async function hashIp(ip: string): Promise<string> {
-  const data = new TextEncoder().encode(ip + "|aeris-salt");
+  const data = new TextEncoder().encode(`${ip}|${ipHashSalt()}`);
   const buf = await crypto.subtle.digest("SHA-256", data);
-  const bytes = new Uint8Array(buf);
-  return Array.from(bytes.slice(0, 8))
+  return Array.from(new Uint8Array(buf))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }

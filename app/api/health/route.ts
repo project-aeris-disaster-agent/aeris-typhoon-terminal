@@ -13,6 +13,16 @@ import packageJson from "../../../package.json";
 
 export const runtime = "edge";
 
+/**
+ * Public liveness + configuration probe. Deliberately checks only that env vars
+ * are *present* — it is unauthenticated and hit constantly by uptime monitors,
+ * so it must stay cheap and must never make outbound calls.
+ *
+ * That leaves a real gap: a revoked SUPABASE_SERVICE_ROLE_KEY passes this check
+ * while every write fails. `/api/internal/health` closes it by actually calling
+ * each dependency, behind the operator secret.
+ */
+
 function isMindsNotifyMisconfigured(): boolean {
   if (!isMindsNotifyEnabled()) return false;
   return !getMindsBuilderApiKey() || !getMindsAerisMindId();

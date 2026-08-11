@@ -87,8 +87,8 @@ describe("/api/health", () => {
     expect(body.checks.warnings.some((w: string) => w.includes("KV"))).toBe(true);
   });
 
-  it("skips Supabase requirements when auth is disabled", async () => {
-    setProdEnv();
+  it("skips Supabase requirements when auth is disabled outside production", async () => {
+    process.env.VERCEL_ENV = "preview";
     process.env.DASHBOARD_AUTH_DISABLED = "true";
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -98,5 +98,25 @@ describe("/api/health", () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.checks.auth).toBe("disabled");
+  });
+
+  it("still requires Supabase on production even with the auth-disabled flag set", async () => {
+    // The flag is ignored on a production deploy (lib/auth-config.ts), so a
+    // misset variable can no longer turn a live deployment into an open one —
+    // and the probe reports the missing auth env instead of "disabled".
+    setProdEnv();
+    process.env.DASHBOARD_AUTH_DISABLED = "true";
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const { GET } = await import("./route");
+    const res = await GET();
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.checks.auth).toBe("absent");
+    expect(body.checks.missing).toEqual([
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    ]);
   });
 });

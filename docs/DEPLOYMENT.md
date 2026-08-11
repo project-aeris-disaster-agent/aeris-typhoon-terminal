@@ -5,8 +5,19 @@
 ```bash
 npm ci
 npm run predeploy   # typecheck → jest → build → playwright
-npm audit           # expect 0 vulnerabilities at current lockfile
+npm audit --audit-level=high   # must report 0 high/critical
 ```
+
+`npm audit` at default level still reports ~10 **moderate** advisories, all of
+them inside the `@reown/appkit` + `@walletconnect` tree that
+`@privy-io/react-auth` pulls in transitively. They have no upgrade path that
+does not require a Privy major, so the CI gate is set at `high`. Re-check on
+each Privy bump; do not relax the gate below `high`.
+
+The `overrides` block in `package.json` is load-bearing — it pins patched
+`ws`, `axios`, `test-exclude`, `glob`, `postcss`, `sharp`, and (scoped to
+eslint) `brace-expansion`. Removing an entry will reintroduce an advisory or,
+in `test-exclude`'s case, silently break `npm run test:coverage`.
 
 Optional: `npm run smoke:reports` (Supabase `.env` required).
 

@@ -7,7 +7,7 @@
  * dedupe keys keep both the cast award and the correctness award idempotent.
  */
 
-import { awardXp } from "@/lib/gamification";
+import { awardXp, XP_REWARDS } from "@/lib/gamification";
 import { serviceAuthHeaders, supabaseRestConfig } from "@/lib/supabase-rest";
 
 export type ReportVoteValue = "up" | "down";
@@ -105,6 +105,71 @@ export async function settleReportVotes(
   const cfg = supabaseRestConfig();
   if (!cfg) return 0;
 
+  try {
+    const res = await fetch(`${cfg.url}/rest/v1/rpc/settle_report_votes`, {
+      method: "POST",
+      headers: serviceAuthHeaders(cfg.serviceKey),
+      body: JSON.stringify({
+        p_report_id: reportId,
+        p_outcome: outcome,
+        p_points: XP_REWARDS.vote_correct,
+      }),
+      cache: "no-store",
+    });
+
+    if (res.ok) {
+      const body = (await res.json()) as
+        | Array<{ settled?: number }>
+        | { settled?: number }
+        | number
+        | null;
+      if (typeof body === "number") return body;
+      const row = Array.isArray(body) ? body[0] : body;
+      return row?.settled ?? 0;
+    }
+
+    const detail = await res.text().catch(() => "");
+    // PGRST202 = "function not found". Distinguish it loudly: it means the
+    // migration has not been applied yet, which is a deploy-ordering problem
+    // with a known fix, not a runtime fault.
+    if (res.status === 404 || detail.includes("PGRST202")) {
+      console.error(
+        "[report-votes] settle_report_votes RPC is missing — apply " +
+          "supabase/migrations/20260810140000_settle_report_votes_rpc.sql. " +
+          "Falling back to the per-voter loop for now.",
+      );
+      return settleReportVotesPerVoter(reportId, outcome);
+    }
+
+    console.error(`[report-votes] settle rpc failed ${res.status}: ${detail}`);
+    return 0;
+  } catch (error) {
+    console.error("[report-votes] settle rpc error", error);
+    return 0;
+  }
+}
+
+/**
+ * Pre-RPC settlement path: one award_xp HTTP call per winning voter.
+ *
+ * Kept only to cover the window between deploying this code and applying the
+ * migration, so no voter silently loses XP in between. **Delete this once the
+ * RPC is live** — it is the thing the RPC exists to replace, and on a
+ * well-voted report it is what fails the operator's review request.
+ *
+ * Bounded concurrency and a hard cap keep the blast radius small if it does
+ * run; anything beyond the cap is logged rather than dropped silently.
+ */
+const FALLBACK_MAX_VOTERS = 200;
+const FALLBACK_CONCURRENCY = 8;
+
+async function settleReportVotesPerVoter(
+  reportId: string,
+  outcome: "verified" | "rejected",
+): Promise<number> {
+  const cfg = supabaseRestConfig();
+  if (!cfg) return 0;
+
   const winningVote = outcome === "verified" ? 1 : -1;
   let rows: VoteRow[] = [];
   try {
@@ -112,7 +177,7 @@ export async function settleReportVotes(
       select: "report_id,user_id,vote",
       report_id: `eq.${reportId}`,
       vote: `eq.${winningVote}`,
-      limit: "1000",
+      limit: String(FALLBACK_MAX_VOTERS + 1),
     });
     const res = await fetch(`${cfg.url}/rest/v1/aeris_report_votes?${params}`, {
       headers: serviceAuthHeaders(cfg.serviceKey),
@@ -129,13 +194,27 @@ export async function settleReportVotes(
     return 0;
   }
 
+  if (rows.length > FALLBACK_MAX_VOTERS) {
+    console.error(
+      `[report-votes] report ${reportId} has more than ${FALLBACK_MAX_VOTERS} ` +
+        `winning voters; settling the first ${FALLBACK_MAX_VOTERS} only. Apply ` +
+        "the settle_report_votes migration to settle all of them in one call.",
+    );
+    rows = rows.slice(0, FALLBACK_MAX_VOTERS);
+  }
+
   let settled = 0;
-  for (const row of rows) {
-    const result = await awardXp(row.user_id, "vote_correct", {
-      refId: reportId,
-      dedupeKey: `vote_correct:${reportId}:${row.user_id}`,
-    });
-    if (result?.awarded) settled += 1;
+  for (let i = 0; i < rows.length; i += FALLBACK_CONCURRENCY) {
+    const batch = rows.slice(i, i + FALLBACK_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map((row) =>
+        awardXp(row.user_id, "vote_correct", {
+          refId: reportId,
+          dedupeKey: `vote_correct:${reportId}:${row.user_id}`,
+        }),
+      ),
+    );
+    settled += results.filter((result) => result?.awarded).length;
   }
   return settled;
 }

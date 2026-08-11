@@ -12,6 +12,8 @@ import {
   fetchPagasaBulletins,
   renderTyphoonOnMap,
   clearTyphoonFromMap,
+  renderOutsideParAdvisoryOnMap,
+  clearOutsideParAdvisoryFromMap,
   type OutsideParAdvisory,
   type PagasaBulletinItem,
   type PagasaBulletinsFetchResult,
@@ -50,35 +52,51 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
 
   const hasOutsidePar = Boolean(outsidePar) || outsideParGdacs.length > 0;
   const hasAnyTc = storms.length > 0 || hasOutsidePar;
-  const monitorCount = (outsidePar ? 1 : 0) + outsideParGdacs.length;
+  // The PAGASA advisory and a tracked storm can be the same system (linked by
+  // coveredByStormId). Cards: one entry — the PAGASA card, carrying the
+  // tracked storm's approach data. Map: the tracked storm renders (real track
+  // and forecast); the advisory's single parsed point does not.
+  const coveringStorm = outsidePar?.coveredByStormId
+    ? (outsideParGdacs.find((s) => s.id === outsidePar.coveredByStormId) ?? null)
+    : null;
+  const uncoveredMonitors = outsideParGdacs.filter(
+    (s) => s.id !== outsidePar?.coveredByStormId,
+  );
 
-  const outsideParThreats: OutsideParThreatItem[] = outsidePar
-    ? [
-        (() => {
-          const names = resolveStormDisplayNames(
-            formatPagasaStormName(outsidePar.name),
-          );
-          return {
-            key: "pagasa",
-            name: names.primary,
-            subName: names.secondary,
-            windKph: outsidePar.windKph,
-            source: "pagasa" as const,
-          };
-        })(),
-      ]
-    : outsideParGdacs.map((s) => {
-        const names = resolveStormDisplayNames(s.name, s.localName);
-        return {
-          key: s.id,
-          name: names.primary,
-          subName: names.secondary,
-          windKph: s.windKph,
-          distanceToParKm: s.distanceToParKm,
-          approachingPar: s.approachingPar,
-          source: "gdacs" as const,
-        };
-      });
+  const outsideParThreats: OutsideParThreatItem[] = [
+    ...(outsidePar
+      ? [
+          (() => {
+            const names = resolveStormDisplayNames(
+              formatPagasaStormName(outsidePar.name),
+            );
+            return {
+              key: "pagasa",
+              name: names.primary,
+              subName: names.secondary,
+              windKph: outsidePar.windKph,
+              distanceToParKm: coveringStorm?.distanceToParKm,
+              approachingPar: coveringStorm?.approachingPar,
+              source: "pagasa" as const,
+            };
+          })(),
+        ]
+      : []),
+    ...uncoveredMonitors.map((s) => {
+      const names = resolveStormDisplayNames(s.name, s.localName);
+      return {
+        key: s.id,
+        name: names.primary,
+        subName: names.secondary,
+        windKph: s.windKph,
+        distanceToParKm: s.distanceToParKm,
+        approachingPar: s.approachingPar,
+        source: "gdacs" as const,
+      };
+    }),
+  ];
+
+  const monitorCount = outsideParThreats.length;
 
   const statusBadge = useMemo(() => {
     if (loading) return <Pill>loading</Pill>;
@@ -200,13 +218,28 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
     };
   }, []);
 
+  // Everything the tracker knows about goes on the map, not just in-PAR
+  // storms: red for systems inside PAR, amber for outside-PAR monitors, and
+  // the PAGASA advisory storm when its location text parsed to coordinates.
+  // Each carries a projected-motion ray (see lib/tc-projection.ts) — a
+  // dead-reckoned direction indicator, deliberately styled apart from the
+  // official track.
   useEffect(() => {
     if (!map) return;
-    for (const s of storms) renderTyphoonOnMap(map, s);
+    for (const s of storms) renderTyphoonOnMap(map, s, { variant: "par" });
+    for (const s of outsideParGdacs)
+      renderTyphoonOnMap(map, s, { variant: "monitor" });
+    // The advisory's single parsed point only renders when no tracked storm
+    // covers the same system — a real track and forecast beat dead reckoning.
+    if (outsidePar && !outsidePar.coveredByStormId) {
+      renderOutsideParAdvisoryOnMap(map, outsidePar);
+    }
     return () => {
       for (const s of storms) clearTyphoonFromMap(map, s.id);
+      for (const s of outsideParGdacs) clearTyphoonFromMap(map, s.id);
+      clearOutsideParAdvisoryFromMap(map);
     };
-  }, [map, storms]);
+  }, [map, storms, outsideParGdacs, outsidePar]);
 
   return (
     <div className="space-y-2">

@@ -34,10 +34,24 @@ export const PH_MAX_BOUNDS: [[number, number], [number, number]] = [
 /**
  * Wider pan limits for 2D: full PAGASA PAR plus a monitor buffer for TCs
  * approaching from the Pacific or South China Sea (outside PAR / nearby).
+ *
+ * The east edge matters now that outside-PAR monitor storms render on the map
+ * (typhoon-tracks renderTyphoonOnMap / renderOutsideParAdvisoryOnMap): PAGASA
+ * advisories describe systems up to ~3,000 km east of Luzon (~152°E), and the
+ * WESTPAC_MONITOR_BBOX accepts monitors to 180°E. The previous 146°E cap made
+ * those storms un-pannable — a monitor card with no reachable map position.
+ * 165°E covers the WestPac genesis region where PH-bound TCs actually form;
+ * the far half to 180°E stays card-only on purpose (empty ocean at that
+ * distance has no operational value on this map).
+ *
+ * North: 31.5° covers the Taiwan Strait / Ryukyu band that recurving systems
+ * pass through while still influencing PH weather (verified need: a live
+ * monitor storm at 30.1°N sat just past the old 29° cap). Storms at Japan
+ * latitudes stay card-only for the same no-operational-value reason.
  */
 export const MAP_2D_MAX_BOUNDS: [[number, number], [number, number]] = [
   [108.0, 1.5],
-  [146.0, 29.0],
+  [165.0, 31.5],
 ];
 
 export const DEFAULT_ZOOM = 5.4;

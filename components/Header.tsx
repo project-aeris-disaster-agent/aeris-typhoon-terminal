@@ -145,7 +145,20 @@ export const Header = memo(function Header({
             OFFLINE
           </Pill>
         )}
-        <span className="chrome-label hidden shrink-0 tabular-nums text-aeris-muted md:inline">
+        {/*
+          suppressHydrationWarning: the clock string is computed at render time
+          (useState(formatManilaClock)), so the server HTML carries the build/
+          request minute and the client hydrates with the current one — a
+          guaranteed text mismatch that fired React #418 on every page load
+          (and the dev overlay with it). This is React's documented use of the
+          flag: a single text node that legitimately differs across the
+          SSR/hydration gap. The effect-driven tick corrects it immediately;
+          keeping the SSR time visible beats flashing a placeholder.
+        */}
+        <span
+          suppressHydrationWarning
+          className="chrome-label hidden shrink-0 tabular-nums text-aeris-muted md:inline"
+        >
           {time}
         </span>
       </div>
