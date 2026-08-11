@@ -16,7 +16,18 @@
  *    background sync
  */
 
-const SW_VERSION = "aeris-v3";
+/**
+ * Bump this on any caching-behaviour change. `activate` deletes every cache
+ * whose name does not start with the current version, so a bump is the only
+ * way to purge poisoned entries from clients already in the wild.
+ *
+ * v4: v3 served the HTML document from cache (see the fetch handler), so a
+ * returning visitor got the previous deploy's markup, which references
+ * content-hashed Next.js chunks that no longer exist. Those 404, React throws,
+ * and the page white-screens with "a client-side exception has occurred".
+ * The bump is what evicts that stale HTML from browsers already holding it.
+ */
+const SW_VERSION = "aeris-v4";
 const CACHE_SHELL = `${SW_VERSION}-shell`;
 const CACHE_HAZARDS = `${SW_VERSION}-hazards`;
 const CACHE_SCENE = `${SW_VERSION}-scene`;
@@ -37,7 +48,18 @@ const SHELL_ASSETS = ["/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_SHELL).then((c) => c.addAll(SHELL_ASSETS)),
+    (async () => {
+      const cache = await caches.open(CACHE_SHELL);
+      // Individually, not addAll: addAll is atomic, so one failure (e.g. "/"
+      // answering 307 to /login for a signed-out visitor) rejects the whole
+      // install and the new worker never activates — which would strand every
+      // client on the previous worker's caches.
+      await Promise.all(
+        SHELL_ASSETS.map((asset) =>
+          cache.add(asset).catch(() => undefined),
+        ),
+      );
+    })(),
   );
   self.skipWaiting();
 });
@@ -93,8 +115,53 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(networkFirstJson(CACHE_API, request));
     return;
   }
+  /**
+   * The HTML document must never be served from cache while the network is
+   * reachable. Next.js content-hashes its chunks, so last deploy's markup
+   * points at script URLs that 404 after a redeploy — the page then dies with
+   * "Application error: a client-side exception has occurred". The cached copy
+   * is strictly an offline fallback.
+   *
+   * Navigations are matched by `request.mode`, not by path, so this also
+   * covers /login, /refresh, and anything added later.
+   */
+  if (request.mode === "navigate") {
+    event.respondWith(networkFirstDocument(request));
+    return;
+  }
+  /**
+   * Everything else here is a hashed build asset (/_next/static/...), whose
+   * URL changes whenever its content does — safe to serve from cache and
+   * revalidate behind the scenes.
+   */
   event.respondWith(staleWhileRevalidate(CACHE_SHELL, request));
 });
+
+/**
+ * Network-first for HTML: fresh markup wins, and the cache only answers when
+ * the network genuinely cannot be reached (the PWA's offline promise).
+ */
+async function networkFirstDocument(request) {
+  const cache = await caches.open(CACHE_SHELL);
+  try {
+    const response = await fetch(request);
+    // Only store real documents. A redirect to /login or an error page must
+    // not become the offline shell.
+    if (response.ok && !response.redirected) {
+      cache.put(request, response.clone()).catch(() => undefined);
+    }
+    return response;
+  } catch {
+    const cached = (await cache.match(request)) ?? (await cache.match("/"));
+    if (cached) return cached;
+    return new Response(
+      "<!doctype html><meta charset=utf-8><title>AERIS offline</title>" +
+        "<body style=\"font-family:system-ui;padding:2rem\">" +
+        "<h1>AERIS is offline</h1><p>Reconnect to load the terminal.</p>",
+      { status: 503, headers: { "content-type": "text/html; charset=utf-8" } },
+    );
+  }
+}
 
 async function cacheFirst(cacheName, request) {
   const cache = await caches.open(cacheName);
