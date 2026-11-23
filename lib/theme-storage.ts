@@ -2,8 +2,8 @@ export type AppTheme = "light" | "dark";
 
 export const STORAGE_KEY = "aeris-theme";
 
-export const THEME_COLOR_LIGHT = "#f4f8fc";
-export const THEME_COLOR_DARK = "#0a0e13";
+export const THEME_COLOR_LIGHT = "#f3f8ff";
+export const THEME_COLOR_DARK = "#0b1f3a";
 
 /** Resolve a raw localStorage value (including Chat's `"system"`) to light or dark. */
 export function resolveStoredTheme(

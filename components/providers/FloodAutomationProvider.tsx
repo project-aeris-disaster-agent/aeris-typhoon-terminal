@@ -120,6 +120,19 @@ export function FloodAutomationProvider({
 
   useVisiblePolling(() => void refresh(), REFRESH_MS);
 
+  // useVisiblePolling keeps its callback in a ref and does not restart when
+  // it changes, so a new `refresh` (new location or flood periods) used to
+  // wait for the next 5-minute tick, and panels showed the previous place's
+  // flood plan until then. The poll already covers the first mount.
+  const isFirstRefreshRef = useRef(true);
+  useEffect(() => {
+    if (isFirstRefreshRef.current) {
+      isFirstRefreshRef.current = false;
+      return;
+    }
+    void refresh();
+  }, [refresh]);
+
   const isAutoControlled = manualOverride === null;
 
   const value = useMemo(

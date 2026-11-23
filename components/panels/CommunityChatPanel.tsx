@@ -41,7 +41,7 @@ export function CommunityChatPanel({
   return (
     <div className="relative flex flex-col h-full min-h-0">
       <div className="relative z-20 mb-2 flex items-center justify-between gap-1 px-1">
-        <div className="hud-text text-aeris-text text-sm tracking-tight font-semibold">
+        <div className="aeris-title">
           Agent AERIS
         </div>
         <HelpHint helpId="panel.agent" side="bottom" />

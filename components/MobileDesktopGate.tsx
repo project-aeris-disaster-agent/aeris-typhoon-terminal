@@ -16,33 +16,33 @@ export function MobileDesktopGate({
 }: MobileDesktopGateProps) {
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-aeris-bg/95 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-boot-sky px-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="mobile-desktop-gate-title"
     >
-      <div className="w-full max-w-md rounded-lg border border-aeris-border bg-aeris-surface p-6 shadow-xl">
-        <img
-          src="/assets/Bagyo%20Logo%405x.png"
-          alt="bagyo.app"
-          className="mx-auto mb-5 h-12 w-auto"
+      <div className="panel-glass aeris-rise w-full max-w-md rounded-3xl !shadow-hero px-6 pb-6 pt-7">
+        <span
+          role="img"
+          aria-label="bagyo.app"
+          className="aeris-brand-mark mx-auto mb-5 h-12"
         />
         <h1
           id="mobile-desktop-gate-title"
-          className="text-center text-body-lg font-semibold text-aeris-text"
+          className="text-center text-[1.375rem] font-black leading-tight text-aeris-text"
         >
-          This Application Is best used on Desktop
+          Best on a desktop
         </h1>
-        <p className="mt-3 text-center text-body-sm text-aeris-muted">
+        <p className="mt-2 text-center text-body-sm font-bold text-aeris-ink2">
           For live updates and community chat on your phone, use bagyo.app instead.
         </p>
 
-        <div className="mt-6 space-y-2">
+        <div className="mt-6 space-y-2.5">
           <a
             href={BAGYO_APP_URL}
-            className="flex min-h-[44px] w-full items-center justify-center rounded border border-aeris-accent/40 bg-aeris-accent/15 px-3 py-2.5 text-body-sm font-semibold text-aeris-accent"
+            className="aeris-btn-cta min-h-[52px] w-full px-4 text-[0.9375rem]"
           >
-            visit bagyo.app
+            Visit bagyo.app
           </a>
 
           {showWalletLogin && onWalletLogin && (
@@ -50,7 +50,7 @@ export function MobileDesktopGate({
               type="button"
               disabled={walletLoginDisabled}
               onClick={onWalletLogin}
-              className="w-full rounded border border-aeris-border bg-aeris-bg/70 px-3 py-2.5 text-body-sm font-semibold text-aeris-text disabled:opacity-40 min-h-[44px]"
+              className="aeris-btn-ghost w-full min-h-[44px] px-4 text-body-sm disabled:opacity-40"
             >
               Connect wallet (admin)
             </button>

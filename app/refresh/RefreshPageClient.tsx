@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { AerisLoadingLogo } from "@/components/ui/AerisLoadingLogo";
+import { Kicker } from "@/components/ui/Kit";
 import { clearPrivySessionCookies } from "@/lib/privy-cookies";
 import { safePostLoginPath } from "@/lib/safe-redirect";
 
@@ -78,18 +79,27 @@ export default function RefreshPageClient() {
   }, [ready, authenticated, getAccessToken, router, redirectUrl]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-aeris-bg px-4 text-center text-aeris-muted">
-      <AerisLoadingLogo size="lg" variant="splash" />
-      <span className="max-w-sm text-body-sm font-mono uppercase tracking-wider">
-        {status}
-      </span>
-      {!ready && origin && (
-        <p className="max-w-md text-body-sm text-aeris-muted/80">
-          If this takes more than a few seconds, add{" "}
-          <code className="text-aeris-text">{origin}</code> to Privy Dashboard → Configuration →
-          App settings → Domains → Allowed Origins.
-        </p>
-      )}
+    // The game's loading screen: sky, one frosted card, spinning mark, status.
+    <div className="flex min-h-screen items-center justify-center bg-boot-sky px-4">
+      <div
+        className="panel-glass aeris-rise flex w-full max-w-sm flex-col items-center gap-3 rounded-3xl !shadow-hero px-7 py-7 text-center"
+        role="status"
+        aria-live="polite"
+      >
+        <Kicker>Session</Kicker>
+        <AerisLoadingLogo size="lg" variant="glyph" />
+        <span className="text-body font-black text-aeris-text">{status}</span>
+        {!ready && origin && (
+          <p className="text-body-sm font-bold text-aeris-ink2">
+            If this takes more than a few seconds, add{" "}
+            <code className="rounded bg-aeris-elev px-1 font-code text-[0.75rem] text-aeris-text">
+              {origin}
+            </code>{" "}
+            to Privy Dashboard → Configuration → App settings → Domains → Allowed
+            Origins.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

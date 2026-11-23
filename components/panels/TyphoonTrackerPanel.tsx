@@ -249,11 +249,12 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
       />
 
       {!hasAnyTc && !loading && !error && (
-        <div className="py-2 space-y-1">
-          <div className="text-xs font-medium tracking-wide text-aeris-ok">
-            NO TYPHOON THREAT ACTIVE
+        <div className="aeris-incident space-y-0.5 px-3 py-2" data-tone="ok">
+          <div className="flex items-center gap-2 text-[0.6875rem] font-black uppercase tracking-[0.12em] text-aeris-ok">
+            <span className="aeris-live-dot" aria-hidden />
+            No typhoon threat active
           </div>
-          <div className="text-body-sm text-aeris-muted">
+          <div className="text-body-sm text-aeris-ink2">
             No tropical cyclone on the last advisory check.
           </div>
         </div>
@@ -277,8 +278,11 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
             onClick={() =>
               setFocusedId((cur) => (cur === s.id ? null : s.id))
             }
-            className={`w-full text-left p-2.5 rounded-lg border space-y-2 transition-colors ${threatSurfaceClasses(threat.tone)} ${
-              isFocused ? "ring-1 ring-aeris-accent/40 border-aeris-accent/70" : ""
+            // The game's warm "Storm of the Day" card; red stripe from Severe up.
+            data-tone={threat.tone === "danger" ? "danger" : undefined}
+            aria-pressed={isFocused}
+            className={`aeris-warm-card w-full text-left p-3 space-y-2.5 transition-shadow hover:shadow-pill ${
+              isFocused ? "ring-2 ring-aeris-accent/60" : ""
             }`}
           >
             <StormHero
@@ -288,7 +292,7 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
               windKph={s.windKph}
               threat={threat}
             />
-            <div className="grid grid-cols-2 gap-1 text-body-sm text-aeris-muted">
+            <div className="grid grid-cols-2 gap-1.5 text-body-sm">
               <Metric
                 label="Pressure"
                 value={s.pressureHpa > 0 ? `${s.pressureHpa} hPa` : "n/a"}
@@ -301,7 +305,7 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
               />
             </div>
             {s.landfallEta && (
-              <div className="text-body-sm text-aeris-warn">
+              <div className="text-body-sm font-extrabold text-aeris-warn">
                 Landfall ETA: {s.landfallEta}
               </div>
             )}
@@ -312,12 +316,8 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
       {outsideParThreats.length > 0 && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-chrome uppercase tracking-wider text-aeris-muted">
-              Outside PAR — monitoring
-            </span>
-            <span className="text-chrome tracking-wider text-aeris-muted/80">
-              {outsideParThreats.length}
-            </span>
+            <span className="aeris-label">Outside PAR · monitoring</span>
+            <span className="aeris-key">{outsideParThreats.length}</span>
           </div>
           {outsideParThreats.map(({ key, ...rest }) => (
             <OutsideParThreatRow key={key} {...rest} />
@@ -327,24 +327,20 @@ export function TyphoonTrackerPanel({ map }: { map: MLMap | null }) {
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2 px-0.5">
-          <span className="text-chrome uppercase tracking-wider text-aeris-muted">
-            Official PAGASA bulletins
-          </span>
+          <span className="aeris-label">Official PAGASA bulletins</span>
           <div className="flex items-center gap-2">
             {visibleBulletins.length > 0 && (
-              <span className="text-chrome tracking-wider text-aeris-muted/80">
-                {visibleBulletins.length}
-              </span>
+              <span className="aeris-key">{visibleBulletins.length}</span>
             )}
             <button
               type="button"
               onClick={() => void handleRefreshBulletins()}
               disabled={bulletinRefreshing}
-              className="shrink-0 inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
+              className="aeris-btn-soft shrink-0 h-6 px-2 text-[0.6875rem] uppercase tracking-[0.1em] disabled:opacity-50"
               aria-label="Sync PAGASA bulletins"
             >
               <RefreshCw
-                size={10}
+                size={11}
                 className={bulletinRefreshing ? "animate-spin" : ""}
               />
               Sync
@@ -455,13 +451,16 @@ function OutsideParThreatRow({
         : null;
 
   return (
-    <div className="aeris-monitor-wipe flex items-center gap-2 rounded-md border border-aeris-danger/40 bg-aeris-bg/35 px-2 py-1.5">
+    <div
+      className="aeris-incident aeris-monitor-wipe flex items-center gap-2.5 px-2.5 py-2"
+      data-tone={approachingPar ? "danger" : undefined}
+    >
       <span
         className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotTone}`}
         aria-hidden
       />
       <div className="min-w-0 flex-1">
-        <div className="truncate font-mono text-body-sm text-aeris-text">
+        <div className="truncate text-body-sm font-black text-aeris-text">
           {name}
         </div>
         {subName ? (
@@ -477,9 +476,11 @@ function OutsideParThreatRow({
         </div>
       </div>
       {typeof windKph === "number" && windKph > 0 && (
-        <span className="shrink-0 font-mono text-body-sm text-aeris-text/90">
-          {windKph}
-          <span className="text-aeris-muted"> km/h</span>
+        <span className="shrink-0 text-right leading-none">
+          <span className="block text-base font-black tabular-nums text-aeris-text">
+            {windKph}
+          </span>
+          <span className="text-[0.6875rem] font-bold text-aeris-muted">km/h</span>
         </span>
       )}
     </div>
@@ -502,7 +503,7 @@ function BulletinRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-2 rounded-md border border-aeris-border bg-aeris-bg/35 px-2 py-1.5 text-left transition-colors hover:bg-aeris-accent/10 hover:border-aeris-accent/50"
+      className="aeris-row flex w-full items-center gap-2.5 px-2.5 py-2 text-left"
     >
       <span
         className={`inline-block h-2 w-2 shrink-0 rounded-full ${
@@ -513,7 +514,7 @@ function BulletinRow({
         aria-hidden
       />
       <div className="min-w-0 flex-1">
-        <div className="truncate font-mono text-body-sm text-aeris-text">
+        <div className="truncate text-body-sm font-black text-aeris-text">
           {name}
         </div>
         <div className="truncate text-chrome uppercase tracking-wider text-aeris-muted">
@@ -522,9 +523,7 @@ function BulletinRow({
             : `Bulletin #${number}${final ? " · Final" : ""}`}
         </div>
       </div>
-      <span className="shrink-0 font-mono text-chrome uppercase tracking-wider text-aeris-accent">
-        View PDF
-      </span>
+      <span className="aeris-kicker shrink-0 !px-2 !py-0.5 !text-[0.625rem]">View PDF</span>
     </button>
   );
 }
@@ -544,37 +543,6 @@ type ThreatLevel = {
   barPct: number;
   description: string;
 };
-
-const THREAT_SURFACE: Record<
-  ThreatTone,
-  { bg: string; border: string; hoverBg: string }
-> = {
-  ok: {
-    bg: "bg-aeris-ok/10",
-    border: "border-aeris-ok/40",
-    hoverBg: "hover:bg-aeris-ok/15",
-  },
-  accent: {
-    bg: "bg-aeris-accent/10",
-    border: "border-aeris-accent/40",
-    hoverBg: "hover:bg-aeris-accent/15",
-  },
-  warn: {
-    bg: "bg-aeris-warn/10",
-    border: "border-aeris-warn/40",
-    hoverBg: "hover:bg-aeris-warn/15",
-  },
-  danger: {
-    bg: "bg-aeris-danger/10",
-    border: "border-aeris-danger/40",
-    hoverBg: "hover:bg-aeris-danger/15",
-  },
-};
-
-function threatSurfaceClasses(tone: ThreatTone): string {
-  const s = THREAT_SURFACE[tone];
-  return `${s.bg} ${s.border} ${s.hoverBg}`;
-}
 
 function threatFromWind(windKph: number): ThreatLevel {
   if (!windKph || windKph <= 0) {
@@ -626,7 +594,7 @@ function StormHero({
   return (
     <div className="space-y-1.5">
       <div className="min-w-0">
-        <div className="font-mono text-base font-semibold text-aeris-warn truncate">
+        <div className="text-lg font-black leading-tight text-aeris-text truncate">
           {name}
         </div>
         {subName && (
@@ -637,9 +605,7 @@ function StormHero({
       </div>
 
       <div className="flex items-start justify-between gap-2">
-        <div className="text-chrome uppercase tracking-wider text-aeris-muted">
-          Sustained wind
-        </div>
+        <div className="aeris-label">Sustained wind</div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           <Pill tone={threat.tone}>{threat.label} threat</Pill>
           {status && <Pill tone={tone}>{status}</Pill>}
@@ -647,16 +613,16 @@ function StormHero({
       </div>
 
       <div className="min-w-0">
-        <div className="font-mono leading-none">
-          <span className="text-xl font-semibold text-aeris-text">
+        <div className="leading-none">
+          <span className="text-[1.75rem] font-black tabular-nums text-aeris-text">
             {windKph > 0 ? windKph : "—"}
           </span>
-          <span className="text-body-sm text-aeris-muted ml-1">km/h</span>
+          <span className="text-body-sm font-bold text-aeris-muted ml-1">km/h</span>
         </div>
       </div>
 
       <div
-        className="h-1 w-full rounded-full bg-aeris-border/60 overflow-hidden"
+        className="aeris-bar w-full"
         role="meter"
         aria-label={`Threat level: ${threat.label}`}
         aria-valuenow={threat.barPct}
@@ -664,7 +630,7 @@ function StormHero({
         aria-valuemax={100}
       >
         <div
-          className={`h-full ${barColor} transition-all`}
+          className={`h-full rounded-full ${barColor} transition-all`}
           style={{ width: `${threat.barPct}%` }}
         />
       </div>
@@ -727,9 +693,9 @@ function decodePagasaText(raw: string): string {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <div className="text-chrome uppercase tracking-wider">{label}</div>
-      <div className="text-aeris-text font-mono">{value}</div>
+    <div className="rounded-lg bg-aeris-surface/70 px-2 py-1">
+      <div className="aeris-label !text-[0.625rem]">{label}</div>
+      <div className="truncate font-extrabold tabular-nums text-aeris-text">{value}</div>
     </div>
   );
 }

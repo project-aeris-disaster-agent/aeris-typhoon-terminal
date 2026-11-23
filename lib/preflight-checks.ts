@@ -13,6 +13,8 @@
  */
 
 import { waitForOverlayReady } from "@/lib/overlay-ready";
+import { YOUTUBE_FEED_CHANNELS } from "@/lib/youtube-feed/constants";
+import { fetchYouTubeFeeds } from "@/services/youtube-feeds";
 
 export type CheckStatus = "pending" | "running" | "ok" | "warn" | "fail";
 
@@ -98,6 +100,63 @@ function jsonProbe(
   };
 }
 
+/**
+ * Reachability-only probe for large static files. A GET here downloaded and
+ * parsed the whole file (ncr.json is ~4 MB) just to show a green tick, and
+ * without the `?v=` the scene loader uses, so it didn't even warm the cache.
+ */
+function headProbe(
+  url: string,
+  opts: { warnOnFail?: boolean } = {},
+): (signal: AbortSignal) => Promise<ProbeOutcome> {
+  return async (signal) => {
+    try {
+      const res = await fetch(url, { method: "HEAD", signal, cache: "no-store" });
+      if (res.ok) return { status: "ok" };
+      return { status: opts.warnOnFail ? "warn" : "fail", detail: `HTTP ${res.status}` };
+    } catch (e) {
+      const aborted = (e as Error)?.name === "AbortError";
+      return {
+        status: opts.warnOnFail ? "warn" : "fail",
+        detail: aborted ? "timeout" : "unreachable",
+      };
+    }
+  };
+}
+
+/**
+ * Live-feeds probe through the same client helper YouTubeFeedsProvider uses,
+ * with the same channel list. The old probe hit `/api/youtube-feed` with no
+ * `?channels=`, which the route rejects with 400, so this check always showed
+ * a warning. Going through the shared helper also warms its cache, so the
+ * provider's first load reuses this response instead of paying for it again.
+ */
+async function liveFeedsProbe(signal: AbortSignal): Promise<ProbeOutcome> {
+  try {
+    const result = await Promise.race([
+      fetchYouTubeFeeds([...YOUTUBE_FEED_CHANNELS]),
+      new Promise<never>((_, reject) => {
+        const onAbort = () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        };
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
+    if (!Array.isArray(result?.videos)) {
+      return { status: "warn", detail: "unavailable" };
+    }
+    return result.videos.length > 0
+      ? { status: "ok" }
+      : { status: "warn", detail: "no live streams" };
+  } catch (e) {
+    const aborted = (e as Error)?.name === "AbortError";
+    return { status: "warn", detail: aborted ? "timeout" : "unreachable" };
+  }
+}
+
 function asRecord(data: unknown): Record<string, unknown> | null {
   return data && typeof data === "object" ? (data as Record<string, unknown>) : null;
 }
@@ -159,7 +218,7 @@ const CHECKS: CheckDef[] = [
   {
     id: "buildings",
     label: "Buildings & facilities",
-    run: jsonProbe("/osm-context/ncr.json", { warnOnFail: true }),
+    run: headProbe("/osm-context/ncr.json", { warnOnFail: true }),
   },
   {
     id: "typhoon",
@@ -174,7 +233,7 @@ const CHECKS: CheckDef[] = [
   {
     id: "feeds",
     label: "Live feeds",
-    run: jsonProbe("/api/youtube-feed", { warnOnFail: true }),
+    run: liveFeedsProbe,
   },
 ];
 

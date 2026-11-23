@@ -448,12 +448,13 @@ export function AgentAerisPanel({
   };
 
   return (
-    <div className="relative z-10 flex flex-1 min-h-0 flex-col overflow-hidden rounded-lg border border-aeris-border/60 bg-aeris-bg/40">
+    <div className="panel-glass relative z-10 flex flex-1 min-h-0 flex-col overflow-hidden rounded-xl">
       <div className="flex min-w-0 min-h-0 flex-1 flex-col">
         {/* Avatar (left) + chat transcript (right), side by side. Generate
             Report and the chat input stay full-width below this row. */}
         <div className="flex min-h-0 flex-1">
-          <div className="relative w-28 shrink-0 overflow-hidden border-r border-aeris-border/50 bg-aeris-bg/30">
+          {/* The game's guide portrait: AERIS on a soft sky tile. */}
+          <div className="aeris-sky relative w-28 shrink-0 overflow-hidden border-r border-aeris-border/60">
             <AgentSpeechControls
               muted={muted}
               onToggleMute={() => setMuted((m) => !m)}
@@ -487,28 +488,38 @@ export function AgentAerisPanel({
               return (
                 <div
                   key={message.id}
+                  // The game's guide speech bubble: white card, spaced-caps
+                  // speaker label in blue, heavy ink. Tone via the left stripe.
                   className={clsx(
-                    "max-w-[92%] rounded-lg border px-3 py-2 text-body-sm leading-relaxed whitespace-pre-wrap",
+                    "max-w-[92%] rounded-2xl px-3.5 py-2.5 text-body-sm font-bold leading-relaxed whitespace-pre-wrap text-aeris-text",
                     isUser
-                      ? "ml-auto border-aeris-accent/30 bg-aeris-accent/10 text-aeris-text"
+                      ? "ml-auto rounded-br-md bg-aeris-chip-on"
                       : isOperatorReply
-                        ? "border-emerald-500/40 bg-emerald-500/10 text-aeris-text"
+                        ? "aeris-incident rounded-bl-md shadow-pill"
                         : isUrgentBroadcast
-                          ? "border-aeris-danger/50 bg-aeris-danger/10 text-aeris-text"
+                          ? "aeris-incident rounded-bl-md shadow-pill"
                           : isWeather
-                            ? "border-aeris-warn/40 bg-aeris-warn/5 text-aeris-text/90"
-                            : "border-aeris-border/50 bg-aeris-surface/60 text-aeris-text/90",
+                            ? "aeris-warm-card rounded-bl-md"
+                            : "rounded-bl-md border border-aeris-border/70 bg-aeris-surface shadow-pill",
                   )}
+                  data-tone={
+                    isOperatorReply ? "ok" : isUrgentBroadcast ? "danger" : undefined
+                  }
                 >
-                  <div className="mb-1 flex items-center gap-2 text-label text-aeris-muted/80">
+                  <div
+                    className={clsx(
+                      "mb-1 flex items-center gap-2 text-[0.625rem] font-black uppercase tracking-[0.16em]",
+                      isUser ? "text-aeris-muted" : "text-aeris-kicker-ink",
+                    )}
+                  >
                     <span>{label}</span>
                     {isWeather && (
-                      <span className="rounded border border-aeris-warn/30 px-1 py-0.5 text-aeris-warn">
+                      <span className="rounded-full bg-aeris-warm/20 px-1.5 py-0.5 text-aeris-warn">
                         Auto
                       </span>
                     )}
                     {isUrgentBroadcast && (
-                      <span className="rounded border border-aeris-danger/40 px-1 py-0.5 text-aeris-danger">
+                      <span className="rounded-full bg-aeris-danger/15 px-1.5 py-0.5 text-aeris-danger">
                         Auto · Urgent
                       </span>
                     )}
@@ -521,12 +532,15 @@ export function AgentAerisPanel({
         </div>
 
         {error && (
-          <div className="mx-3 mb-2 flex items-center justify-between gap-2 rounded-md border border-aeris-danger/40 bg-aeris-danger/10 px-2 py-1.5 text-body-sm text-aeris-text">
+          <div
+            className="aeris-incident mx-3 mb-2 flex items-center justify-between gap-2 px-2.5 py-1.5 text-body-sm font-bold text-aeris-text"
+            data-tone="danger"
+          >
             <span className="min-w-0 truncate">{error}</span>
             <button
               type="button"
               onClick={retryLastPrompt}
-              className="shrink-0 font-mono uppercase tracking-widest text-aeris-accent hover:text-aeris-text"
+              className="aeris-btn-soft h-6 shrink-0 px-2 text-[0.6875rem] uppercase tracking-[0.1em]"
             >
               Retry
             </button>
@@ -534,7 +548,7 @@ export function AgentAerisPanel({
         )}
 
         {activeBackChannel && (
-          <label className="mx-3 mb-1 flex items-center gap-2 text-body-sm text-aeris-muted/90">
+          <label className="mx-3 mb-1 flex items-center gap-2 text-body-sm font-bold text-aeris-ink2">
             <input
               type="checkbox"
               checked={replyToChatSession}
@@ -543,7 +557,7 @@ export function AgentAerisPanel({
             />
             <span>
               Reply to chat session{" "}
-              <span className="font-mono text-aeris-accent">
+              <span className="font-black tabular-nums text-aeris-accent">
                 {activeBackChannel.sessionId.slice(0, 8)}
               </span>
               {activeBackChannel.disasterReportId && (
@@ -556,12 +570,13 @@ export function AgentAerisPanel({
           </label>
         )}
 
-        <div className="border-t border-aeris-border/50 px-2 pt-2">
+        <div className="border-t border-aeris-border/60 px-2.5 pt-2.5">
+          {/* The game's primary CTA (blue gradient, spaced caps). */}
           <button
             type="button"
             onClick={() => void sendPrompt(GENERATE_REPORT_PROMPT)}
             disabled={isSending}
-            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-aeris-accent/40 bg-aeris-accent/10 px-3 py-2 text-body-sm font-semibold text-aeris-accent transition-colors hover:bg-aeris-accent/15 disabled:cursor-not-allowed disabled:opacity-50"
+            className="aeris-btn-cta w-full min-h-[40px] px-3 text-[0.8125rem]"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
               <path
@@ -584,19 +599,19 @@ export function AgentAerisPanel({
 
         <form
           onSubmit={handleSubmit}
-          className="flex gap-2 p-2"
+          className="flex gap-2 p-2.5"
         >
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
             disabled={isSending}
             placeholder="Ask AGENT AERIS..."
-            className="min-w-0 flex-1 rounded-md border border-aeris-border/60 bg-aeris-bg/70 px-3 py-2 text-body-sm text-aeris-text outline-none placeholder:text-aeris-muted/50 focus:border-aeris-accent/60 disabled:cursor-not-allowed disabled:opacity-60"
+            className="aeris-input min-w-0 flex-1 !rounded-full px-4 py-2 text-body-sm disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button
             type="submit"
             disabled={!input.trim() || isSending}
-            className="rounded-md border border-aeris-accent/40 bg-aeris-accent/10 px-3 py-2 text-body-sm font-semibold text-aeris-accent transition-colors hover:bg-aeris-accent/15 disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px]"
+            className="aeris-btn-ghost !rounded-full px-4 text-body-sm disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px]"
           >
             Send
           </button>

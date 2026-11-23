@@ -6,11 +6,9 @@ export default function Page() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-aeris-bg text-aeris-muted">
-          <AerisLoadingLogo size="lg" variant="splash" />
-          <span className="text-body-sm font-mono uppercase tracking-wider">
-            Loading…
-          </span>
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-boot-sky text-aeris-ink2">
+          <AerisLoadingLogo size="lg" variant="glyph" />
+          <span className="aeris-label">Loading…</span>
         </div>
       }
     >

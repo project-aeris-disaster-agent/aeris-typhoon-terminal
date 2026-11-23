@@ -22,46 +22,50 @@ export function MapModeToggle({
   };
   const modes: readonly MapMode[] = allow3d ? ["2d", "3d"] : ["2d"];
 
+  // FLOOD CONTROL segmented track (landing `.lp-tabs`): pale track, white
+  // raised segment for the active mode; PAGASA is an outbound link, so it sits
+  // beside the track as a ghost button rather than pretending to be a mode.
   return (
-    <div className="panel-glass rounded-md p-0.5 font-mono text-body-sm">
-      <div className="mb-0.5 flex items-center gap-1 px-1.5 text-chrome uppercase tracking-wider text-aeris-muted">
-        <span>View Mode</span>
+    <div className="panel-glass rounded-xl p-2">
+      <div className="aeris-label mb-1.5 flex items-center gap-1 px-0.5">
+        <span>View mode</span>
         <HelpHint helpId="control.viewMode" side="right" />
         {onOpenPanahon && (
           <HelpHint helpId="control.externalMaps" side="right" />
         )}
       </div>
-      <div className="flex items-stretch">
-        {modes.map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => onChange(m)}
-            className={clsx(
-              "px-2.5 py-1 rounded transition-colors uppercase tracking-wider text-left",
-              mode === m
-                ? "bg-aeris-accent/15 text-aeris-accent"
-                : "text-aeris-muted hover:text-aeris-text",
-            )}
-            aria-pressed={mode === m}
-            title={MODE_META[m].hint}
-          >
-            <span className="block leading-none">{MODE_META[m].label}</span>
-            <span className="block text-chrome normal-case tracking-normal opacity-80">
-              {MODE_META[m].hint}
-            </span>
-          </button>
-        ))}
+      <div className="flex items-stretch gap-1.5">
+        <div className="aeris-seg flex-1" role="group" aria-label="Map view mode">
+          {modes.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange(m)}
+              className="aeris-seg-btn px-2.5 py-1 text-left"
+              aria-pressed={mode === m}
+              title={MODE_META[m].hint}
+            >
+              <span className="block text-body-sm font-black leading-tight">
+                {MODE_META[m].label}
+              </span>
+              <span className="block text-[0.6875rem] font-bold leading-tight opacity-75">
+                {MODE_META[m].hint}
+              </span>
+            </button>
+          ))}
+        </div>
         {onOpenPanahon && (
           <button
             type="button"
             onClick={onOpenPanahon}
-            className="px-2.5 py-1 rounded transition-colors uppercase tracking-wider text-left text-aeris-muted hover:bg-aeris-accent/10 hover:text-aeris-accent"
+            className={clsx("aeris-btn-ghost !rounded-xl px-2.5 py-1 text-left")}
             title="Open PAGASA PANaHON nationwide hydromet map"
           >
-            <span className="block leading-none">PAGASA</span>
-            <span className="block text-chrome normal-case tracking-normal opacity-80">
-              PANaHON ↗
+            <span>
+              <span className="block text-body-sm font-black leading-tight">PAGASA</span>
+              <span className="block text-[0.6875rem] font-bold leading-tight opacity-80">
+                PANaHON ↗
+              </span>
             </span>
           </button>
         )}

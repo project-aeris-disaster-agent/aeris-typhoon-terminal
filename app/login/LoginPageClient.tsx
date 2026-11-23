@@ -4,8 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLogin, useLoginWithOAuth, usePrivy } from "@privy-io/react-auth";
 import { useTheme } from "@/components/providers/ThemeProvider";
-import { AerisLoadingLogo } from "@/components/ui/AerisLoadingLogo";
-import { AuroraBackground } from "@/components/ui/AuroraBackground";
+import {
+  AerisCharIllustration,
+  AerisLoadingLogo,
+} from "@/components/ui/AerisLoadingLogo";
+import { Kicker } from "@/components/ui/Kit";
 import { MobileDesktopGate } from "@/components/MobileDesktopGate";
 import { isMobileDeviceClient } from "@/lib/mobile-access";
 import { isPrivyConfigured } from "@/lib/privy-config";
@@ -193,8 +196,11 @@ export default function LoginPageClient() {
           ? "Opening dashboard…"
           : null;
 
+  // FLOOD CONTROL landing (bagyogame landingStyles): sky backdrop, brand pill
+  // and round settings button on top, the frosted hero card on the left, and
+  // AERIS on the right with a speech bubble. Sign-in logic is unchanged.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4">
+    <div className="relative flex min-h-screen items-center bg-boot-sky px-4 py-20 md:px-14">
       {showMobileGate && (
         <MobileDesktopGate
           showWalletLogin={privyEnabled && !mobileBlocked}
@@ -203,7 +209,47 @@ export default function LoginPageClient() {
         />
       )}
 
-      <div className="relative w-full max-w-md overflow-hidden rounded-lg border border-aeris-border bg-aeris-surface p-6 shadow-xl">
+      {/* Top bar */}
+      <div className="absolute inset-x-4 top-5 flex items-center justify-between gap-3 md:inset-x-10">
+        <div className="aeris-pill-surface flex items-center gap-2 rounded-full py-1 pl-1 pr-4">
+          <AerisLoadingLogo size="sm" variant="glyph" spin={false} />
+          <span className="text-[0.9375rem] font-black text-aeris-text">bagyo.app</span>
+        </div>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="aeris-round !px-3.5 text-body-sm"
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          title="Toggle light/dark theme"
+        >
+          {theme === "dark" ? (
+            <SunIcon className="h-4 w-4" />
+          ) : (
+            <MoonIcon className="h-4 w-4" />
+          )}
+          <span>{theme === "dark" ? "Storm" : "Day"}</span>
+        </button>
+      </div>
+
+      {/* AERIS with her speech bubble (desktop) */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-0 right-[6%] hidden lg:block"
+      >
+        <div className="panel-glass absolute -left-56 top-10 w-64 rounded-2xl rounded-br-md px-4 py-3 !shadow-pill">
+          <div className="text-[0.625rem] font-black uppercase tracking-[0.16em] text-aeris-kicker-ink">
+            A.E.R.I.S.
+          </div>
+          <p className="mt-1 text-body-sm font-extrabold leading-snug text-aeris-text">
+            Magandang araw! Sign in to see live storm tracks, hazards and
+            ground reports.
+          </p>
+        </div>
+        <AerisCharIllustration size="lg" scale={4} />
+      </div>
+
+      {/* Hero card */}
+      <main className="panel-glass aeris-rise relative z-[2] w-full max-w-[30rem] overflow-hidden rounded-3xl !shadow-hero px-7 pb-6 pt-7 sm:px-8">
         {loadingMessage && (
           <div
             className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-aeris-surface/85 backdrop-blur-[2px]"
@@ -211,45 +257,41 @@ export default function LoginPageClient() {
             aria-live="polite"
           >
             <AerisLoadingLogo size="md" variant="glyph" />
-            <span className="text-body-sm text-aeris-muted">{loadingMessage}</span>
+            <span className="text-body-sm font-extrabold text-aeris-ink2">{loadingMessage}</span>
           </div>
         )}
 
-        <img
-          src="/assets/Bagyo%20Logo%405x.png"
-          alt="bagyo.app"
-          className="mx-auto mb-6 h-14 w-auto"
-        />
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-body-lg font-semibold text-aeris-text">Sign in</h1>
-            <p className="mt-2 text-body-sm text-aeris-muted">
-              Live disaster intelligence for the Philippines.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded border border-aeris-border bg-aeris-bg/70 px-2 text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-text"
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            title="Toggle light/dark theme"
-          >
-            {theme === "dark" ? (
-              <SunIcon className="h-3.5 w-3.5" />
-            ) : (
-              <MoonIcon className="h-3.5 w-3.5" />
-            )}
-            <span className="hud-text text-body-sm">{theme === "dark" ? "Dark" : "Light"}</span>
-          </button>
+        <Kicker>Philippines · Disaster dashboard</Kicker>
+
+        <h1 className="mt-4 flex flex-col leading-[0.9]">
+          <span className="text-[3.25rem] font-black tracking-[0.015em] text-aeris-text sm:text-[3.75rem]">
+            Sign in to
+          </span>
+          <span className="aeris-title-fill aeris-wave self-start pb-3 text-[3.25rem] font-black tracking-[0.015em] sm:text-[3.75rem]">
+            A.E.R.I.S.
+          </span>
+        </h1>
+
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-body-sm font-extrabold text-aeris-muted">by</span>
+          <span
+            role="img"
+            aria-label="bagyo.app — powered by A.E.R.I.S."
+            className="aeris-brand-mark h-9"
+          />
         </div>
+        <p className="mt-2 text-[0.9375rem] font-bold text-aeris-ink2">
+          Live disaster intelligence for the Philippines.
+        </p>
 
         {privyEnabled && !mobile && (
-          <div className="mt-6 space-y-2 border-t border-aeris-border/70 pt-6">
+          <div className="mt-6 space-y-2.5">
+            <div className="aeris-label">Sign in with</div>
             <button
               type="button"
               disabled={!ready || authenticated || loadingPhase !== null || oauthLoading}
               onClick={() => void handleGoogleLogin()}
-              className="w-full rounded border border-aeris-accent/40 bg-aeris-accent/15 px-3 py-2.5 text-body-sm font-semibold text-aeris-accent disabled:opacity-40 min-h-[44px]"
+              className="aeris-btn-cta w-full min-h-[52px] px-4 text-[0.9375rem]"
             >
               Continue with Google
             </button>
@@ -257,7 +299,7 @@ export default function LoginPageClient() {
               type="button"
               disabled={!ready || authenticated || loadingPhase !== null}
               onClick={handleWalletLogin}
-              className="w-full rounded border border-aeris-border bg-aeris-bg/70 px-3 py-2.5 text-body-sm font-semibold text-aeris-text disabled:opacity-40 min-h-[44px]"
+              className="aeris-btn-ghost w-full min-h-[44px] px-4 text-body-sm disabled:opacity-40"
             >
               Connect wallet
             </button>
@@ -265,12 +307,19 @@ export default function LoginPageClient() {
         )}
 
         {status && (
-          <p className="mt-4 rounded border border-aeris-border/70 bg-aeris-bg px-3 py-2 text-xs text-aeris-muted">
+          <p
+            role="status"
+            className="aeris-incident mt-4 px-3 py-2 text-xs font-extrabold text-aeris-ink2"
+          >
             {status}
           </p>
         )}
 
-      </div>
+        <p className="mt-6 text-[0.6875rem] font-bold leading-snug text-aeris-muted">
+          Not an official PAGASA product. Follow PAGASA, NDRRMC and your LGU
+          for evacuation orders.
+        </p>
+      </main>
     </div>
   );
 }

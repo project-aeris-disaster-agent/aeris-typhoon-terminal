@@ -5,7 +5,7 @@ import { memo, useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { AERIS_BRAND } from "@/lib/aeris-brand-assets";
 import { formatAerisRoleLabel, getAerisRoleDescription } from "@/lib/aeris-roles";
-import { Pill } from "./ui/Card";
+import { Kicker } from "./ui/Kit";
 import { useConnectionStatus } from "@/services/connection-status";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useAerisRole } from "@/services/role-context";
@@ -14,6 +14,7 @@ import { HeaderSignOut } from "@/components/HeaderSignOut";
 import { ProfileOverlay } from "@/components/ProfileOverlay";
 import { NewsTicker } from "@/components/NewsTicker";
 import { useUnreadLiveReports } from "@/hooks/useUnreadLiveReports";
+import { isTypingTarget } from "@/lib/hotkeys";
 
 function AlertTriangleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -100,8 +101,7 @@ export const Header = memo(function Header({
         return;
       }
       if (e.key === "6") {
-        const t = e.target as HTMLElement | null;
-        if (t?.closest("input, textarea, select, [contenteditable=true]")) return;
+        if (isTypingTarget(e.target)) return;
         e.preventDefault();
         toggleLiveReports();
       }
@@ -112,9 +112,10 @@ export const Header = memo(function Header({
 
   return (
     <>
-    <header className="relative z-40 flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-aeris-border bg-aeris-surface/98 px-2 shadow-sm max-md:backdrop-blur-none sm:gap-3 sm:px-3 md:bg-aeris-surface/95 md:backdrop-blur-md">
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-        <div className="relative z-10 flex min-w-0 items-center gap-1.5 sm:gap-2">
+    {/* FLOOD CONTROL status bar: floating white pill clusters on the sky. */}
+    <header className="aeris-sky relative z-40 flex min-h-14 shrink-0 items-center justify-between gap-2 px-2 py-2 sm:gap-3 sm:px-3">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+        <div className="aeris-pill-surface relative z-10 flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-3.5">
           <div
             className="aeris-loading-glyph-spin h-7 w-7 shrink-0"
             aria-hidden
@@ -128,22 +129,22 @@ export const Header = memo(function Header({
               className="block h-full w-auto max-w-full object-contain object-left"
             />
           </div>
-          <span className="live-dot shrink-0" aria-hidden />
-          <span className="truncate text-body-sm font-semibold tracking-wide text-aeris-accent">
+          <span className="truncate text-[0.9375rem] font-black tracking-[0.01em] text-aeris-text">
             A.E.R.I.S.
           </span>
-          <span className="hud-text hidden min-w-0 truncate text-aeris-muted xl:inline-block">
-            {"// EARLY ACCESS // Emergency reporting for the Philippines"}
+          <span className="hidden min-w-0 truncate text-[0.8125rem] font-extrabold text-aeris-muted xl:inline-block">
+            Emergency reporting for the Philippines
           </span>
         </div>
         {online ? (
-          <Pill tone="ok" className="hidden shrink-0 sm:inline-flex">
-            LIVE
-          </Pill>
+          <Kicker className="hidden shrink-0 sm:inline-flex">Live</Kicker>
         ) : (
-          <Pill tone="warn" className="hidden max-w-[5.5rem] shrink-0 truncate sm:inline-flex">
-            OFFLINE
-          </Pill>
+          <Kicker
+            live={false}
+            className="hidden shrink-0 !bg-aeris-warm/15 !text-aeris-warn sm:inline-flex"
+          >
+            Offline
+          </Kicker>
         )}
         {/*
           suppressHydrationWarning: the clock string is computed at render time
@@ -157,25 +158,25 @@ export const Header = memo(function Header({
         */}
         <span
           suppressHydrationWarning
-          className="chrome-label hidden shrink-0 tabular-nums text-aeris-muted md:inline"
+          className="aeris-pill-surface hidden shrink-0 rounded-full px-3 py-1.5 text-[0.8125rem] font-black tabular-nums text-aeris-text md:inline"
         >
           {time}
         </span>
       </div>
 
-      <div className="relative z-10 flex min-w-0 shrink-0 items-center justify-end gap-1 sm:gap-2">
-        <NewsTicker className="hidden lg:flex max-w-[min(38vw,36rem)] xl:max-w-[min(52vw,36rem)]" />
+      <div className="relative z-10 flex min-w-0 shrink-0 items-center justify-end gap-1.5 sm:gap-2">
+        <NewsTicker className="aeris-pill-surface hidden h-9 rounded-full px-3 lg:flex max-w-[min(38vw,36rem)] xl:max-w-[min(52vw,36rem)]" />
         <button
           type="button"
           onClick={toggleTheme}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-aeris-border bg-aeris-bg/70 text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-text"
+          className="aeris-round shrink-0 !px-0"
           aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
           title="Toggle light/dark theme"
         >
           {theme === "dark" ? (
-            <SunIcon className="h-3.5 w-3.5" />
+            <SunIcon className="h-4 w-4" />
           ) : (
-            <MoonIcon className="h-3.5 w-3.5" />
+            <MoonIcon className="h-4 w-4" />
           )}
         </button>
         <div className="relative" ref={liveReportsTriggerRef}>
@@ -183,12 +184,12 @@ export const Header = memo(function Header({
             type="button"
             onClick={toggleLiveReports}
             className={clsx(
-              "flex h-8 shrink-0 items-center gap-1.5 rounded border px-2 transition-colors sm:px-2.5",
+              "aeris-round shrink-0 sm:!px-3.5",
               liveReportsOpen
-                ? "border-aeris-accent/40 bg-aeris-accent/10 text-aeris-accent"
+                ? "!border-aeris-accent/40 !bg-aeris-chip-on !text-aeris-kicker-ink"
                 : hasUnreadReports
-                  ? "border-aeris-danger/40 bg-aeris-danger/10 text-aeris-danger hover:border-aeris-danger/50"
-                  : "border-aeris-border text-aeris-muted hover:border-aeris-accent/30 hover:text-aeris-text",
+                  ? "!border-aeris-danger/30 !bg-aeris-danger/10 !text-aeris-danger"
+                  : "",
             )}
             aria-expanded={liveReportsOpen}
             aria-controls="live-reports-popover"
@@ -211,7 +212,7 @@ export const Header = memo(function Header({
                 </span>
               ) : null}
             </span>
-            <span className="hidden text-body-sm sm:inline">Reports</span>
+            <span className="hidden text-body-sm font-extrabold sm:inline">Reports</span>
           </button>
         </div>
 
@@ -220,19 +221,17 @@ export const Header = memo(function Header({
             type="button"
             onClick={() => setProfileOpen((v) => !v)}
             className={clsx(
-              "flex h-8 shrink-0 items-center gap-1.5 rounded border px-1.5 transition-colors sm:px-2",
-              profileOpen
-                ? "border-aeris-accent/40 bg-aeris-accent/10 text-aeris-accent"
-                : "border-aeris-border text-aeris-muted hover:border-aeris-accent/30 hover:text-aeris-text",
+              "aeris-round shrink-0 !pl-1 sm:!pr-3",
+              profileOpen && "!bg-aeris-chip-on !text-aeris-kicker-ink",
             )}
             aria-expanded={profileOpen}
             aria-label="Open profile"
             title="Profile & level"
           >
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-aeris-accent/15 text-[10px] font-semibold text-aeris-accent">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-cta text-[11px] font-black text-white">
               {(profile?.username ?? "A").slice(0, 1).toUpperCase()}
             </span>
-            <span className="hidden text-body-sm tabular-nums sm:inline">
+            <span className="hidden text-body-sm font-black tabular-nums sm:inline">
               Lv {profile?.level ?? 0}
             </span>
             {showAuthControls && (

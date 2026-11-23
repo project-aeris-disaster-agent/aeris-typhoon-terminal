@@ -104,11 +104,12 @@ const TONE_RANK: Record<SafetyTone, number> = {
   danger: 3,
 };
 
+// Verdict band: the game's toned card (pale fill, soft rim, solid left stripe).
 const TONE_BG: Record<SafetyTone, string> = {
-  ok: "bg-aeris-ok/15 border-aeris-ok/40 text-aeris-ok",
-  default: "bg-aeris-accent/10 border-aeris-accent/40 text-aeris-accent",
-  warn: "bg-aeris-warn/15 border-aeris-warn/50 text-aeris-warn",
-  danger: "bg-aeris-danger/15 border-aeris-danger/50 text-aeris-danger",
+  ok: "bg-aeris-ok/10 border-aeris-ok/30 border-l-aeris-live text-aeris-ok",
+  default: "bg-aeris-chip-on border-aeris-rim border-l-aeris-accent text-aeris-kicker-ink",
+  warn: "bg-aeris-warm/15 border-aeris-warm/40 border-l-aeris-warm text-aeris-warn",
+  danger: "bg-aeris-danger/10 border-aeris-danger/30 border-l-aeris-danger text-aeris-danger",
 };
 
 const FACILITY_META: Record<string, { Icon: LucideIcon; tone: string }> = {
@@ -676,7 +677,8 @@ export function LocationInfoPanel({
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col min-h-0 max-h-full overflow-hidden text-aeris-text md:backdrop-blur-md md:bg-aeris-surface/50 md:rounded-xl md:shadow-2xl md:border md:border-aeris-border/70">
+    // The glass card lives on LocationInfoShell (sheet on phones, floating card on desktop).
+    <div className="flex flex-col min-h-0 max-h-full overflow-hidden text-aeris-text">
       <div className="shrink-0">
         <Header
           location={location}
@@ -685,19 +687,18 @@ export function LocationInfoPanel({
           copied={copied === "coords"}
         />
         <VerdictBand verdict={verdict} assessing={isAssessing} />
-        <div className="mx-3 mb-2 flex items-center justify-end gap-2 text-chrome font-mono uppercase tracking-wider">
+        <div className="mx-3 mb-2 flex items-center justify-end gap-1.5">
           <button
             type="button"
             onClick={expandAllSections}
-            className="text-aeris-muted hover:text-aeris-accent transition-colors"
+            className="aeris-btn-soft h-6 px-2 text-[0.6875rem] uppercase tracking-[0.1em]"
           >
             Expand all
           </button>
-          <span className="text-aeris-border">·</span>
           <button
             type="button"
             onClick={collapseAllSections}
-            className="text-aeris-muted hover:text-aeris-accent transition-colors"
+            className="aeris-btn-soft h-6 px-2 text-[0.6875rem] uppercase tracking-[0.1em]"
           >
             Collapse all
           </button>
@@ -857,7 +858,7 @@ export function LocationInfoPanel({
         </CollapsibleSection>
       </div>
 
-      <div className="shrink-0 px-3 py-2 border-t border-aeris-border/40 bg-aeris-surface/95 max-md:backdrop-blur-none md:bg-aeris-surface/80 md:backdrop-blur-sm flex flex-wrap gap-1.5">
+      <div className="shrink-0 px-3 py-2.5 border-t border-aeris-border/60 flex flex-wrap gap-1.5">
         <ActionButton onClick={onRecenter}>Recenter</ActionButton>
         <ActionButton onClick={onOpen3D}>Open in 3D</ActionButton>
         <ActionButton onClick={onShare} Icon={Share2}>
@@ -882,23 +883,23 @@ function Header({
   copied: boolean;
 }) {
   return (
-    <div className="px-3 pt-3 pb-2 flex items-start justify-between gap-2 border-b border-aeris-border/40">
+    <div className="px-3.5 pt-3.5 pb-2.5 flex items-start justify-between gap-2 border-b border-aeris-border/60">
       <div className="min-w-0 flex-1">
-        <div className="hud-text text-chrome text-aeris-accent tracking-widest mb-0.5">
-          LOCATION INFO · {location.typeLabel}
-        </div>
-        <div className="text-body-sm font-semibold truncate leading-tight">
+        <span className="aeris-kicker mb-1.5">
+          Location info · {location.typeLabel}
+        </span>
+        <div className="text-lg font-black truncate leading-tight">
           {location.shortName}
         </div>
         {location.breadcrumb && (
-          <div className="text-body-sm text-aeris-muted truncate mt-0.5">
+          <div className="text-body-sm font-bold text-aeris-ink2 truncate mt-0.5">
             {location.breadcrumb}
           </div>
         )}
         <button
           type="button"
           onClick={onCopyCoords}
-          className="mt-1 text-body-sm font-mono text-aeris-muted hover:text-aeris-accent transition-colors inline-flex items-center gap-1"
+          className="mt-1 text-body-sm font-extrabold tabular-nums text-aeris-muted hover:text-aeris-accent transition-colors inline-flex items-center gap-1"
           title="Copy coordinates"
         >
           <Copy size={10} />
@@ -916,9 +917,9 @@ function Header({
         type="button"
         onClick={onClose}
         aria-label="Close location info"
-        className="shrink-0 text-aeris-muted/70 hover:text-aeris-text transition-colors p-1 -m-1 rounded-md hover:bg-aeris-elev/50"
+        className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-aeris-elev text-aeris-ink2 transition-colors hover:text-aeris-danger"
       >
-        <X size={16} />
+        <X size={14} />
       </button>
     </div>
   );
@@ -935,16 +936,16 @@ function VerdictBand({
   return (
     <div
       className={clsx(
-        "mx-3 mt-3 rounded-lg border px-3 py-2.5 flex items-start gap-2.5",
+        "mx-3 mt-3 rounded-xl border border-l-4 px-3 py-2.5 flex items-start gap-2.5",
         TONE_BG[verdict.tone],
       )}
     >
       <Icon size={22} className="shrink-0 mt-0.5" />
       <div className="min-w-0 flex-1">
-        <div className="text-body font-bold uppercase tracking-wide">
+        <div className="text-body font-black uppercase tracking-[0.1em]">
           {assessing ? "Assessing…" : verdict.label}
         </div>
-        <p className="text-[10.5px] opacity-85 leading-snug mt-1">
+        <p className="text-[0.75rem] font-bold opacity-90 leading-snug mt-1">
           {assessing
             ? "Checking forecasts, advisories, and flood maps for this point."
             : verdict.detail}
@@ -957,12 +958,12 @@ function VerdictBand({
 function FloodRow({ hit }: { hit: FloodHit }) {
   return (
     <li className="flex items-center justify-between gap-2 text-body-sm">
-      <span className="font-mono text-aeris-muted uppercase tracking-wider text-body-sm">
+      <span className="aeris-label">
         {hit.returnPeriod} return
       </span>
       <span className="inline-flex items-center gap-1.5">
         <span
-          className="w-2.5 h-2.5 rounded-sm border border-black/30"
+          className="w-3 h-3 rounded-[4px]"
           style={{ backgroundColor: FLOOD_LEVEL_STYLE[hit.worst].color }}
         />
         <Pill tone={floodLevelTone(hit.worst)}>
@@ -982,7 +983,7 @@ function FacilityRow({ item }: { item: NearbyFacility }) {
       <div className="min-w-0 flex items-center gap-1.5">
         <Icon size={14} className={clsx("shrink-0", meta.tone)} />
         <div className="min-w-0">
-          <div className="truncate font-medium leading-tight">
+          <div className="truncate font-extrabold leading-tight">
             {p.name ?? p.categoryLabel}
           </div>
           <div className="text-chrome text-aeris-muted uppercase tracking-wider">
@@ -990,7 +991,7 @@ function FacilityRow({ item }: { item: NearbyFacility }) {
           </div>
         </div>
       </div>
-      <span className="shrink-0 font-mono text-body-sm text-aeris-muted">
+      <span className="shrink-0 text-body-sm font-extrabold tabular-nums text-aeris-ink2">
         {formatDistance(item.distanceMeters)} {item.bearing}
       </span>
     </div>
@@ -1018,25 +1019,26 @@ function CollapsibleSection({
 }) {
   const panelId = `location-section-${id}`;
   return (
-    <div className="mt-2 border-b border-aeris-border/30 pb-2 last:border-b-0">
+    // Each section is a white row (hudTheme .sq-row) that opens in place.
+    <div className="aeris-row mt-2 overflow-hidden last:mb-2">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
         aria-controls={panelId}
         className={clsx(
-          "flex w-full items-center gap-1.5 rounded-md px-1 py-1.5 text-left transition-colors",
-          open
-            ? "bg-aeris-accent/5"
-            : "hover:bg-aeris-elev/40",
+          "flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors",
+          open ? "bg-aeris-chip-on" : "hover:bg-aeris-elev/50",
         )}
       >
-        <Icon size={12} className="text-aeris-muted shrink-0" />
-        <span className="hud-text text-chrome text-aeris-muted tracking-widest shrink-0">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-aeris-kicker text-aeris-kicker-ink">
+          <Icon size={13} />
+        </span>
+        <span className="aeris-title !text-[0.6875rem] shrink-0">
           {title}
         </span>
         {!open && (
-          <span className="min-w-0 flex-1 truncate text-body-sm text-aeris-text/80 font-mono normal-case tracking-normal ml-1">
+          <span className="min-w-0 flex-1 truncate text-body-sm font-extrabold text-aeris-text ml-1">
             {summary}
           </span>
         )}
@@ -1055,7 +1057,7 @@ function CollapsibleSection({
         />
       </button>
       {open && (
-        <div id={panelId} className="mt-1.5 px-1">
+        <div id={panelId} className="border-t border-aeris-border/60 px-2.5 py-2.5">
           {children}
         </div>
       )}
@@ -1064,8 +1066,8 @@ function CollapsibleSection({
 }
 
 const STAT_TONE_CLASS: Record<"warn" | "danger", { box: string; text: string }> = {
-  warn: { box: "border-aeris-warn/40 bg-aeris-warn/10", text: "text-aeris-warn" },
-  danger: { box: "border-aeris-danger/40 bg-aeris-danger/10", text: "text-aeris-danger" },
+  warn: { box: "!border-aeris-warm/45 !bg-aeris-warm/10", text: "text-aeris-warn" },
+  danger: { box: "!border-aeris-danger/40 !bg-aeris-danger/10", text: "text-aeris-danger" },
 };
 
 function Stat({
@@ -1084,21 +1086,18 @@ function Stat({
   const t = tone ? STAT_TONE_CLASS[tone] : null;
   return (
     <div
-      className={clsx(
-        "rounded-md border px-2 py-1.5",
-        t ? t.box : "border-aeris-border/50 bg-aeris-elev/30",
-      )}
+      className={clsx("aeris-stat !px-2 !py-1.5", t?.box)}
     >
-      <div className="flex items-center gap-1 text-label text-aeris-muted">
-        {Icon && <Icon size={12} />}
+      <div className="aeris-label flex items-center gap-1 !text-[0.5625rem]">
+        {Icon && <Icon size={11} />}
         <span>{label}</span>
       </div>
       <div
-        className={clsx("font-semibold text-body leading-tight mt-0.5", t?.text)}
+        className={clsx("font-black text-body tabular-nums leading-tight mt-0.5", t?.text)}
       >
         {value}
         {suffix && (
-          <span className="ml-0.5 text-chrome font-normal text-aeris-muted">
+          <span className="ml-0.5 text-chrome font-bold text-aeris-muted">
             {suffix}
           </span>
         )}
@@ -1108,7 +1107,7 @@ function Stat({
 }
 
 const SkeletonRow = () => (
-  <div className="h-12 rounded-md bg-aeris-elev/30 border border-aeris-border/30 animate-pulse" />
+  <div className="h-12 rounded-xl bg-aeris-elev animate-pulse" />
 );
 
 const Hint = ({ children }: { children: ReactNode }) => (
@@ -1128,9 +1127,9 @@ function ActionButton({
     <button
       type="button"
       onClick={onClick}
-      className="text-body-sm px-2 py-1.5 rounded-md border border-aeris-border/60 text-aeris-muted hover:text-aeris-accent hover:border-aeris-accent/60 transition-colors inline-flex items-center gap-1 min-h-[44px]"
+      className="aeris-chip min-h-[44px] flex-1 px-3 text-body-sm"
     >
-      {Icon && <Icon size={11} />}
+      {Icon && <Icon size={13} />}
       {children}
     </button>
   );

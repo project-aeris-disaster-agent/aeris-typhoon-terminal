@@ -180,19 +180,20 @@ export function MapSearchBar({
     <div className="relative w-full">
       <div
         className={clsx(
-          "group relative flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-200 shadow-lg",
+          // Game round pill: white, pill shadow, blue rim while active.
+          "group relative flex h-11 items-center gap-2.5 px-4 rounded-full transition-[border-color,box-shadow] duration-200 bg-aeris-surface shadow-pill border-[1.5px]",
           isFocused || query
-            ? "bg-aeris-surface/98 border border-aeris-accent/40 shadow-aeris-accent/10"
-            : "bg-aeris-surface/95 border border-aeris-border/70 hover:border-aeris-border",
+            ? "border-aeris-accent"
+            : "border-transparent hover:border-aeris-rim",
         )}
       >
         <svg
           className={clsx(
             "shrink-0 transition-colors duration-200",
-            isFocused || query ? "text-aeris-accent" : "text-aeris-muted/50",
+            isFocused || query ? "text-aeris-accent" : "text-aeris-muted",
           )}
-          width="14"
-          height="14"
+          width="16"
+          height="16"
           viewBox="0 0 16 16"
           fill="none"
         >
@@ -212,13 +213,13 @@ export function MapSearchBar({
           }}
           onBlur={() => setIsFocused(false)}
           placeholder="Search address, street, barangay, or city…"
-          className="flex-1 bg-transparent text-body-sm text-aeris-text placeholder:text-aeris-muted/40 outline-none min-w-0 font-medium"
+          className="flex-1 bg-transparent text-body-sm text-aeris-text placeholder:text-aeris-muted/80 placeholder:font-semibold !outline-none min-w-0 font-bold"
           autoComplete="off"
           spellCheck={false}
         />
 
         {!isFocused && !query && (
-          <span className="shrink-0 hud-text text-chrome text-aeris-muted/50 tracking-widest uppercase hidden sm:inline">
+          <span className="aeris-kicker shrink-0 hidden sm:inline-flex !px-2 !py-0.5">
             PH
           </span>
         )}
@@ -254,7 +255,7 @@ export function MapSearchBar({
         <ul
           ref={listRef}
           role="listbox"
-          className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 bg-aeris-surface border border-aeris-border/80 rounded-xl overflow-hidden shadow-xl max-h-64 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150"
+          className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 bg-aeris-surface border border-aeris-border/60 rounded-xl overflow-hidden shadow-pop max-h-64 overflow-y-auto p-1"
         >
           {suggestions.map((s, i) => {
             const secondary = suggestionSecondaryLine(s);
@@ -269,14 +270,12 @@ export function MapSearchBar({
                   }}
                   onMouseEnter={() => setActiveIdx(i)}
                   className={clsx(
-                    "w-full text-left px-3 py-2 transition-all duration-150 flex items-start gap-2 border-b border-aeris-border/20 last:border-0",
-                    i === activeIdx
-                      ? "bg-aeris-accent/8 border-l-2 border-l-aeris-accent pl-[11px]"
-                      : "hover:bg-aeris-elev/40",
+                    "w-full text-left px-3 py-2 rounded-lg transition-colors duration-150 flex items-start gap-2",
+                    i === activeIdx ? "bg-aeris-chip-on" : "hover:bg-aeris-elev/60",
                   )}
                 >
                   <div className="flex-1 min-w-0 pt-0.5">
-                    <div className="text-body-sm text-aeris-text truncate font-semibold">
+                    <div className="text-body-sm text-aeris-text truncate font-black">
                       {s.shortName}
                     </div>
                     {secondary && (
@@ -287,7 +286,7 @@ export function MapSearchBar({
                   </div>
                   <span
                     className={clsx(
-                      "shrink-0 text-chrome font-mono uppercase tracking-wider font-bold mt-0.5 px-1.5 py-0.5 rounded-full border",
+                      "shrink-0 text-[0.625rem] uppercase tracking-[0.12em] font-black mt-0.5 px-2 py-0.5 rounded-full border",
                       typeTone,
                       "border-current border-opacity-30",
                     )}

@@ -40,6 +40,34 @@ export function layerBeforeDynamicOverlays(map: MLMap): string | undefined {
 }
 
 /**
+ * True when the style document is parsed and can take addSource/addLayer.
+ *
+ * Deliberately not `isStyleLoaded()`: that is also false while any source has
+ * tiles in flight or a pending setData, which is most of the time on this map.
+ * The internal `style._loaded` flag tracks only the style document, and is
+ * false exactly while a `setStyle()` rebuild (theme swap) is in flight.
+ *
+ * Falls back to `isStyleLoaded()`, then to `true`, for test stubs.
+ */
+export function styleAcceptsLayers(map: MLMap): boolean {
+  const candidate = map as MLMap & {
+    isStyleLoaded?: () => boolean;
+    style?: { _loaded?: boolean };
+  };
+  const flag = candidate.style?._loaded;
+  if (typeof flag === "boolean") return flag;
+  if (typeof candidate.isStyleLoaded === "function") {
+    try {
+      // MapLibre types this as `boolean | void`; treat void as loaded.
+      return candidate.isStyleLoaded() !== false;
+    } catch {
+      return true;
+    }
+  }
+  return true;
+}
+
+/**
  * Run `fn` once the map's style can safely accept `addSource`/`addLayer`.
  *
  * Overlay renderers (report pings, webcams, water levels, satellite rasters)
@@ -53,20 +81,8 @@ export function layerBeforeDynamicOverlays(map: MLMap): string | undefined {
  * `isStyleLoaded`/`once`.
  */
 export function whenStyleReady(map: MLMap, fn: () => void): void {
-  const candidate = map as MLMap & {
-    isStyleLoaded?: () => boolean;
-    once?: MLMap["once"];
-  };
-  let loaded = true;
-  if (typeof candidate.isStyleLoaded === "function") {
-    try {
-      // MapLibre types this as `boolean | void`; treat void as loaded.
-      loaded = candidate.isStyleLoaded() !== false;
-    } catch {
-      loaded = true;
-    }
-  }
-  if (loaded || typeof candidate.once !== "function") {
+  const candidate = map as MLMap & { once?: MLMap["once"] };
+  if (styleAcceptsLayers(map) || typeof candidate.once !== "function") {
     fn();
     return;
   }

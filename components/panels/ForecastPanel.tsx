@@ -88,7 +88,7 @@ export function ForecastPanel() {
 
       {!loading && byRegion && (
         <div
-          className="max-h-36 overflow-y-auto rounded border border-aeris-border divide-y divide-aeris-border/50"
+          className="aeris-row max-h-36 overflow-y-auto p-1 space-y-0.5"
           role="listbox"
           aria-label="Regions sorted by forecast severity"
         >
@@ -113,8 +113,8 @@ export function ForecastPanel() {
                     : r.name
                 }
                 className={clsx(
-                  "group relative w-full flex items-center gap-2 px-2 py-1.5 text-left text-body-sm transition-colors",
-                  selected && "bg-aeris-accent/10",
+                  "group relative w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-body-sm font-bold transition-colors",
+                  selected && "bg-aeris-chip-on",
                   !f && "opacity-50 cursor-not-allowed",
                   f && !selected && "hover:bg-aeris-elev/60",
                 )}
@@ -150,7 +150,7 @@ export function ForecastPanel() {
                   <span
                     className={clsx(
                       "pointer-events-none absolute inset-y-0 right-0 flex items-center",
-                      "bg-gradient-to-l from-aeris-bg via-aeris-bg/95 to-transparent pl-8 pr-2",
+                      "bg-gradient-to-l from-aeris-surface via-aeris-surface/95 to-transparent pl-8 pr-2",
                       "tabular-nums text-body-sm text-aeris-muted whitespace-nowrap",
                       "opacity-0 group-hover:opacity-100 transition-opacity",
                     )}
@@ -172,15 +172,15 @@ export function ForecastPanel() {
       )}
 
       {selectedAlert && data && (
-        <div className="text-body-sm text-aeris-muted">
-          Selected outlook:{" "}
-          <span className="text-aeris-text">{selectedAlert.label}</span>
+        <div className="flex items-center gap-2">
+          <span className="aeris-label">Selected outlook</span>
+          <Pill tone={selectedAlert.tone}>{selectedAlert.label}</Pill>
         </div>
       )}
 
       {data && (
         <div className="space-y-1">
-          <div className="grid grid-cols-3 gap-1 text-body-sm text-aeris-muted">
+          <div className="grid grid-cols-3 gap-1.5 text-body-sm">
             <Stat label="Wind max" value={`${data.maxWindKph} km/h`} />
             <Stat label="Rain total" value={`${data.totalRainMm} mm`} />
             <Stat label="Min pres" value={`${data.minPressureHpa} hPa`} />
@@ -193,9 +193,9 @@ export function ForecastPanel() {
                 <div
                   key={d.date}
                   className={clsx(
-                    "flex items-center justify-between text-body-sm border-b border-aeris-border/40 py-1 last:border-0 rounded-sm -mx-0.5 px-0.5",
-                    dayAlert === "danger" && "bg-aeris-danger/5",
-                    dayAlert === "warn" && "bg-aeris-warn/5",
+                    "flex items-center justify-between text-body-sm font-bold py-1 rounded-lg px-1.5",
+                    dayAlert === "danger" && "bg-aeris-danger/10",
+                    dayAlert === "warn" && "bg-aeris-warm/15",
                   )}
                 >
                   <span className="font-mono text-aeris-muted w-14">
@@ -285,9 +285,9 @@ function WeatherEmojiStrip({
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-aeris-bg/40 border border-aeris-border rounded px-1.5 py-1">
-      <div className="text-chrome uppercase tracking-wider">{label}</div>
-      <div className="text-aeris-text font-mono text-body-sm">{value}</div>
+    <div className="aeris-stat">
+      <div className="aeris-label !text-[0.625rem]">{label}</div>
+      <div className="text-[0.9375rem] font-black tabular-nums text-aeris-text">{value}</div>
     </div>
   );
 }

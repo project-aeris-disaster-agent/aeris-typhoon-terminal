@@ -41,7 +41,7 @@ export function CardHeader({
 }) {
   return (
     <div className="mb-2 min-w-0">
-      <div className="hud-text flex flex-wrap items-center gap-1.5 text-aeris-muted">
+      <div className="aeris-label flex flex-wrap items-center gap-1.5">
         {title ? <span>{title}</span> : null}
         {helpId ? <HelpHint helpId={helpId} side="bottom" /> : null}
         {trailing ? <div className="shrink-0">{trailing}</div> : null}
@@ -64,17 +64,18 @@ export function Pill({
   tone?: "default" | "ok" | "warn" | "danger" | "accent";
   className?: string;
 }) {
+  // The game's chip tones (hudTheme .hud-chip): pale fill, darker ink, soft rim.
   const tones: Record<string, string> = {
-    default: "bg-aeris-elev/80 text-aeris-muted border-aeris-border",
-    ok: "bg-aeris-ok/10 text-aeris-ok border-aeris-ok/30",
-    warn: "bg-aeris-warn/10 text-aeris-warn border-aeris-warn/30",
+    default: "bg-aeris-elev text-aeris-ink2 border-transparent",
+    ok: "bg-aeris-ok/10 text-aeris-ok border-aeris-ok/25",
+    warn: "bg-aeris-warm/15 text-aeris-warn border-aeris-warm/35",
     danger: "bg-aeris-danger/10 text-aeris-danger border-aeris-danger/30",
-    accent: "bg-aeris-accent/10 text-aeris-accent border-aeris-accent/30",
+    accent: "bg-aeris-kicker text-aeris-kicker-ink border-transparent",
   };
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-chrome font-sans normal-case tracking-normal",
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-chrome font-sans font-extrabold normal-case tracking-normal",
         tones[tone],
         className,
       )}

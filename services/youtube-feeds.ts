@@ -5,6 +5,7 @@ export type { YtFeedResult, YtVideo } from "@/lib/youtube-feed/types";
 import type { YtFeedResult } from "@/lib/youtube-feed/types";
 
 const inMemCache = new Map<string, { data: YtFeedResult; expiresAt: number }>();
+const inFlight = new Map<string, Promise<YtFeedResult>>();
 const CACHE_TTL_MS = 2 * 60 * 1000;
 
 export async function fetchYouTubeFeeds(
@@ -14,6 +15,20 @@ export async function fetchYouTubeFeeds(
   const cached = inMemCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.data;
 
+  // The boot preflight and YouTubeFeedsProvider ask for the same channels at
+  // the same moment; share the request instead of paying for it twice.
+  let pending = inFlight.get(key);
+  if (!pending) {
+    pending = requestYouTubeFeeds(key, channels).finally(() => inFlight.delete(key));
+    inFlight.set(key, pending);
+  }
+  return pending;
+}
+
+async function requestYouTubeFeeds(
+  key: string,
+  channels: string[],
+): Promise<YtFeedResult> {
   const res = await fetch(
     `/api/youtube-feed?channels=${encodeURIComponent(channels.join(","))}`,
     { cache: "no-store" },

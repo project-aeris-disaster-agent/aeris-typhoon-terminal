@@ -15,6 +15,7 @@ import {
   getReportForMint,
   listQueuedMintReports,
   listStaleQueuedMintReports,
+  mintBookkeeping,
   type MintTransitionUpdate,
 } from "@/lib/onchain/mint-queue";
 import {
@@ -120,8 +121,8 @@ export async function mintReportById(
     return { reportId, status: "skipped", reason: "report-not-found" };
   }
   const status = report.onchain?.mint?.status;
-  // Tolerate "minting" too - the row may have been claimed by another
-  // invocation; we'll detect via `isAlreadyMinted` and converge.
+  // "minting" is passed through so mintOne can reclaim a stale orphan; a
+  // fresh in-flight claim is skipped there.
   if (status !== "queued" && status !== "minting") {
     return {
       reportId,
@@ -221,6 +222,19 @@ export async function mintQueuedReports(
   return { attempted: results.length, results, reachedDeadline };
 }
 
+/**
+ * A row left in `minting` longer than this is assumed orphaned by a function
+ * that timed out mid-mint, and may be reclaimed. Comfortably above the
+ * longest mint route budget (60 s).
+ */
+export const STUCK_MINTING_MS = 10 * 60_000;
+
+/** Minimum wait before retrying a failed attempt: 1 min, 2 min, 4 min, ... */
+export function retryBackoffMs(attempts: number): number {
+  if (attempts <= 0) return 0;
+  return 60_000 * 2 ** Math.min(attempts - 1, 6);
+}
+
 async function mintOne(
   client: ReturnType<typeof getMintClient>,
   report: PublicReport,
@@ -235,7 +249,30 @@ async function mintOne(
     };
   }
 
-  await applyMintTransition(report.id, { status: "minting" });
+  const currentStatus = report.onchain?.mint?.status ?? "queued";
+  const { lastUpdatedAt } = mintBookkeeping(report);
+  const sinceLast =
+    lastUpdatedAt !== undefined ? nowMs() - lastUpdatedAt : Number.POSITIVE_INFINITY;
+
+  if (currentStatus === "minting" && sinceLast < STUCK_MINTING_MS) {
+    // Another invocation is mid-mint. Leave it alone.
+    return { reportId: report.id, status: "skipped", reason: "mint-in-flight" };
+  }
+  if (currentStatus === "queued" && sinceLast < retryBackoffMs(attempts)) {
+    // A failed attempt re-queued this row moments ago, which re-fired the
+    // pg_net webhook. Don't retry straight away; the cron sweep picks it up.
+    return { reportId: report.id, status: "skipped", reason: "retry-backoff" };
+  }
+
+  // Claim the row conditionally so two workers can't mint it concurrently.
+  const claimed = await applyMintTransition(
+    report.id,
+    { status: "minting" },
+    { expectStatus: currentStatus },
+  );
+  if (!claimed) {
+    return { reportId: report.id, status: "skipped", reason: "claimed-elsewhere" };
+  }
 
   try {
     const tokenIdStr = reportToTokenId(report.id);

@@ -222,7 +222,12 @@ export async function listSupabaseReports(): Promise<PublicReport[]> {
   const cfg = supabaseConfig();
   if (!cfg) return [];
 
-  const readKeys = [cfg.anonKey, cfg.serviceKey].filter(
+  // Service key only when there is one. `disaster_reports` RLS is
+  // service-role only, and PostgREST answers an anon read with `200 []`
+  // rather than an error, so trying anon first returned an empty feed
+  // without ever falling through. Anon is only a fallback for local setups
+  // that have no service key.
+  const readKeys = (cfg.serviceKey ? [cfg.serviceKey] : [cfg.anonKey]).filter(
     (value): value is string => typeof value === "string" && value.length > 0,
   );
   const triedKeys = new Set<string>();

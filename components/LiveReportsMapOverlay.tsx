@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
+import { X } from "lucide-react";
 import type { Map as MLMap } from "maplibre-gl";
 import { PanelSkeleton } from "@/components/ui/PanelSkeleton";
 
@@ -92,31 +93,32 @@ export function LiveReportsMapOverlay({
       style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
       className={clsx(
         "absolute right-3 top-1.5 z-50 w-[min(calc(100vw-1rem),380px)]",
-        "max-h-[min(85vh,calc(100vh-3rem))] overflow-hidden rounded-md border border-aeris-border",
-        "bg-aeris-surface/98 shadow-xl backdrop-blur-md",
+        "max-h-[min(85vh,calc(100vh-3rem))] overflow-hidden rounded-xl",
+        "panel-glass !shadow-pop aeris-rise",
         "flex flex-col pointer-events-auto",
       )}
     >
       <div
         onPointerDown={handleDragStart}
         className={clsx(
-          "flex shrink-0 items-center justify-between gap-2 border-b border-aeris-border px-2 py-1.5 touch-none select-none",
+          "flex shrink-0 items-center justify-between gap-2 border-b border-aeris-border/70 px-3 py-2 touch-none select-none",
           dragging ? "cursor-grabbing" : "cursor-grab",
         )}
       >
-        <span className="hud-text text-body-sm text-aeris-muted font-mono">
-          Live Reports
+        <span className="aeris-kicker">
+          <span className="aeris-live-dot" aria-hidden />
+          Live reports
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="hud-text rounded px-2 py-0.5 text-aeris-muted hover:bg-aeris-bg hover:text-aeris-text"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-aeris-elev text-aeris-ink2 transition-colors hover:text-aeris-danger"
           aria-label="Close live reports"
         >
-          ✕
+          <X size={14} aria-hidden />
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto bg-aeris-bg/80 p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
         <LiveReportsPanel map={map} embedded />
       </div>
     </div>

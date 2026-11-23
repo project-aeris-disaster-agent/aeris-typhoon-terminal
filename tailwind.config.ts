@@ -21,17 +21,50 @@ const config: Config = {
           warn: "rgb(var(--aeris-warn) / <alpha-value>)",
           danger: "rgb(var(--aeris-danger) / <alpha-value>)",
           ok: "rgb(var(--aeris-ok) / <alpha-value>)",
+          ink2: "rgb(var(--aeris-ink2) / <alpha-value>)",
+          accent2: "rgb(var(--aeris-accent2) / <alpha-value>)",
+          live: "rgb(var(--aeris-live) / <alpha-value>)",
+          warm: "rgb(var(--aeris-warm) / <alpha-value>)",
+          gold: "rgb(var(--aeris-gold) / <alpha-value>)",
+          navy: "rgb(var(--aeris-navy) / <alpha-value>)",
+          kicker: "rgb(var(--aeris-kicker-bg) / <alpha-value>)",
+          "kicker-ink": "rgb(var(--aeris-kicker-ink) / <alpha-value>)",
+          "chip-on": "rgb(var(--aeris-chip-on) / <alpha-value>)",
+          rim: "rgb(var(--aeris-hover-rim) / <alpha-value>)",
         },
       },
+      // FLOOD CONTROL type: Nunito everywhere. `mono` maps to Nunito too (with
+      // tabular figures from globals.css) so the old terminal-style labels pick
+      // up the game's look without touching each call site.
       fontFamily: {
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
-        mono: [
-          "ui-monospace",
-          "SFMono-Regular",
-          "Menlo",
-          "Consolas",
-          "monospace",
-        ],
+        sans: ["var(--font-nunito)", "Segoe UI", "system-ui", "sans-serif"],
+        mono: ["var(--font-nunito)", "Segoe UI", "system-ui", "sans-serif"],
+        code: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
+      },
+      // The game's radii run large: chips 999, buttons 12-16, panels 18, hero 28.
+      borderRadius: {
+        sm: "0.375rem",
+        DEFAULT: "0.5rem",
+        md: "0.625rem",
+        lg: "0.875rem",
+        xl: "1.125rem",
+        "2xl": "1.5rem",
+        "3xl": "1.75rem",
+      },
+      boxShadow: {
+        panel: "var(--aeris-panel-shadow)",
+        hero: "var(--aeris-hero-shadow)",
+        pill: "var(--aeris-pill-shadow)",
+        pop: "var(--aeris-pop-shadow)",
+        seg: "var(--aeris-seg-shadow)",
+        cta: "var(--aeris-cta-shadow)",
+      },
+      backgroundImage: {
+        card: "var(--aeris-card-fill)",
+        cta: "var(--aeris-cta-fill)",
+        "cta-warm": "var(--aeris-cta-warm-fill)",
+        sky: "var(--aeris-sky)",
+        "boot-sky": "var(--aeris-boot-sky)",
       },
       fontSize: {
         chrome: ["0.75rem", { lineHeight: "1.25" }],

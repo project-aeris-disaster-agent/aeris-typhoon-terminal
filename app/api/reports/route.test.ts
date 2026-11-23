@@ -243,4 +243,38 @@ describe("/api/reports", () => {
     });
     expect(body.reports[0].ipHash).toBeUndefined();
   });
+  it("returns 503 instead of a memory-only 201 when the Supabase insert fails in production", async () => {
+    const env = process.env as Record<string, string | undefined>;
+    const originalEnv = env.NODE_ENV;
+    const originalFetch = global.fetch;
+    env.NODE_ENV = "production";
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "service-key-test";
+    global.fetch = jest.fn(async () => {
+      throw new Error("supabase down");
+    }) as unknown as typeof fetch;
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const { POST } = await import("./route");
+      const response = await POST(
+        makeRequest(
+          {
+            category: "flood",
+            description: "Water rising fast near the barangay hall",
+            position: [120.9842, 14.5995],
+          },
+          "10.0.0.250",
+        ),
+      );
+
+      expect(response.status).toBe(503);
+      expect((await response.json()).retryable).toBe(true);
+      expect(await store.lrange(REPORTS_KEY, 0, -1)).toHaveLength(0);
+    } finally {
+      env.NODE_ENV = originalEnv;
+      global.fetch = originalFetch;
+      errorSpy.mockRestore();
+    }
+  });
 });

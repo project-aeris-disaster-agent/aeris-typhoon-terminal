@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { CardHeader, Pill } from "../ui/Card";
+import { Kicker } from "../ui/Kit";
 import {
   reviewReport,
   mintVerifiedReports,
@@ -134,14 +135,15 @@ function reportCardTone(report: IncidentReport): "danger" | "warn" | "ok" | "def
   return "default";
 }
 
-const CARD_TONE_CLASS: Record<
+/** Report cards are the game's incident cards: the tone is the left stripe. */
+const CARD_TONE_STRIPE: Record<
   ReturnType<typeof reportCardTone>,
-  string
+  string | undefined
 > = {
-  danger: "border-aeris-danger/45 bg-aeris-danger/10",
-  warn: "border-aeris-warn/40 bg-aeris-warn/10",
-  ok: "border-aeris-ok/40 bg-aeris-ok/10",
-  default: "border-aeris-border/60 bg-aeris-bg/40",
+  danger: "danger",
+  warn: undefined, // default stripe is the game's warm orange
+  ok: "ok",
+  default: "muted",
 };
 
 function formatRelativeTime(iso: string) {
@@ -170,7 +172,7 @@ function Segmented<T extends string>({
     <div
       role="group"
       aria-label={ariaLabel}
-      className="inline-flex items-center gap-0.5 rounded-md border border-aeris-border/60 bg-aeris-bg/50 p-0.5"
+      className="aeris-seg inline-flex"
     >
       {options.map((opt) => {
         const active = opt.value === value;
@@ -180,12 +182,7 @@ function Segmented<T extends string>({
             type="button"
             aria-pressed={active}
             onClick={() => onChange(opt.value)}
-            className={clsx(
-              "rounded px-2 py-1 text-chrome font-mono uppercase tracking-wider transition-colors",
-              active
-                ? "bg-aeris-accent/15 text-aeris-accent shadow-sm"
-                : "text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text",
-            )}
+            className="aeris-seg-btn px-2 py-0.5 text-[0.6875rem] uppercase tracking-[0.08em]"
           >
             {opt.label}
           </button>
@@ -211,9 +208,7 @@ function ReportControls({
   return (
     <div className={clsx("flex flex-wrap items-center gap-x-3 gap-y-1.5", className)}>
       <div className="flex items-center gap-1.5">
-        <span className="text-chrome font-mono uppercase tracking-wider text-aeris-muted/70">
-          Sort
-        </span>
+        <span className="aeris-label">Sort</span>
         <Segmented
           ariaLabel="Sort reports"
           options={SORT_OPTIONS}
@@ -222,10 +217,8 @@ function ReportControls({
         />
       </div>
       <div className="flex items-center gap-1.5">
-        <Clock size={11} className="text-aeris-muted/70" aria-hidden />
-        <span className="text-chrome font-mono uppercase tracking-wider text-aeris-muted/70">
-          Range
-        </span>
+        <Clock size={11} className="text-aeris-muted" aria-hidden />
+        <span className="aeris-label">Range</span>
         <Segmented
           ariaLabel="Filter by time range"
           options={RANGE_OPTIONS}
@@ -250,14 +243,15 @@ function StatChip({
   active?: boolean;
   onClick?: () => void;
 }) {
+  // Game stat tile: white, spaced-caps key, big black number in the tone ink.
   const toneClass =
     tone === "danger"
-      ? "border-aeris-danger/35 text-aeris-danger"
+      ? "text-aeris-danger"
       : tone === "warn"
-        ? "border-aeris-warn/35 text-aeris-warn"
+        ? "text-aeris-warn"
         : tone === "ok"
-          ? "border-aeris-ok/35 text-aeris-ok"
-          : "border-aeris-border/60 text-aeris-muted";
+          ? "text-aeris-ok"
+          : "text-aeris-text";
 
   const Tag = onClick ? "button" : "div";
 
@@ -267,16 +261,15 @@ function StatChip({
       onClick={onClick}
       aria-pressed={onClick ? Boolean(active) : undefined}
       className={clsx(
-        "rounded-md border px-2 py-1 text-left transition-colors",
-        toneClass,
-        active && "ring-1 ring-aeris-accent/60 bg-aeris-accent/10",
-        onClick && "hover:bg-aeris-elev/40 cursor-pointer",
+        "aeris-stat !px-2 !py-1.5 text-left transition-colors",
+        active && "!border-aeris-accent !bg-aeris-chip-on",
+        onClick && "hover:!border-aeris-rim cursor-pointer",
       )}
     >
-      <div className="text-chrome font-mono uppercase tracking-wider opacity-80">
-        {label}
+      <div className="aeris-label !text-[0.5625rem]">{label}</div>
+      <div className={clsx("text-base font-black tabular-nums leading-tight", toneClass)}>
+        {count}
       </div>
-      <div className="text-sm font-mono tabular-nums leading-tight">{count}</div>
     </Tag>
   );
 }
@@ -348,9 +341,8 @@ function StatsGrid({
           onClick={onMintAllVerified}
           disabled={mintingAll || counts.pendingMint === 0}
           className={clsx(
-            "rounded-md border px-2 py-1 text-left transition-colors",
-            "border-aeris-accent/35 text-aeris-accent",
-            "hover:bg-aeris-accent/10 disabled:cursor-not-allowed disabled:opacity-40",
+            "aeris-stat !px-2 !py-1.5 text-left transition-colors text-aeris-accent",
+            "hover:!border-aeris-rim disabled:cursor-not-allowed disabled:opacity-40",
           )}
           title={
             counts.pendingMint === 0
@@ -358,11 +350,11 @@ function StatsGrid({
               : `Queue and mint ${counts.pendingMint} verified report${counts.pendingMint === 1 ? "" : "s"}`
           }
         >
-          <div className="flex items-center gap-1 text-chrome font-mono uppercase tracking-wider opacity-80">
+          <div className="aeris-label flex items-center gap-1 !text-[0.5625rem] !text-aeris-accent">
             <Stamp size={10} aria-hidden />
             Mint all
           </div>
-          <div className="text-sm font-mono tabular-nums leading-tight">
+          <div className="text-base font-black tabular-nums leading-tight">
             {mintingAll ? "…" : counts.pendingMint}
           </div>
         </button>
@@ -431,11 +423,10 @@ function ReportCard({
       }}
       role="button"
       tabIndex={0}
+      data-tone={CARD_TONE_STRIPE[tone]}
       className={clsx(
-        "flex h-full w-full cursor-pointer flex-col rounded-lg border p-2.5 text-left transition-colors",
-        "hover:border-aeris-accent/40 hover:bg-aeris-accent/5",
-        "focus:outline-none focus:border-aeris-accent/50 focus:ring-1 focus:ring-aeris-accent/40",
-        CARD_TONE_CLASS[tone],
+        "aeris-incident flex h-full w-full cursor-pointer flex-col p-3 text-left transition-shadow",
+        "hover:shadow-pill",
         exiting && "aeris-vote-card-exit",
       )}
     >
@@ -481,18 +472,18 @@ function ReportCard({
         </time>
       </header>
 
-      <p className="text-body-sm leading-snug text-aeris-text line-clamp-3">
+      <p className="text-body-sm font-bold leading-snug text-aeris-text line-clamp-3">
         {report.description}
       </p>
 
       {report.aiTriageRationale && (
-        <p className="mt-1 text-body-sm text-aeris-muted line-clamp-2">
+        <p className="mt-1 text-body-sm text-aeris-ink2 line-clamp-2">
           AI: {report.aiTriageRationale}
         </p>
       )}
 
       {report.photoUrl ? (
-        <div className="mt-2 overflow-hidden rounded border border-aeris-border/50">
+        <div className="mt-2 overflow-hidden rounded-lg">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={report.photoUrl}
@@ -533,8 +524,8 @@ function ReportCard({
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1 text-body-sm text-aeris-accent/80">
-          <MapPin size={11} aria-hidden />
+        <span className="inline-flex items-center gap-1 text-body-sm font-extrabold text-aeris-accent">
+          <MapPin size={12} aria-hidden />
           Locate on map
         </span>
         <button
@@ -550,7 +541,7 @@ function ReportCard({
       </div>
 
       {detailsOpen && (
-        <div className="mt-1.5 space-y-0.5 border-t border-aeris-border/40 pt-1.5 text-body-sm font-mono text-aeris-muted">
+        <div className="mt-1.5 space-y-0.5 rounded-lg bg-aeris-elev/60 px-2 py-1.5 font-code text-[0.75rem] text-aeris-ink2">
           <div>msg: {report.messageId ?? report.id}</div>
           <div>mint: {report.onchain?.mint.status ?? "not_started"}</div>
           {mintTxHash && (
@@ -603,7 +594,7 @@ function ReportCard({
             type="button"
             disabled={reviewing}
             onClick={(event) => onReview(event, "verify")}
-            className="rounded-md border border-aeris-ok/30 bg-aeris-ok/10 px-2 py-1.5 text-body-sm font-medium text-aeris-ok transition-colors hover:bg-aeris-ok/20 disabled:opacity-40 min-h-[36px]"
+            className="rounded-xl border-[1.5px] border-aeris-ok/40 bg-aeris-ok/10 px-2 py-1.5 text-body-sm font-black text-aeris-ok transition-colors hover:bg-aeris-ok/20 disabled:opacity-40 min-h-[36px]"
           >
             Verify
           </button>
@@ -611,7 +602,7 @@ function ReportCard({
             type="button"
             disabled={reviewing}
             onClick={(event) => onReview(event, "needs_review")}
-            className="rounded-md border border-aeris-warn/30 bg-aeris-warn/10 px-2 py-1.5 text-body-sm font-medium text-aeris-warn transition-colors hover:bg-aeris-warn/20 disabled:opacity-40 min-h-[36px]"
+            className="rounded-xl border-[1.5px] border-aeris-warm/45 bg-aeris-warm/15 px-2 py-1.5 text-body-sm font-black text-aeris-warn transition-colors hover:bg-aeris-warm/25 disabled:opacity-40 min-h-[36px]"
           >
             Review
           </button>
@@ -619,7 +610,7 @@ function ReportCard({
             type="button"
             disabled={reviewing}
             onClick={(event) => onReview(event, "reject")}
-            className="rounded-md border border-aeris-danger/30 bg-aeris-danger/10 px-2 py-1.5 text-body-sm font-medium text-aeris-danger transition-colors hover:bg-aeris-danger/20 disabled:opacity-40 min-h-[36px]"
+            className="rounded-xl border-[1.5px] border-aeris-danger/35 bg-aeris-danger/10 px-2 py-1.5 text-body-sm font-black text-aeris-danger transition-colors hover:bg-aeris-danger/20 disabled:opacity-40 min-h-[36px]"
           >
             Reject
           </button>
@@ -733,13 +724,13 @@ function ReportVoteControls({
     const isUp = pendingVote === "up";
     return (
       <div
-        className="mt-2.5 rounded-md border border-aeris-border/70 bg-aeris-bg/40 px-2 py-2"
+        className="mt-2.5 rounded-xl bg-aeris-elev/70 px-2.5 py-2"
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
         role="group"
         aria-label="Confirm report vote"
       >
-        <p className="text-body-sm leading-snug text-aeris-text">
+        <p className="text-body-sm font-black leading-snug text-aeris-text">
           {isUp
             ? "Mark this report as legitimate?"
             : "Mark this report as doubtful?"}
@@ -754,10 +745,8 @@ function ReportVoteControls({
             disabled={voting}
             onClick={(event) => onVote(event, pendingVote)}
             className={clsx(
-              "inline-flex min-h-[28px] flex-1 items-center justify-center gap-1 rounded border px-2 py-1 text-body-sm font-medium transition-colors disabled:opacity-40",
-              isUp
-                ? "border-aeris-ok/50 bg-aeris-ok/15 text-aeris-ok hover:bg-aeris-ok/25"
-                : "border-aeris-danger/50 bg-aeris-danger/15 text-aeris-danger hover:bg-aeris-danger/25",
+              "inline-flex min-h-[32px] flex-1 items-center justify-center gap-1 rounded-xl px-2 py-1 text-body-sm font-black text-white transition-[filter] hover:brightness-110 disabled:opacity-40",
+              isUp ? "bg-aeris-ok" : "bg-aeris-danger",
             )}
           >
             {voting ? "Saving…" : "Yes"}
@@ -769,7 +758,7 @@ function ReportVoteControls({
               event.stopPropagation();
               onPendingChange(null);
             }}
-            className="inline-flex min-h-[28px] flex-1 items-center justify-center rounded border border-aeris-border px-2 py-1 text-body-sm font-medium text-aeris-muted transition-colors hover:bg-aeris-elev/60 hover:text-aeris-text disabled:opacity-40"
+            className="inline-flex min-h-[32px] flex-1 items-center justify-center rounded-xl bg-aeris-surface px-2 py-1 text-body-sm font-black text-aeris-ink2 shadow-seg transition-colors hover:text-aeris-accent disabled:opacity-40"
           >
             No
           </button>
@@ -796,10 +785,10 @@ function ReportVoteControls({
         }}
         title={`Looks legitimate — correct votes earn +${XP_REWARDS.vote_correct} XP when an operator verifies`}
         className={clsx(
-          "inline-flex h-7 items-center gap-1 rounded border px-2 text-chrome font-medium transition-colors disabled:opacity-40",
+          "inline-flex h-7 items-center gap-1 rounded-full border-[1.5px] px-2.5 text-[0.75rem] font-extrabold transition-colors disabled:opacity-40",
           myVote === "up"
-            ? "border-aeris-ok/60 bg-aeris-ok/20 text-aeris-ok"
-            : "border-aeris-border/70 bg-aeris-bg/30 text-aeris-muted hover:border-aeris-ok/40 hover:bg-aeris-ok/10 hover:text-aeris-ok",
+            ? "border-aeris-ok bg-aeris-ok/15 text-aeris-ok"
+            : "border-aeris-border bg-aeris-surface text-aeris-ink2 hover:border-aeris-ok/50 hover:text-aeris-ok",
         )}
       >
         <ThumbsUp size={12} aria-hidden />
@@ -815,10 +804,10 @@ function ReportVoteControls({
         }}
         title={`Looks wrong or spam — correct votes earn +${XP_REWARDS.vote_correct} XP when an operator rejects`}
         className={clsx(
-          "inline-flex h-7 items-center gap-1 rounded border px-2 text-chrome font-medium transition-colors disabled:opacity-40",
+          "inline-flex h-7 items-center gap-1 rounded-full border-[1.5px] px-2.5 text-[0.75rem] font-extrabold transition-colors disabled:opacity-40",
           myVote === "down"
-            ? "border-aeris-danger/60 bg-aeris-danger/20 text-aeris-danger"
-            : "border-aeris-border/70 bg-aeris-bg/30 text-aeris-muted hover:border-aeris-danger/40 hover:bg-aeris-danger/10 hover:text-aeris-danger",
+            ? "border-aeris-danger bg-aeris-danger/10 text-aeris-danger"
+            : "border-aeris-border bg-aeris-surface text-aeris-ink2 hover:border-aeris-danger/50 hover:text-aeris-danger",
         )}
       >
         <ThumbsDown size={12} aria-hidden />
@@ -1223,13 +1212,15 @@ export function LiveReportsPanel({
 
   const statusBanner = status ? (
     <div
+      role="status"
+      data-tone={status.tone === "warn" ? undefined : status.tone}
       className={clsx(
-        "rounded-md border px-2.5 py-1.5 text-body-sm",
+        "aeris-incident px-2.5 py-1.5 text-body-sm font-extrabold",
         status.tone === "ok"
-          ? "border-aeris-ok/30 bg-aeris-ok/10 text-aeris-ok"
+          ? "text-aeris-ok"
           : status.tone === "warn"
-            ? "border-aeris-warn/30 bg-aeris-warn/10 text-aeris-warn"
-            : "border-aeris-danger/30 bg-aeris-danger/10 text-aeris-danger",
+            ? "text-aeris-warn"
+            : "text-aeris-danger",
       )}
     >
       {status.msg}
@@ -1251,7 +1242,7 @@ export function LiveReportsPanel({
           <button
             type="button"
             onClick={() => setFullscreen(true)}
-            className="inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text"
+            className="aeris-btn-soft h-6 px-2 text-[0.6875rem] uppercase tracking-[0.1em]"
             aria-label="Open reports in full screen"
             title="Full screen"
           >
@@ -1262,7 +1253,7 @@ export function LiveReportsPanel({
             type="button"
             onClick={() => void load()}
             disabled={loading}
-            className="inline-flex items-center gap-1 rounded border border-aeris-border px-1.5 py-0.5 text-chrome font-mono uppercase tracking-wider text-aeris-muted hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
+            className="aeris-btn-soft h-6 px-2 text-[0.6875rem] uppercase tracking-[0.1em] disabled:opacity-50"
             aria-label="Sync reports"
           >
             <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
@@ -1271,18 +1262,17 @@ export function LiveReportsPanel({
         </div>
       </div>
 
-      <div className="rounded-md border border-aeris-danger/45 bg-aeris-danger/10 px-3 py-2">
+      {/* Hero count: the game's warm card in red (danger), big black figure. */}
+      <div className="aeris-warm-card px-3.5 py-2.5" data-tone="danger">
         <div className="flex items-end justify-between gap-2">
           <div>
-            <div className="text-chrome font-mono uppercase tracking-wider text-aeris-danger/80">
-              Total Reports
-            </div>
-            <div className="text-2xl font-mono font-semibold tabular-nums leading-none text-aeris-danger">
+            <div className="aeris-label !text-aeris-danger">Total reports</div>
+            <div className="text-[2rem] font-black tabular-nums leading-none text-aeris-danger">
               {counts.total}
             </div>
           </div>
           {loading && reports.length === 0 ? (
-            <span className="text-body-sm font-mono text-aeris-danger/70">Loading…</span>
+            <span className="text-body-sm font-bold text-aeris-danger/80">Loading…</span>
           ) : null}
         </div>
       </div>
@@ -1310,23 +1300,19 @@ export function LiveReportsPanel({
 
       {statusBanner}
 
-      <div className="border-t border-aeris-border pt-2">
+      <div>
         <button
           type="button"
           onClick={() => setListExpanded((open) => !open)}
           aria-expanded={listExpanded}
           aria-controls="live-reports-feed"
           className={clsx(
-            "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
-            listExpanded
-              ? "border-aeris-accent/35 bg-aeris-accent/5"
-              : "border-aeris-border/60 bg-aeris-bg/40 hover:border-aeris-accent/30 hover:bg-aeris-elev/30",
+            "aeris-row flex w-full items-center gap-2 px-2.5 py-2 text-left",
+            listExpanded && "!border-aeris-accent !bg-aeris-chip-on",
           )}
         >
-          <span className="text-body-sm font-mono uppercase tracking-wider text-aeris-text">
-            Report feed
-          </span>
-          <span className="text-body-sm font-mono tabular-nums text-aeris-muted">
+          <span className="aeris-title">Report feed</span>
+          <span className="text-body-sm font-bold tabular-nums text-aeris-muted">
             {loading && reports.length === 0
               ? "…"
               : `${visibleReports.length} item${visibleReports.length === 1 ? "" : "s"}`}
@@ -1497,7 +1483,7 @@ function ReportsFullscreen({
   // (e.g. the sidebar's `backdrop-blur`), matching the PdfOverlay pattern.
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex flex-col bg-aeris-bg/80 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex flex-col bg-aeris-navy/35 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Live reports — full screen"
@@ -1506,42 +1492,40 @@ function ReportsFullscreen({
       }}
     >
       <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col overflow-hidden p-3 sm:p-4">
-        <div className="flex h-full flex-col overflow-hidden rounded-xl border border-aeris-border bg-aeris-surface shadow-2xl">
+        {/* The game's settings sheet: big frosted card, hero shadow. */}
+        <div className="panel-glass aeris-rise flex h-full flex-col overflow-hidden rounded-3xl !shadow-hero">
           {/* Header */}
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-aeris-border bg-aeris-elev/50 px-3 py-2.5 sm:px-4">
-            <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-aeris-accent" />
-            <span className="text-body-sm font-semibold text-aeris-text">
-              Live Reports
-            </span>
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-aeris-border/70 px-4 py-3 sm:px-5">
+            <Kicker>Live reports</Kicker>
             <Pill tone={canReview ? "ok" : "warn"}>{formatAerisRoleLabel(role)}</Pill>
             <FreshnessTag source="reports" />
-            <span className="text-body-sm font-mono tabular-nums text-aeris-muted">
+            <span className="text-body-sm font-black tabular-nums text-aeris-text">
               {counts.total} total
             </span>
-            <div className="ml-auto flex items-center gap-1">
+            <div className="ml-auto flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={onSync}
                 disabled={loading}
-                className="inline-flex items-center gap-1 rounded border border-aeris-border px-2 py-1 text-body-sm font-mono text-aeris-muted transition-colors hover:bg-aeris-elev/50 hover:text-aeris-text disabled:opacity-50"
+                className="aeris-btn-soft h-8 px-3 text-body-sm disabled:opacity-50"
               >
-                <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+                <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
                 Sync
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex items-center gap-1 rounded border border-aeris-border px-2 py-1 text-body-sm font-mono text-aeris-muted transition-colors hover:border-aeris-danger/60 hover:bg-aeris-danger/5 hover:text-aeris-danger"
+                className="aeris-round !h-8 !min-w-8 !px-0"
                 title="Close (Esc)"
                 aria-label="Close full screen"
               >
-                <X size={12} /> Close
+                <X size={15} />
               </button>
             </div>
           </div>
 
           {/* Toolbar */}
-          <div className="shrink-0 space-y-2.5 border-b border-aeris-border/60 bg-aeris-bg/30 px-3 py-2.5 sm:px-4">
+          <div className="shrink-0 space-y-2.5 border-b border-aeris-border/60 px-4 py-3 sm:px-5">
             <StatsGrid
               counts={counts}
               filter={filter}
@@ -1558,7 +1542,7 @@ function ReportsFullscreen({
                 dateRange={dateRange}
                 onRangeChange={onRangeChange}
               />
-              <span className="text-body-sm font-mono tabular-nums text-aeris-muted">
+              <span className="text-body-sm font-bold tabular-nums text-aeris-muted">
                 {reports.length} item{reports.length === 1 ? "" : "s"}
               </span>
             </div>

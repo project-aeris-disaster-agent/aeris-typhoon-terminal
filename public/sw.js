@@ -210,20 +210,60 @@ async function networkFirstJson(cacheName, request) {
   } catch {
     const cached = await cache.match(request);
     if (cached) return cached;
-    return new Response(JSON.stringify({ offline: true, data: null }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
+    // 503, not 200: the typhoon and alerts clients treated a synthetic
+    // `200 { offline: true }` as a valid empty result, marked the feed fresh,
+    // and showed the tracker as "clear" while the device was offline.
+    return new Response(
+      JSON.stringify({ offline: true, data: null, error: "Offline: no cached copy" }),
+      {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      },
+    );
   }
 }
 
+/**
+ * Submit a report, falling back to the offline queue.
+ *
+ * The body is read *before* the network attempt. `fetch(request)` consumes the
+ * request body, so the old `request.json()` in the catch always rejected and
+ * nothing was ever queued — the reporter was told "queued" while the report
+ * was dropped.
+ *
+ * A 503 is queued too: the server answers 503 when it could not durably store
+ * the report (see app/api/reports/route.ts), so replaying it later is correct.
+ */
 async function handleReportPost(request) {
+  const text = await request.text().catch(() => "");
+  let body = null;
   try {
-    const res = await fetch(request);
-    return res;
+    body = text ? JSON.parse(text) : null;
   } catch {
-    const body = await request.json().catch(() => null);
-    if (body) await enqueueReport(body);
+    body = null;
+  }
+
+  try {
+    const res = await fetch(request.url, {
+      method: "POST",
+      headers: request.headers,
+      body: text,
+      credentials: "same-origin",
+    });
+    if (res.status !== 503 || !body) return res;
+  } catch {
+    /* network failure: fall through to the queue */
+  }
+
+  if (!body) {
+    return new Response(JSON.stringify({ error: "Report could not be sent." }), {
+      status: 503,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  {
+    await enqueueReport(body);
     try {
       await self.registration.sync.register("aeris-report-sync");
     } catch {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clsx } from "clsx";
+import { ChevronDown } from "lucide-react";
 import { Pill } from "@/components/ui/Card";
 import { NAGA_BARANGAYS } from "@/config/barangays";
 import { levelProgress, MAX_LEVEL } from "@/lib/gamification";
@@ -173,21 +174,21 @@ export function ProfilePanel() {
     <div className="flex h-full flex-col overflow-y-auto p-3">
       {/* Identity + level */}
       <div className="flex items-start gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-aeris-accent/30 bg-aeris-accent/10 text-body-lg font-semibold text-aeris-accent">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-cta text-body-lg font-black text-white shadow-cta">
           {profile.username.slice(0, 1).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-body-sm font-semibold text-aeris-text">
+          <div className="truncate text-body font-black text-aeris-text">
             {profile.username}
           </div>
-          <div className="truncate text-xs text-aeris-muted">
+          <div className="truncate text-xs font-bold text-aeris-muted">
             {profile.email ?? "No email linked"}
           </div>
           {profile.proxyWalletAddress ? (
             <button
               type="button"
               onClick={() => void handleCopy()}
-              className="mt-0.5 flex items-center gap-1.5 font-mono text-xs text-aeris-muted hover:text-aeris-accent"
+              className="mt-0.5 flex items-center gap-1.5 text-xs font-extrabold tabular-nums text-aeris-muted hover:text-aeris-accent"
               title="Copy wallet address"
             >
               <span className="truncate">
@@ -209,9 +210,11 @@ export function ProfilePanel() {
       </div>
 
       {/* XP progress */}
-      <div className="mt-3">
-        <div className="flex items-center justify-between text-xs text-aeris-muted">
-          <span className="font-mono">{profile.xp.toLocaleString()} XP</span>
+      <div className="aeris-stat mt-3">
+        <div className="flex items-center justify-between text-xs font-bold text-aeris-muted">
+          <span className="text-body-sm font-black tabular-nums text-aeris-text">
+            {profile.xp.toLocaleString()} XP
+          </span>
           <span>
             {progress.isMax
               ? "Max level"
@@ -221,9 +224,9 @@ export function ProfilePanel() {
                 )}`}
           </span>
         </div>
-        <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-aeris-elev">
+        <div className="aeris-bar mt-1.5 !h-2 w-full">
           <div
-            className="h-full rounded-full bg-aeris-accent transition-[width]"
+            className="h-full rounded-full bg-gradient-to-r from-aeris-accent2 to-aeris-accent transition-[width]"
             style={{ width: `${Math.round(progress.ratio * 100)}%` }}
           />
         </div>
@@ -233,7 +236,7 @@ export function ProfilePanel() {
           email features (PAGASA cyclone bulletins + AERIS weather briefs). */}
       <div
         className={clsx(
-          "minds-integration-card mt-3 shrink-0 rounded-md border bg-aeris-bg/60 p-2.5 relative",
+          "minds-integration-card aeris-row mt-3 shrink-0 p-3 relative",
           profile.stormEmailEnabled && "minds-integration-card--active",
         )}
       >
@@ -259,11 +262,11 @@ export function ProfilePanel() {
                 decoding="async"
                 className="h-7 w-auto shrink-0 object-contain object-left opacity-90"
               />
-              <span className="chrome-label text-aeris-muted">
+              <span className="aeris-label">
                 Anomica Minds™
               </span>
             </div>
-            <div className="mt-1.5 text-body-sm font-medium leading-snug text-aeris-text">
+            <div className="mt-1.5 text-body-sm font-black leading-snug text-aeris-text">
               Automated Email Alerts (AERIS-PAGASA)
             </div>
             {profile.stormEmailEnabled ? (
@@ -288,25 +291,24 @@ export function ProfilePanel() {
               void handleMindsEmailToggle(!profile.stormEmailEnabled)
             }
             className={clsx(
-              "relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40",
-              profile.stormEmailEnabled
-                ? "border-aeris-accent/50 bg-aeris-accent/30"
-                : "border-aeris-border bg-aeris-elev",
+              // Game settings toggle: blue track on, grey track off, white knob.
+              "relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40",
+              profile.stormEmailEnabled ? "bg-aeris-accent" : "bg-aeris-muted/30",
             )}
           >
             <span
               className={clsx(
-                "absolute top-0.5 h-5 w-5 rounded-full bg-aeris-text shadow transition-[left] duration-150",
+                "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-150",
                 profile.stormEmailEnabled ? "left-[1.35rem]" : "left-0.5",
               )}
             />
           </button>
         </div>
       </div>
-      <div className="mt-3 rounded-md border border-aeris-border bg-aeris-bg/60 p-2">
+      <div className="aeris-row mt-3 p-3">
         <div className="flex items-center justify-between">
-          <span className="chrome-label text-aeris-muted">Complete your profile</span>
-          <span className="font-mono text-xs text-aeris-accent">
+          <span className="aeris-label">Complete your profile</span>
+          <span className="aeris-kicker !px-2 !py-0.5 tabular-nums">
             +{completion.earned}/{completion.total} XP
           </span>
         </div>
@@ -314,7 +316,7 @@ export function ProfilePanel() {
           {completion.items.map((item) => (
             <li
               key={item.key}
-              className="flex items-center justify-between text-xs"
+              className="flex items-center justify-between text-xs font-bold"
             >
               <span
                 className={clsx(
@@ -334,7 +336,7 @@ export function ProfilePanel() {
                 </span>
                 {item.label}
               </span>
-              <span className="font-mono text-aeris-muted">+{item.xp}</span>
+              <span className="tabular-nums font-black text-aeris-muted">+{item.xp}</span>
             </li>
           ))}
         </ul>
@@ -389,18 +391,24 @@ export function ProfilePanel() {
         </Field>
 
         {/* Optional collapsible social links */}
-        <div className="rounded-md border border-aeris-border bg-aeris-bg/40">
+        <div className="aeris-row overflow-hidden">
           <button
             type="button"
             onClick={() => setSocialOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-2 py-2 text-left"
+            className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-aeris-elev/50"
             aria-expanded={socialOpen}
           >
-            <span className="chrome-label text-aeris-muted">
-              Social{" "}
-              <span className="text-aeris-muted/70">(optional)</span>
+            <span className="aeris-label">
+              Social <span className="normal-case tracking-normal">(optional)</span>
             </span>
-            <span className="text-xs text-aeris-muted">{socialOpen ? "▲" : "▼"}</span>
+            <ChevronDown
+              size={15}
+              aria-hidden
+              className={clsx(
+                "text-aeris-muted transition-transform",
+                socialOpen && "rotate-180",
+              )}
+            />
           </button>
           {socialOpen && (
             <div className="grid grid-cols-1 gap-2 px-2 pb-2">
@@ -427,11 +435,11 @@ export function ProfilePanel() {
 
       {status && (
         <p
+          role="status"
+          data-tone={status.tone === "ok" ? "ok" : "danger"}
           className={clsx(
-            "mt-3 rounded border px-2 py-1.5 text-xs",
-            status.tone === "ok"
-              ? "border-aeris-ok/30 bg-aeris-ok/10 text-aeris-ok"
-              : "border-aeris-danger/30 bg-aeris-danger/10 text-aeris-danger",
+            "aeris-incident mt-3 px-2.5 py-1.5 text-xs font-extrabold",
+            status.tone === "ok" ? "text-aeris-ok" : "text-aeris-danger",
           )}
         >
           {status.msg}
@@ -442,7 +450,7 @@ export function ProfilePanel() {
         type="button"
         onClick={() => void handleSave()}
         disabled={saving}
-        className="mt-3 w-full rounded border border-aeris-accent/40 bg-aeris-accent/15 px-3 py-2 text-body-sm font-semibold text-aeris-accent disabled:opacity-40"
+        className="aeris-btn-cta mt-3 w-full min-h-[44px] px-3 text-[0.8125rem]"
       >
         {saving ? "Saving…" : "Save profile"}
       </button>
@@ -450,8 +458,7 @@ export function ProfilePanel() {
   );
 }
 
-const inputClass =
-  "w-full rounded border border-aeris-border bg-aeris-bg px-2 py-1.5 text-body-sm text-aeris-text outline-none focus:border-aeris-accent/50";
+const inputClass = "aeris-input w-full px-3 py-2 text-body-sm";
 
 function Field({
   label,
@@ -466,7 +473,7 @@ function Field({
     <label className="block">
       <span
         className={clsx(
-          "chrome-label text-aeris-muted",
+          "aeris-label",
           compact ? "mb-0.5 block" : "mb-1 block",
         )}
       >

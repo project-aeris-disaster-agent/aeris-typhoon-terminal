@@ -1,3 +1,4 @@
+import { resolveSessionUserId } from "@/lib/session-auth";
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import { isSpam, sanitizeText } from "@/lib/sanitize";
@@ -201,12 +202,15 @@ export async function POST(request: Request) {
 
     // Await both writes so the client can safely refetch history without
     // a race against unfinished inserts.
+    const historyUserId = await resolveSessionUserId();
     const [userRow, assistantRow] = await Promise.all([
       insertUserAgentMessage(latestUserMessage.content, {
         id: clientUserMessageId,
+        userId: historyUserId,
       }),
       insertAssistantAgentMessage(assistantText, {
         id: clientAssistantMessageId,
+        userId: historyUserId,
       }),
     ]);
 

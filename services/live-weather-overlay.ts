@@ -35,6 +35,7 @@ import {
 import type { Typhoon } from "@/services/typhoon-tracks";
 import { DEVICE_TIER, detectDeviceTier, type DeviceTier } from "@/lib/device-tier";
 import { markOverlayReady } from "@/lib/overlay-ready";
+import { styleAcceptsLayers } from "@/config/map-layers";
 
 export type LiveWeatherPerformanceProfile = "quality" | "balanced" | "performance";
 
@@ -606,6 +607,15 @@ function startTicker(map: MLMap) {
     }
 
     if (typeof document !== "undefined" && document.hidden) {
+      st.tickId = requestAnimationFrame(loop);
+      return;
+    }
+
+    // A theme swap rebuilds the whole style; the buffer layers can't be
+    // touched until it finishes (addSource throws "Style is not done
+    // loading"), and the style re-attach puts them back afterwards. Hold the
+    // animation for those ~1-2 s instead of throwing on every frame.
+    if (!styleAcceptsLayers(map)) {
       st.tickId = requestAnimationFrame(loop);
       return;
     }

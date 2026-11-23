@@ -145,10 +145,10 @@ function NickGate({
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
       <div className="space-y-1">
-        <p className="hud-text text-body-sm font-semibold text-aeris-text">
+        <p className="text-lg font-black text-aeris-text">
           Pick a nickname
         </p>
-        <p className="text-body-sm text-aeris-muted/70 leading-relaxed max-w-[220px]">
+        <p className="text-body-sm font-bold text-aeris-ink2 leading-relaxed max-w-[220px]">
           Choose how you appear in the room. 2-24 characters, no spaces.
         </p>
       </div>
@@ -159,12 +159,12 @@ function NickGate({
           placeholder="e.g. juan_dlc"
           maxLength={24}
           autoFocus
-          className="w-full rounded-md border border-aeris-border bg-aeris-bg/60 px-2.5 py-2 text-body-sm text-aeris-text placeholder:text-aeris-muted/50 focus:border-aeris-accent/60 focus:outline-none"
+          className="aeris-input w-full px-3 py-2 text-body-sm"
         />
         <button
           type="submit"
           disabled={nick.trim().length < 2 || saving}
-          className="hud-text rounded-md border border-aeris-accent/40 bg-aeris-accent/10 px-3 py-2 text-body-sm font-semibold text-aeris-accent transition-colors hover:bg-aeris-accent/20 disabled:opacity-40"
+          className="aeris-btn-cta min-h-[40px] px-3 text-[0.8125rem]"
         >
           {saving ? "Saving…" : "Join chat"}
         </button>
@@ -393,7 +393,7 @@ export function CommunityChatRoom({ isActive }: { isActive: boolean }) {
   if (!nickLoaded) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <span className="text-body-sm text-aeris-muted/60">Connecting…</span>
+        <span className="text-body-sm font-bold text-aeris-muted">Connecting…</span>
       </div>
     );
   }
@@ -411,7 +411,7 @@ export function CommunityChatRoom({ isActive }: { isActive: boolean }) {
         aria-live="polite"
       >
         {messages.length === 0 && (
-          <p className="px-1 py-4 text-center text-body-sm text-aeris-muted/50">
+          <p className="px-1 py-4 text-center text-body-sm font-bold text-aeris-muted">
             No messages yet. Say hello to the room.
           </p>
         )}
@@ -420,23 +420,25 @@ export function CommunityChatRoom({ isActive }: { isActive: boolean }) {
           return (
             <div
               key={m.id}
+              // Compact room log; your own lines sit on the chip-blue fill.
               className={clsx(
-                "rounded px-1.5 py-0.5 text-body-sm leading-snug",
+                "rounded-lg px-2 py-1 text-body-sm leading-snug",
+                own && "bg-aeris-chip-on",
                 m.pending && "opacity-60",
               )}
             >
-              <span className="mr-1.5 font-mono text-aeris-muted/50">
+              <span className="mr-1.5 text-[0.6875rem] font-bold tabular-nums text-aeris-muted">
                 {formatTime(m.createdAt)}
               </span>
               <span
                 className={clsx(
-                  "mr-1 font-semibold",
-                  own ? "text-aeris-accent" : "text-aeris-text",
+                  "mr-1 font-black",
+                  own ? "text-aeris-kicker-ink" : "text-aeris-text",
                 )}
               >
                 {m.displayName}:
               </span>
-              <span className="break-words text-aeris-text/90">{m.body}</span>
+              <span className="break-words font-semibold text-aeris-text">{m.body}</span>
             </div>
           );
         })}
@@ -451,13 +453,13 @@ export function CommunityChatRoom({ isActive }: { isActive: boolean }) {
       {/* Composer */}
       <form
         onSubmit={send}
-        className="flex shrink-0 items-center gap-1.5 border-t border-aeris-border px-2 py-1.5"
+        className="flex shrink-0 items-center gap-1.5 border-t border-aeris-border/70 px-2.5 py-2"
       >
-        <span className="hud-text shrink-0 text-body-sm font-semibold text-aeris-accent">
+        <span className="shrink-0 text-body-sm font-black text-aeris-kicker-ink">
           {nick}
         </span>
         {roleBadge && (
-          <span className="shrink-0 rounded border border-aeris-border px-1 py-px text-chrome text-aeris-muted">
+          <span className="shrink-0 rounded-full bg-aeris-elev px-1.5 py-px text-[0.625rem] font-black uppercase tracking-[0.1em] text-aeris-ink2">
             {roleBadge}
           </span>
         )}
@@ -466,12 +468,12 @@ export function CommunityChatRoom({ isActive }: { isActive: boolean }) {
           onChange={(e) => setInput(e.target.value)}
           placeholder="Message #global"
           maxLength={280}
-          className="min-w-0 flex-1 rounded-md border border-aeris-border bg-aeris-bg/60 px-2 py-1.5 text-body-sm text-aeris-text placeholder:text-aeris-muted/50 focus:border-aeris-accent/60 focus:outline-none"
+          className="aeris-input min-w-0 flex-1 !rounded-full px-3 py-1.5 text-body-sm"
         />
         <button
           type="submit"
           disabled={!input.trim() || sending}
-          className="hud-text shrink-0 rounded-md border border-aeris-accent/40 bg-aeris-accent/10 px-2.5 py-1.5 text-body-sm font-semibold text-aeris-accent transition-colors hover:bg-aeris-accent/20 disabled:opacity-40"
+          className="aeris-btn-ghost h-8 shrink-0 !rounded-full px-3 text-body-sm disabled:opacity-40"
         >
           Send
         </button>

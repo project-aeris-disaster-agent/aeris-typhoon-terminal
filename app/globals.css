@@ -8,36 +8,91 @@
   }
 }
 
+/*
+ * Design tokens, aligned to FLOOD CONTROL by bagyo.app (the game's day theme:
+ * bagyogame/src/ui/theme/tokens.ts). Light = the game's day HUD; dark = its
+ * storm navy. Values are RGB triplets so Tailwind's `/opacity` works.
+ * Two deliberate departures from the game, for WCAG AA on small text: muted
+ * is #5d7189 (game #6b7f96, 4.1:1) and warn is #b45309 (game #d0700c).
+ */
 :root {
   color-scheme: light;
-  --aeris-bg: 244 248 252;
+  --aeris-bg: 243 248 255; /* #f3f8ff sky bottom */
   --aeris-surface: 255 255 255;
-  --aeris-elev: 233 240 248;
-  --aeris-border: 210 223 238;
-  --aeris-text: 16 34 52;
-  --aeris-muted: 75 95 116;
-  --aeris-accent: 22 149 255;
-  --aeris-warn: 199 123 0;
-  --aeris-danger: 216 64 91;
-  --aeris-ok: 15 159 110;
-  --aeris-shadow-up: 0 -2px 14px rgb(15 23 42 / 0.08);
+  --aeris-elev: 232 240 250; /* #e8f0fa segmented track */
+  --aeris-border: 219 229 240; /* LINE on white */
+  --aeris-text: 15 42 71; /* #0f2a47 ink */
+  --aeris-ink2: 57 83 111; /* #39536f */
+  --aeris-muted: 93 113 137; /* #5d7189 */
+  --aeris-accent: 31 111 209; /* #1f6fd1 blue */
+  --aeris-accent2: 58 162 255; /* #3aa2ff */
+  --aeris-warn: 180 83 9; /* #b45309 */
+  --aeris-danger: 200 54 60; /* #c8363c (game #d93f45 is 4.4:1 on white) */
+  --aeris-ok: 15 122 75; /* #0f7a4b green ink */
+  --aeris-live: 31 191 122; /* #1fbf7a live dot */
+  --aeris-warm: 240 138 28; /* #f08a1c */
+  --aeris-gold: 240 160 32; /* #f0a020 */
+  --aeris-navy: 16 41 74; /* #10294a music bar */
+  --aeris-kicker-bg: 229 241 255; /* #e5f1ff */
+  --aeris-kicker-ink: 27 99 189; /* #1b63bd */
+  --aeris-chip-on: 237 245 255; /* #edf5ff */
+  --aeris-hover-rim: 156 198 243; /* #9cc6f3 */
+
+  --aeris-card-fill: linear-gradient(180deg, rgb(255 255 255 / 0.94), rgb(244 250 255 / 0.9));
+  --aeris-card-rim: rgb(255 255 255 / 0.95);
+  --aeris-panel-shadow: 0 10px 28px rgb(15 42 71 / 0.16), inset 0 1px 0 #ffffff;
+  --aeris-hero-shadow: 0 26px 70px rgb(15 42 71 / 0.2), inset 0 1px 0 #ffffff;
+  --aeris-pill-shadow: 0 6px 18px rgb(15 42 71 / 0.12);
+  --aeris-pop-shadow: 0 12px 30px rgb(15 42 71 / 0.28);
+  --aeris-seg-shadow: 0 3px 10px rgb(15 42 71 / 0.12);
+  --aeris-cta-fill: linear-gradient(180deg, #43a8ff, #1f6fd1);
+  --aeris-cta-shadow: 0 10px 24px rgb(31 111 209 / 0.34), inset 0 1px 0 rgb(255 255 255 / 0.4);
+  --aeris-cta-warm-fill: linear-gradient(180deg, #ffb64d, #ef8418);
+  --aeris-cta-warm-shadow: 0 10px 24px rgb(239 132 24 / 0.34), inset 0 1px 0 rgb(255 255 255 / 0.4);
+  --aeris-sky: linear-gradient(180deg, #e6f3ff 0%, #f3f8ff 46%, #f6faff 100%);
+  --aeris-boot-sky: linear-gradient(180deg, #8ccdff 0%, #bfe3ff 40%, #e9f6ff 72%, #ffffff 100%);
+  --aeris-vignette: radial-gradient(ellipse 82% 78% at 50% 50%, rgb(15 42 71 / 0) 62%, rgb(15 42 71 / 0.14) 100%);
+  --aeris-shadow-up: 0 -6px 18px rgb(15 42 71 / 0.1);
   /** Space reserved above MapLibre bottom-right attribution (ctrl margin + compact bar). */
   --aeris-map-attribution-reserve: 2.75rem;
 }
 
+/* Storm navy: the game's night/storm palette (trailer storm #0b1f3a / #163a63). */
 .dark {
   color-scheme: dark;
-  --aeris-bg: 10 14 19;
-  --aeris-surface: 17 22 29;
-  --aeris-elev: 24 31 40;
-  --aeris-border: 38 47 59;
-  --aeris-text: 255 255 255;
-  --aeris-muted: 139 152 169;
-  --aeris-accent: 0 217 255;
-  --aeris-warn: 255 184 77;
-  --aeris-danger: 255 77 109;
+  --aeris-bg: 11 31 58; /* #0b1f3a */
+  --aeris-surface: 16 41 74; /* #10294a */
+  --aeris-elev: 22 58 99; /* #163a63 */
+  --aeris-border: 38 72 112;
+  --aeris-text: 238 245 255;
+  --aeris-ink2: 196 214 236;
+  --aeris-muted: 156 182 214;
+  --aeris-accent: 92 180 255; /* #5cb4ff */
+  --aeris-accent2: 124 196 255; /* #7cc4ff */
+  --aeris-warn: 255 182 77; /* #ffb64d */
+  --aeris-danger: 255 133 138;
   --aeris-ok: 61 220 151;
-  --aeris-shadow-up: 0 -2px 14px rgb(0 0 0 / 0.35);
+  --aeris-live: 61 220 151;
+  --aeris-warm: 255 182 77;
+  --aeris-gold: 255 201 77;
+  --aeris-navy: 7 22 43;
+  --aeris-kicker-bg: 28 68 112;
+  --aeris-kicker-ink: 156 200 245; /* #9cc8f5 navy kicker */
+  --aeris-chip-on: 26 70 120;
+  --aeris-hover-rim: 76 134 196;
+
+  --aeris-card-fill: linear-gradient(180deg, rgb(20 50 88 / 0.94), rgb(16 41 74 / 0.92));
+  --aeris-card-rim: rgb(124 196 255 / 0.16);
+  --aeris-panel-shadow: 0 12px 30px rgb(2 10 24 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  --aeris-hero-shadow: 0 26px 70px rgb(2 10 24 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  --aeris-pill-shadow: 0 6px 18px rgb(2 10 24 / 0.4);
+  --aeris-pop-shadow: 0 12px 30px rgb(2 10 24 / 0.55);
+  --aeris-seg-shadow: 0 3px 10px rgb(2 10 24 / 0.35);
+  --aeris-cta-shadow: 0 10px 24px rgb(31 111 209 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.3);
+  --aeris-sky: linear-gradient(180deg, #0e2747 0%, #0b1f3a 60%, #0a1c35 100%);
+  --aeris-boot-sky: linear-gradient(180deg, #0b1f3a 0%, #163a63 55%, #1d4a7c 100%);
+  --aeris-vignette: radial-gradient(ellipse 82% 78% at 50% 50%, rgb(2 10 24 / 0) 60%, rgb(2 10 24 / 0.35) 100%);
+  --aeris-shadow-up: 0 -6px 18px rgb(2 10 24 / 0.4);
 }
 
 html,
@@ -51,7 +106,7 @@ body {
      ignore dvh-as-percentage and fall back to the static 100% above. */
   height: 100dvh;
   overflow: hidden;
-  font-feature-settings: "cv11", "ss01";
+  font-weight: 600;
   -webkit-font-smoothing: antialiased;
   transition: background-color 180ms ease, color 180ms ease;
 }
@@ -66,9 +121,42 @@ body > div {
 }
 
 .maplibregl-ctrl-attrib {
-  @apply !text-aeris-muted border !border-aeris-border;
+  @apply !text-aeris-muted;
+  border: 1px solid var(--aeris-card-rim) !important;
+  border-radius: 9999px !important;
   background-color: rgb(var(--aeris-surface) / 0.9) !important;
+  box-shadow: var(--aeris-pill-shadow);
   backdrop-filter: blur(6px);
+  font-weight: 700;
+}
+
+/* MapLibre's compact attribution forces `visibility: visible`, which let it
+   show through the hidden map on the phone Reports tab. Follow the ancestor. */
+[class~="invisible"] .maplibregl-ctrl-attrib,
+[class~="max-md:invisible"] .maplibregl-ctrl-attrib {
+  visibility: inherit !important;
+}
+
+/* MapLibre zoom/compass: round white pills like the game's map buttons. */
+.maplibregl-ctrl-group:not(:empty) {
+  border-radius: 9999px !important;
+  overflow: hidden;
+  border: 1px solid var(--aeris-card-rim);
+  background: rgb(var(--aeris-surface)) !important;
+  box-shadow: var(--aeris-pill-shadow) !important;
+}
+
+.maplibregl-ctrl-group button {
+  width: 34px !important;
+  height: 34px !important;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top-color: rgb(var(--aeris-border)) !important;
+}
+
+.dark .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) hue-rotate(180deg) brightness(1.1);
 }
 
 .maplibregl-ctrl-attrib a {
@@ -92,24 +180,54 @@ body > div {
   @apply bg-aeris-muted;
 }
 
+/* Numbers line up (the game uses Nunito with tabular figures, not a mono face). */
+.font-mono,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Game panel (hudTheme .hud-panel): frosted gradient glass, white rim, navy lift. */
 .panel-glass {
-  @apply border border-aeris-border shadow-sm;
-  background-color: rgb(var(--aeris-surface) / 0.98);
+  border: 1px solid var(--aeris-card-rim);
+  background: var(--aeris-card-fill);
+  box-shadow: var(--aeris-panel-shadow);
+  color: rgb(var(--aeris-text));
 }
 
 @media (min-width: 768px) {
   .panel-glass {
-    @apply backdrop-blur-md;
-    background-color: rgb(var(--aeris-surface) / 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 }
 
+/* Body-level secondary text. */
 .hud-text {
-  @apply font-sans text-label font-medium tracking-normal normal-case text-aeris-muted;
+  @apply font-sans text-label font-bold tracking-normal normal-case text-aeris-muted;
 }
 
-.chrome-label {
-  @apply font-mono text-chrome uppercase tracking-wide;
+/* The game's section label (CITY / DIFFICULTY): tiny, black weight, spaced caps. */
+.chrome-label,
+.aeris-label {
+  font-size: 0.6875rem;
+  line-height: 1.25;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.aeris-label {
+  color: rgb(var(--aeris-muted));
+}
+
+/* Panel header title (hudTheme .hud-h). */
+.aeris-title {
+  font-size: 0.75rem;
+  line-height: 1.2;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--aeris-text));
 }
 
 /* Header scrolling news marquee */
@@ -146,8 +264,473 @@ body > div {
   }
 }
 
-.live-dot {
-  @apply w-2 h-2 rounded-full bg-aeris-danger animate-pulse-slow;
+@media (prefers-reduced-motion: reduce) {
+  .news-ticker-track {
+    animation: none;
+  }
+}
+
+/* The game's live dot: green with a soft ring, slow blink. */
+.live-dot,
+.aeris-live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgb(var(--aeris-live));
+  box-shadow: 0 0 0 3px rgb(var(--aeris-live) / 0.22);
+  animation: aeris-blink 2.4s ease-in-out infinite;
+}
+
+@keyframes aeris-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ===================== FLOOD CONTROL kit ===================== */
+
+/* Status pill (landing .lp-kicker): pale blue capsule, blue spaced caps. */
+.aeris-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  border-radius: 9999px;
+  background: rgb(var(--aeris-kicker-bg));
+  color: rgb(var(--aeris-kicker-ink));
+  font-size: 0.65625rem;
+  line-height: 1.2;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Floating white pill (brand, clusters, round buttons). */
+.aeris-pill-surface {
+  background: rgb(var(--aeris-surface) / 0.94);
+  box-shadow: var(--aeris-pill-shadow);
+  border: 1px solid var(--aeris-card-rim);
+}
+
+/* Round white button (landing .lp-round). */
+.aeris-round {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  padding: 0 0.625rem;
+  border-radius: 9999px;
+  border: 1px solid var(--aeris-card-rim);
+  background: rgb(var(--aeris-surface));
+  color: rgb(var(--aeris-ink2));
+  font-weight: 800;
+  box-shadow: var(--aeris-pill-shadow);
+  transition:
+    transform 0.12s ease,
+    color 0.12s ease,
+    background-color 0.12s ease;
+}
+
+.aeris-round:hover {
+  transform: translateY(-1px);
+  color: rgb(var(--aeris-accent));
+}
+
+.aeris-round[aria-pressed="true"],
+.aeris-round.is-active {
+  color: rgb(var(--aeris-accent));
+}
+
+/* Segmented control (landing .lp-tabs): pale track, white raised segment. */
+.aeris-seg {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgb(var(--aeris-elev));
+}
+
+.aeris-seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: rgb(var(--aeris-ink2));
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.aeris-seg-btn:hover {
+  color: rgb(var(--aeris-accent));
+}
+
+.aeris-seg-btn[aria-pressed="true"],
+.aeris-seg-btn[aria-selected="true"],
+.aeris-seg-btn.is-active {
+  background: rgb(var(--aeris-surface));
+  color: rgb(var(--aeris-accent));
+  box-shadow: var(--aeris-seg-shadow);
+}
+
+/* Chip (landing .lp-chip): white capsule, hover rim, selected blue rim + pale fill. */
+.aeris-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 9999px;
+  border: 1.5px solid rgb(var(--aeris-border));
+  background: rgb(var(--aeris-surface));
+  color: rgb(var(--aeris-text));
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.aeris-chip:hover:not(:disabled) {
+  border-color: rgb(var(--aeris-hover-rim));
+}
+
+.aeris-chip[aria-pressed="true"],
+.aeris-chip.is-active {
+  border-color: rgb(var(--aeris-accent));
+  background: rgb(var(--aeris-chip-on));
+  color: rgb(var(--aeris-kicker-ink));
+}
+
+.aeris-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Buttons (landing .lp-cta and variants). */
+.aeris-btn-cta,
+.aeris-btn-warm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 14px;
+  color: #ffffff;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: var(--aeris-cta-fill);
+  box-shadow: var(--aeris-cta-shadow);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    filter 0.12s ease;
+}
+
+.aeris-btn-warm {
+  background: var(--aeris-cta-warm-fill);
+  box-shadow: var(--aeris-cta-warm-shadow);
+}
+
+.aeris-btn-cta:hover:not(:disabled),
+.aeris-btn-warm:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: saturate(1.08);
+}
+
+.aeris-btn-cta:disabled,
+.aeris-btn-warm:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.aeris-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 14px;
+  border: 1.5px solid rgb(var(--aeris-hover-rim));
+  background: rgb(var(--aeris-surface));
+  color: rgb(var(--aeris-accent));
+  font-weight: 900;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.aeris-btn-ghost:hover {
+  background: rgb(var(--aeris-chip-on));
+}
+
+.aeris-btn-soft {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 10px;
+  background: rgb(var(--aeris-elev));
+  color: rgb(var(--aeris-ink2));
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.aeris-btn-soft:hover {
+  color: rgb(var(--aeris-accent));
+  background: rgb(var(--aeris-chip-on));
+}
+
+/* Text input (landing .lp-name): white, soft rim, blue rim on focus. */
+.aeris-input {
+  border-radius: 12px;
+  border: 1.5px solid rgb(var(--aeris-border));
+  background: rgb(var(--aeris-surface));
+  color: rgb(var(--aeris-text));
+  font-weight: 700;
+  transition: border-color 0.15s ease;
+}
+
+.aeris-input::placeholder {
+  color: rgb(var(--aeris-muted));
+  font-weight: 600;
+}
+
+.aeris-input:hover:not(:disabled) {
+  border-color: rgb(var(--aeris-hover-rim));
+}
+
+.aeris-input:focus,
+.aeris-input:focus-visible {
+  outline: none;
+  border-color: rgb(var(--aeris-accent));
+}
+
+/* Hotkey cap (hudTheme .sh-key). */
+.aeris-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: rgb(var(--aeris-elev));
+  color: rgb(var(--aeris-muted));
+  font-size: 0.625rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+/* The game's dark navy bar (music player / time controls). */
+.aeris-navy-bar {
+  background: rgb(var(--aeris-navy));
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgb(15 42 71 / 0.25);
+}
+
+/* Card rise on entry (landing lp-rise). */
+@keyframes aeris-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.aeris-rise {
+  animation: aeris-rise 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.05) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  .aeris-live-dot,
+  .aeris-rise {
+    animation: none;
+  }
+
+  .aeris-round:hover,
+  .aeris-btn-cta:hover,
+  .aeris-btn-warm:hover {
+    transform: none;
+  }
+}
+
+/* One keyboard focus ring for every control. */
+:where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid rgb(var(--aeris-accent));
+  outline-offset: 2px;
+}
+
+/* ===================== Panel internals (game HUD rows and cards) ===================== */
+
+/* The panels' many `uppercase tracking-*` / `font-mono uppercase` labels were
+   written for a mono terminal; in Nunito they read as the game's spaced caps
+   only at black weight. One rule instead of ~80 call-site edits. */
+.uppercase:is(.font-mono, .tracking-wide, .tracking-wider, .tracking-widest) {
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+/* Data values that used to be monospaced: heavier, tabular. */
+.font-mono:not(.uppercase) {
+  font-weight: 800;
+}
+
+/* White row inside a glass panel (hudTheme .sq-row / .arc-stat). */
+.aeris-row {
+  border-radius: 12px;
+  border: 1px solid rgb(var(--aeris-border));
+  background: rgb(var(--aeris-surface));
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+button.aeris-row:hover,
+a.aeris-row:hover,
+.aeris-row.is-interactive:hover {
+  border-color: rgb(var(--aeris-hover-rim));
+}
+
+/* Incident card (hudTheme .inc-card): white, 4px tone stripe on the left. */
+.aeris-incident {
+  border-radius: 12px;
+  border: 1px solid rgb(var(--aeris-border));
+  border-left: 4px solid rgb(var(--aeris-warm));
+  background: rgb(var(--aeris-surface));
+}
+
+.aeris-incident[data-tone="danger"] {
+  border-left-color: rgb(var(--aeris-danger));
+}
+
+.aeris-incident[data-tone="ok"] {
+  border-left-color: rgb(var(--aeris-live));
+}
+
+.aeris-incident[data-tone="accent"] {
+  border-left-color: rgb(var(--aeris-accent));
+}
+
+.aeris-incident[data-tone="muted"] {
+  border-left-color: rgb(var(--aeris-muted) / 0.5);
+}
+
+/* Warm card (the landing's Storm of the Day), used for storms being watched. */
+.aeris-warm-card {
+  border-radius: 14px;
+  border: 1px solid rgb(var(--aeris-warm) / 0.35);
+  border-left: 4px solid rgb(var(--aeris-warm));
+  background: linear-gradient(140deg, rgb(var(--aeris-warm) / 0.14), rgb(var(--aeris-warm) / 0.04) 60%);
+}
+
+.aeris-warm-card[data-tone="danger"] {
+  border-color: rgb(var(--aeris-danger) / 0.3);
+  border-left-color: rgb(var(--aeris-danger));
+  background: linear-gradient(140deg, rgb(var(--aeris-danger) / 0.12), rgb(var(--aeris-danger) / 0.03) 60%);
+}
+
+/* Stat tile (hudTheme .arc-stat): white, big black number, spaced-caps key. */
+.aeris-stat {
+  border-radius: 12px;
+  border: 1px solid rgb(var(--aeris-border));
+  background: rgb(var(--aeris-surface));
+  padding: 8px 10px;
+}
+
+/* Chunky track-and-fill bar (the loading screen's bar). */
+.aeris-bar {
+  height: 6px;
+  border-radius: 9999px;
+  background: rgb(var(--aeris-text) / 0.09);
+  overflow: hidden;
+}
+
+/* Headline gradient ("CONTROL" on the game's landing) with its wave underline. */
+.aeris-title-fill {
+  color: transparent;
+  background: linear-gradient(180deg, #47acff 0%, #1f6fd1 62%, #1556a8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.dark .aeris-title-fill {
+  background: linear-gradient(180deg, #9fd3ff 0%, #5cb4ff 60%, #3a92e6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.aeris-wave {
+  position: relative;
+}
+
+.aeris-wave::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 0;
+  height: 8px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 12'%3E%3Cpath d='M0 6c15 0 15-5 30-5s15 5 30 5 15-5 30-5 15 5 30 5' fill='none' stroke='%2339a0ff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E")
+    repeat-x 0 0 / 36px 8px;
+  animation: aeris-wave 2.8s linear infinite;
+}
+
+@keyframes aeris-wave {
+  to {
+    background-position: 36px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aeris-wave::after {
+    animation: none;
+  }
+}
+
+/* bagyo.app lockup as a mask (the game's .lp-wordmark technique), so it takes
+   the theme's ink: brand blue on white, pale blue on storm navy. The PNG was
+   dark blue on transparent and nearly vanished in dark mode. */
+.aeris-brand-mark {
+  display: block;
+  aspect-ratio: 5000 / 1213;
+  background: rgb(var(--aeris-kicker-ink));
+  -webkit-mask: url("/assets/Bagyo%20Logo%405x.png") center / contain no-repeat;
+  mask: url("/assets/Bagyo%20Logo%405x.png") center / contain no-repeat;
+}
+
+/* Sky backdrop behind floating chrome (header row, ops column). */
+.aeris-sky {
+  background: var(--aeris-sky);
+}
+
+/* Navy frame at the map's edges (hudTheme vignette). */
+.aeris-map-vignette {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--aeris-vignette);
 }
 
 /* MapLibre default popup chrome — inner React card owns padding and surface */
@@ -172,23 +755,21 @@ body > div {
 }
 
 .aeris-facility-card {
-  font-family: var(--font-inter), system-ui, sans-serif;
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  font-weight: 600;
   min-width: 220px;
   max-width: 280px;
-  padding: 10px 12px 11px;
-  border-radius: 8px;
-  border: 1px solid rgb(var(--aeris-border));
-  background: rgb(var(--aeris-surface) / 0.97);
-  box-shadow:
-    0 4px 24px rgb(0 0 0 / 0.18),
-    0 0 0 1px rgb(var(--aeris-accent) / 0.12);
+  padding: 12px 14px 13px;
+  border-radius: 14px;
+  border: 1px solid var(--aeris-card-rim);
+  border-top: 3px solid rgb(var(--aeris-accent));
+  background: rgb(var(--aeris-surface));
+  box-shadow: var(--aeris-pop-shadow);
   color: rgb(var(--aeris-text));
 }
 
 .aeris-facility-card--light {
-  box-shadow:
-    0 4px 20px rgb(16 34 52 / 0.12),
-    0 0 0 1px rgb(var(--aeris-accent) / 0.2);
+  box-shadow: var(--aeris-pop-shadow);
 }
 
 .aeris-facility-card__header {
@@ -200,25 +781,27 @@ body > div {
 }
 
 .aeris-facility-card__eyebrow {
-  font-size: 0.75rem;
-  font-weight: 500;
+  font-size: 0.65625rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: rgb(var(--aeris-accent));
 }
 
 .aeris-facility-card__code {
-  font-size: 0.75rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: rgb(var(--aeris-muted));
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid rgb(var(--aeris-border));
-  background: rgb(var(--aeris-elev) / 0.8);
+  font-size: 0.6875rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--aeris-kicker-ink));
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgb(var(--aeris-kicker-bg));
 }
 
 .aeris-facility-card__name {
   margin: 0 0 8px;
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 900;
   line-height: 1.3;
   letter-spacing: -0.01em;
   color: rgb(var(--aeris-text));
@@ -243,8 +826,11 @@ body > div {
 .aeris-facility-card__row dt {
   margin: 0;
   color: rgb(var(--aeris-muted));
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: 0.6875rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding-top: 2px;
 }
 
 .aeris-facility-card__row dd {

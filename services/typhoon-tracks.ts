@@ -168,12 +168,41 @@ export async function fetchPagasaBulletins(options?: {
   }
 }
 
-export async function fetchActiveTyphoons(): Promise<{
+export type ActiveTyphoonsResult = {
   storms: Typhoon[];
   outsidePar: OutsideParAdvisory | null;
   outsideParGdacs: Typhoon[];
   warning: string | null;
-}> {
+};
+
+/**
+ * Several components need the active-storm list at once (Typhoon Tracker,
+ * Alerts Feed, flood automation, location info, boot preflight). Share one
+ * in-flight request and reuse a result for a short window, so they don't each
+ * hit /api/jtwc on the same render.
+ */
+const TYPHOON_SHARE_MS = 20_000;
+let typhoonsInFlight: Promise<ActiveTyphoonsResult> | null = null;
+let typhoonsCache: { at: number; value: ActiveTyphoonsResult } | null = null;
+
+export function fetchActiveTyphoons(): Promise<ActiveTyphoonsResult> {
+  if (typhoonsCache && Date.now() - typhoonsCache.at < TYPHOON_SHARE_MS) {
+    return Promise.resolve(typhoonsCache.value);
+  }
+  if (!typhoonsInFlight) {
+    typhoonsInFlight = fetchActiveTyphoonsUncached()
+      .then((value) => {
+        typhoonsCache = { at: Date.now(), value };
+        return value;
+      })
+      .finally(() => {
+        typhoonsInFlight = null;
+      });
+  }
+  return typhoonsInFlight;
+}
+
+async function fetchActiveTyphoonsUncached(): Promise<ActiveTyphoonsResult> {
   try {
     const res = await fetch("/api/jtwc", {
       headers: { accept: "application/json" },

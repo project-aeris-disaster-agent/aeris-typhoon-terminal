@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { clsx } from "clsx";
+import { ChevronDown, Layers } from "lucide-react";
 import type { MapMode } from "./MapContainer";
 import { HelpHint } from "@/components/ui/HelpTooltip";
 import {
@@ -307,15 +308,26 @@ export function LayerLegend({
   }, []);
 
   return (
-    <div className="panel-glass rounded-md overflow-hidden w-64">
-      <div className="flex items-center hud-text text-aeris-muted">
+    <div className="panel-glass rounded-xl overflow-hidden w-64">
+      <div className="flex items-center">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex flex-1 items-center justify-between px-2.5 py-1.5 hover:text-aeris-text"
+          aria-expanded={expanded}
+          className="group flex flex-1 items-center gap-2.5 py-2 pl-2.5 pr-1.5"
         >
-          <span>Layers</span>
-          <span className="text-body-sm">{expanded ? "▾" : "▸"}</span>
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-aeris-kicker text-aeris-kicker-ink">
+            <Layers size={15} aria-hidden />
+          </span>
+          <span className="aeris-title group-hover:text-aeris-accent">Layers</span>
+          <ChevronDown
+            size={16}
+            aria-hidden
+            className={clsx(
+              "ml-auto shrink-0 text-aeris-muted transition-transform group-hover:text-aeris-accent",
+              expanded && "rotate-180",
+            )}
+          />
         </button>
         <span className="pr-2.5">
           <HelpHint helpId="control.layers" side="left" />
@@ -323,9 +335,9 @@ export function LayerLegend({
       </div>
 
       {expanded && (
-        <div className="px-2.5 pb-2 space-y-2 border-t border-aeris-border">
+        <div className="mx-2.5 pb-2.5 space-y-2 border-t border-aeris-border/70">
           <div className="pt-2">
-            <div className="text-body-sm text-aeris-muted uppercase tracking-wider mb-1">
+            <div className="aeris-label mb-1.5">
               Hazard
             </div>
             <div className="space-y-0.5">
@@ -408,15 +420,13 @@ export function QuickViewsPanel({
   const [selectedPreset, setSelectedPreset] = useState<ScenePresetId | null>(null);
 
   return (
-    <div className="panel-glass rounded-md overflow-hidden w-64">
-      <div className="px-2.5 py-1.5 border-b border-aeris-border">
-        <div className="flex items-center gap-1 text-body-sm text-aeris-muted uppercase tracking-wider">
-          <span>Quick Views</span>
-          <HelpHint helpId="control.quickViews" side="right" />
-        </div>
+    <div className="panel-glass rounded-xl overflow-hidden w-64 p-2.5">
+      <div className="aeris-label mb-2 flex items-center gap-1 px-0.5">
+        <span>Quick views</span>
+        <HelpHint helpId="control.quickViews" side="right" />
       </div>
-      <div className="px-2.5 py-2">
-        <div className="grid grid-cols-2 gap-1">
+      <div>
+        <div className="grid grid-cols-2 gap-1.5">
           {SCENE_PRESETS.map((preset) => (
             <button
               key={preset.id}
@@ -440,12 +450,8 @@ export function QuickViewsPanel({
                   });
                 }
               }}
-              className={clsx(
-                "rounded border px-2 py-1 text-body-sm text-left",
-                selectedPreset === preset.id
-                  ? "border-aeris-accent/40 bg-aeris-accent/10 text-aeris-accent"
-                  : "border-aeris-border text-aeris-muted hover:text-aeris-text",
-              )}
+              aria-pressed={selectedPreset === preset.id}
+              className="aeris-chip h-8 justify-start px-3 text-[0.8125rem]"
             >
               {preset.label}
             </button>
@@ -470,31 +476,40 @@ function LayerRadio({
   onClick: () => void;
 }) {
   return (
+    // Game settings-sheet row: swatch + label, pill toggle on the right.
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
+      aria-pressed={checked}
       className={clsx(
-        "w-full flex items-center gap-2 px-1.5 py-1 rounded text-xs text-left",
+        "w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[0.8125rem] font-bold text-left transition-colors",
         disabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
-        checked
-          ? "bg-aeris-accent/10 text-aeris-accent"
-          : "text-aeris-text/90 hover:bg-aeris-elev",
+        checked ? "bg-aeris-chip-on text-aeris-text" : "text-aeris-ink2 hover:bg-aeris-elev",
       )}
     >
-      <span
-        className={clsx(
-          "inline-block w-2.5 h-2.5 rounded-full border",
-          checked ? "border-aeris-accent bg-aeris-accent" : "border-aeris-border",
-        )}
-      />
       {swatch && (
         <span
-          className="inline-block w-3 h-3 rounded-sm"
+          className="inline-block h-3 w-3 shrink-0 rounded-[4px]"
           style={{ background: swatch }}
+          aria-hidden
         />
       )}
       <span className="flex-1 truncate">{label}</span>
+      <span
+        aria-hidden
+        className={clsx(
+          "relative h-[18px] w-8 shrink-0 rounded-full transition-colors",
+          checked ? "bg-aeris-accent" : "bg-aeris-muted/30",
+        )}
+      >
+        <span
+          className={clsx(
+            "absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow-sm transition-[left]",
+            checked ? "left-[16px]" : "left-[2px]",
+          )}
+        />
+      </span>
     </button>
   );
 }

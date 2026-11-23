@@ -69,7 +69,7 @@ export function LocationInfoShell({
       <button
         type="button"
         aria-label="Close location info"
-        className="md:hidden fixed inset-x-0 top-0 z-[18] bg-black/40"
+        className="md:hidden fixed inset-x-0 top-0 z-[18] bg-aeris-navy/35"
         style={{ bottom: AERIS_MOBILE_TABBAR_H }}
         onClick={onClose}
       />
@@ -78,8 +78,8 @@ export function LocationInfoShell({
       <div
         className={clsx(
           "md:hidden fixed inset-x-0 z-20 flex flex-col pointer-events-auto",
-          "rounded-t-xl border border-aeris-border/70 border-b-0",
-          "panel-glass shadow-2xl transition-[height] duration-300 ease-out",
+          "rounded-t-3xl border-b-0",
+          "panel-glass !shadow-hero transition-[height] duration-300 ease-out",
         )}
         style={{
           ...style,
@@ -90,7 +90,7 @@ export function LocationInfoShell({
           maxHeight: `calc(100dvh - ${AERIS_HEADER_H} - ${AERIS_MOBILE_TABBAR_H} - 0.5rem)`,
         }}
       >
-        <div className="shrink-0 flex flex-col items-center pt-1.5 pb-0.5 border-b border-aeris-border/40">
+        <div className="shrink-0 flex flex-col items-center pt-1.5 pb-0.5">
           <button
             type="button"
             onClick={toggleSheet}
@@ -98,7 +98,7 @@ export function LocationInfoShell({
             aria-expanded={sheetExpanded}
             aria-label={sheetExpanded ? "Collapse location panel" : "Expand location panel"}
           >
-            <span className="w-10 h-1 rounded-full bg-aeris-border" aria-hidden />
+            <span className="w-10 h-1.5 rounded-full bg-aeris-muted/30" aria-hidden />
             <ChevronUp
               size={14}
               className={clsx(
@@ -116,6 +116,7 @@ export function LocationInfoShell({
       <div
         className={clsx(
           "hidden md:flex md:flex-col pointer-events-auto min-h-0 overflow-hidden",
+          "panel-glass rounded-2xl !shadow-pop aeris-rise",
           "absolute right-3 z-20 w-[min(380px,calc(100vw-1.5rem))]",
           "max-h-[min(520px,calc(100%-1.5rem-var(--aeris-map-attribution-reserve)-0.75rem))]",
         )}

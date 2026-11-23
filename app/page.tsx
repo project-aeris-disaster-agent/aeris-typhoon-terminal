@@ -17,6 +17,8 @@ import { MobileTabBar, type MobileTab } from "@/components/MobileTabBar";
 import { ReportPingsSync } from "@/components/ReportPingsSync";
 import { WebcamPingsSync } from "@/components/WebcamPingsSync";
 import { BootScreen } from "@/components/BootScreen";
+import { LG_UP, MD_UP, useMediaQuery } from "@/hooks/useMediaQuery";
+import { ReportToasts } from "@/components/ReportToasts";
 import { YouTubeFeedsProvider } from "@/components/YouTubeFeedsProvider";
 import { initMapLayers } from "@/services/hazard-layers";
 import { focusAddress3DContext, initMapScene } from "@/services/map-scene";
@@ -33,6 +35,8 @@ import { FloodAutomationProvider } from "@/components/providers/FloodAutomationP
 
 export default function HomePage() {
   const [map, setMap] = useState<MLMap | null>(null);
+  const isMdUp = useMediaQuery(MD_UP);
+  const isLgUp = useMediaQuery(LG_UP);
   const [opsSidebarCollapsed, setOpsSidebarCollapsed] = useState(false);
   const [liveReportsOpen, setLiveReportsOpen] = useState(false);
   const [communityChatOpen, setCommunityChatOpen] = useState(false);
@@ -150,11 +154,13 @@ export default function HomePage() {
             {/* In-flow chrome below lg (phones + tablet portrait): the map is
                 too narrow there for the floating overlay to clear the left
                 control column, so search + ad render above the map instead. */}
-            <MapTopChrome
-              map={map}
-              onAddressSelect={handleAddressSelect}
-              className="lg:hidden shrink-0 px-2 pt-2 pb-2 border-b border-aeris-border bg-aeris-surface/98"
-            />
+            {isLgUp === false && (
+              <MapTopChrome
+                map={map}
+                onAddressSelect={handleAddressSelect}
+                className="aeris-sky lg:hidden shrink-0 px-2 pt-1 pb-2"
+              />
+            )}
             <main className="flex-1 relative min-h-0 min-w-0">
               <MapContainer
                 layoutActive={mobileTab === "map"}
@@ -167,6 +173,18 @@ export default function HomePage() {
                       map={map}
                       popoverRef={liveReportsPopoverRef}
                     />
+                    <ReportToasts
+                      hidden={liveReportsOpen}
+                      onOpenReports={() => setLiveReportsOpen(true)}
+                      onGoTo={(report) =>
+                        map?.flyTo({
+                          center: report.position,
+                          zoom: Math.max(map.getZoom(), 13),
+                          duration: 900,
+                          essential: true,
+                        })
+                      }
+                    />
                     <div className="hidden md:contents">
                       <CommunityChatOverlay
                         open={communityChatOpen}
@@ -176,7 +194,9 @@ export default function HomePage() {
                         <button
                           type="button"
                           onClick={() => setCommunityChatOpen(true)}
-                          className="hud-text absolute bottom-12 z-40 flex items-center gap-1.5 rounded-md border border-aeris-border bg-aeris-surface/95 px-2.5 py-1.5 text-body-sm font-semibold text-aeris-muted shadow-md backdrop-blur-md transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent left-1/2 -translate-x-1/2 xl:left-3 xl:translate-x-0"
+                          // Bottom-centre: the left edge is taken by the map
+                          // control column, the right by Location Info.
+                          className="aeris-round absolute bottom-12 z-40 !px-3.5 text-body-sm left-1/2 -translate-x-1/2"
                           aria-label="Open community chat"
                         >
                           <svg
@@ -201,12 +221,14 @@ export default function HomePage() {
                         never left of 19rem so it clears the Live Weather /
                         View Modes / Layers column pinned at left-3 (~17.5rem
                         wide incl. margin). Width shrinks with the map area. */}
-                    <div className="absolute top-3 z-40 hidden lg:block left-[max(19rem,calc(50%_-_15rem))] w-[min(30rem,calc(100%_-_19.75rem))] pointer-events-none [&>*]:pointer-events-auto">
-                      <MapTopChrome
-                        map={map}
-                        onAddressSelect={handleAddressSelect}
-                      />
-                    </div>
+                    {isLgUp === true && (
+                      <div className="absolute top-3 z-40 hidden lg:block left-[max(19rem,calc(50%_-_15rem))] w-[min(30rem,calc(100%_-_19.75rem))] pointer-events-none [&>*]:pointer-events-auto">
+                        <MapTopChrome
+                          map={map}
+                          onAddressSelect={handleAddressSelect}
+                        />
+                      </div>
+                    )}
                     {selectedLocation && (
                       <LocationInfoShell
                         intelFeedsCollapsed={intelFeedsCollapsed}
@@ -235,24 +257,30 @@ export default function HomePage() {
                 "invisible pointer-events-none",
             )}
           >
-            <Sidebar map={map} mobileMode />
+            {/* One Sidebar tree, chosen by viewport. Two CSS-hidden copies both
+                polled every feed, and the hidden tracker cleared storm focus. */}
+            {isMdUp === false && <Sidebar map={map} mobileMode />}
           </div>
         </div>
 
         <div className="hidden md:flex min-w-0 overflow-hidden md:flex-initial">
-          <Sidebar map={map} onCollapsedChange={setOpsSidebarCollapsed} />
+          {isMdUp === true && (
+            <Sidebar map={map} onCollapsedChange={setOpsSidebarCollapsed} />
+          )}
         </div>
       </div>
       {/* Intel Feeds (webcams / livestreams / Agent AERIS) — desktop only.
           Mobile is focused on monitoring ground reports. */}
       <div className="hidden md:block">
-        <BottomPanel
-          map={map}
-          selectedLocation={selectedLocation}
-          collapsed={intelFeedsCollapsed}
-          onCollapsedChange={setIntelFeedsCollapsed}
-          explainRequest={explainRequest}
-        />
+        {isMdUp === true && (
+          <BottomPanel
+            map={map}
+            selectedLocation={selectedLocation}
+            collapsed={intelFeedsCollapsed}
+            onCollapsedChange={setIntelFeedsCollapsed}
+            explainRequest={explainRequest}
+          />
+        )}
       </div>
       <MobileTabBar active={mobileTab} onChange={setMobileTab} />
     </div>

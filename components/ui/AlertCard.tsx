@@ -17,11 +17,19 @@ import {
 
 type SafetyTone = "ok" | "default" | "warn" | "danger";
 
-const TONE_BG: Record<SafetyTone, string> = {
-  ok: "bg-aeris-ok/15 border-aeris-ok/40 text-aeris-ok",
-  default: "bg-aeris-accent/10 border-aeris-accent/40 text-aeris-accent",
-  warn: "bg-aeris-warn/15 border-aeris-warn/50 text-aeris-warn",
-  danger: "bg-aeris-danger/15 border-aeris-danger/50 text-aeris-danger",
+// Game incident card: white card, tone carried by the left stripe + header ink.
+const TONE_INK: Record<SafetyTone, string> = {
+  ok: "text-aeris-ok",
+  default: "text-aeris-accent",
+  warn: "text-aeris-warn",
+  danger: "text-aeris-danger",
+};
+
+const TONE_STRIPE: Record<SafetyTone, string | undefined> = {
+  ok: "ok",
+  default: "accent",
+  warn: undefined, // the stripe's default is the game's warm orange
+  danger: "danger",
 };
 
 const ALERT_SEVERITY_ICON: Record<AlertSeverity, LucideIcon> = {
@@ -80,14 +88,12 @@ export function AlertCard({
 
   return (
     <article
-      className={clsx(
-        "rounded-md border px-2.5 py-2 transition-colors",
-        TONE_BG[tone],
-      )}
+      className="aeris-incident px-3 py-2.5 transition-colors"
+      data-tone={TONE_STRIPE[tone]}
     >
-      <header className="flex items-center gap-1.5 mb-1">
+      <header className={clsx("flex items-center gap-1.5 mb-1", TONE_INK[tone])}>
         <Icon size={13} className="shrink-0" aria-hidden />
-        <span className="text-body-sm font-semibold capitalize">
+        <span className="text-[0.6875rem] font-black uppercase tracking-[0.12em]">
           {alert.severity}
         </span>
         <span className="chrome-label opacity-70">{alert.source}</span>
@@ -112,23 +118,23 @@ export function AlertCard({
         ) : null}
       </header>
 
-      <p className="text-body-sm font-semibold text-aeris-text mb-0.5">
+      <p className="text-body-sm font-black text-aeris-text mb-0.5">
         {alert.title}
       </p>
 
       {context ? (
-        <p className="text-[10.5px] text-aeris-muted leading-snug mb-0.5">
+        <p className="text-[0.6875rem] font-bold text-aeris-muted leading-snug mb-0.5">
           {context}
         </p>
       ) : null}
 
+      {/* Summary only when it adds something; the old fallback printed the
+          title a second time. */}
       {showSummary ? (
-        <p className="text-body-sm text-aeris-text line-clamp-4">
+        <p className="text-body-sm text-aeris-ink2 line-clamp-4">
           {alert.summary}
         </p>
-      ) : (
-        <p className="text-body-sm text-aeris-text">{alert.title}</p>
-      )}
+      ) : null}
     </article>
   );
 }

@@ -10,6 +10,7 @@ import {
   type VRM,
 } from "@pixiv/three-vrm";
 import type { SpeechEmotion } from "@/lib/agent-speech/types";
+import { detectWebglSupport } from "@/lib/webgl-support";
 import { createBlinkState, updateBlinkWeight } from "@/lib/vrm/blink";
 import { applyAvatarFace, isAvatarSpeaking } from "@/lib/vrm/idle-face";
 
@@ -104,15 +105,28 @@ export function AerisVrmAvatar({
     const host = hostRef.current;
     if (!host) return;
 
+    // Three's WebGLRenderer throws when it cannot get a context — hardware
+    // acceleration off, blocklisted GPU, or the per-page context limit already
+    // spent (the map holds one). The avatar is decoration; it must never take
+    // the chat panel, let alone the terminal, down with it. Bail to the
+    // standby visual the same way a missing VRM file does.
+    if (detectWebglSupport() === "unavailable") return;
+
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(22, 1, 0.1, 20);
     camera.position.set(0, 1.25, 3.1);
 
-    const renderer = new THREE.WebGLRenderer({
-      alpha: true,
-      antialias: false,
-      powerPreference: "low-power",
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        alpha: true,
+        antialias: false,
+        powerPreference: "low-power",
+      });
+    } catch (error) {
+      console.warn("[vrm] WebGL renderer unavailable; showing standby", error);
+      return;
+    }
     renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     host.appendChild(renderer.domElement);

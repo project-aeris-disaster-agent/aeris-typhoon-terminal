@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
+import { ChevronUp } from "lucide-react";
 import type { Map as MLMap } from "maplibre-gl";
 import type { SelectedLocation } from "@/components/MapSearchBar";
 import { PanelSkeleton } from "@/components/ui/PanelSkeleton";
 import type { AgentExplainRequest } from "@/lib/help/agent-explain";
+import { shouldIgnoreHotkey } from "@/lib/hotkeys";
 
 const LiveWebcamsPanel = dynamic(
   () =>
@@ -79,7 +81,7 @@ export function BottomPanel({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (shouldIgnoreHotkey(e)) return;
       if (e.key === "0") {
         e.preventDefault();
         setCollapsed(!collapsed);
@@ -97,24 +99,30 @@ export function BottomPanel({
   return (
     <div
       className={clsx(
-        "w-full border-t border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[height] duration-300 shadow-[var(--aeris-shadow-up)]",
-        collapsed ? "h-8" : "h-[38vh] min-h-[200px] max-h-[500px]",
+        "w-full bg-aeris-surface transition-[height] duration-300 shadow-[var(--aeris-shadow-up)]",
+        collapsed ? "h-10" : "h-[38vh] min-h-[200px] max-h-[500px]",
       )}
     >
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-3 h-8 border-b border-aeris-border shrink-0 bg-aeris-elev/35">
-        <div className="flex items-center gap-3">
+      {/* Header bar: the game's dark navy bar (music player / time controls). */}
+      <div className="aeris-navy-bar flex items-center justify-between px-3 h-10 shrink-0 !shadow-none">
+        <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="hud-text text-aeris-muted hover:text-aeris-text flex items-center gap-1.5"
+            className="flex shrink-0 items-center gap-2 rounded-full py-1 pl-1 pr-3 text-white/90 transition-colors hover:bg-white/10 hover:text-white"
+            aria-expanded={!collapsed}
             aria-label={collapsed ? "Expand live updates" : "Collapse live updates"}
           >
-            <span className="text-chrome text-aeris-accent/70">0</span>
-            <span className="text-body-sm font-semibold">
-              Live Updates
+            <span className="aeris-key !bg-white/15 !text-white/80">0</span>
+            <span className="aeris-live-dot" aria-hidden />
+            <span className="text-[0.6875rem] font-black uppercase tracking-[0.16em]">
+              Live updates
             </span>
-            <span className="text-body-sm ml-1">{collapsed ? "▲" : "▼"}</span>
+            <ChevronUp
+              size={15}
+              aria-hidden
+              className={clsx("transition-transform", !collapsed && "rotate-180")}
+            />
           </button>
 
           {!collapsed && (
@@ -124,11 +132,12 @@ export function BottomPanel({
                   key={sp.id}
                   type="button"
                   onClick={() => toggleSub(sp.id)}
+                  aria-pressed={openPanels[sp.id]}
                   className={clsx(
-                    "px-2 py-1 rounded text-body-sm border transition-colors",
+                    "shrink-0 rounded-full px-3 py-1 text-[0.8125rem] font-extrabold transition-colors",
                     openPanels[sp.id]
-                      ? "bg-aeris-accent/10 border-aeris-accent/30 text-aeris-accent"
-                      : "border-aeris-border text-aeris-muted hover:text-aeris-text",
+                      ? "bg-white text-aeris-navy"
+                      : "bg-white/10 text-white/85 hover:bg-white/20 hover:text-white",
                   )}
                 >
                   {sp.label}
@@ -138,9 +147,9 @@ export function BottomPanel({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {!collapsed && (
-            <span className="text-chrome text-aeris-muted">
+            <span className="text-[0.6875rem] font-bold text-white/60">
               Press 0 to toggle
             </span>
           )}
@@ -149,7 +158,7 @@ export function BottomPanel({
 
       {/* Sub-panel grid — unmounted when collapsed to avoid idle iframes/polling */}
       {!collapsed && (
-        <div className="h-[calc(100%-2rem)] overflow-hidden">
+        <div className="h-[calc(100%-2.5rem)] overflow-hidden">
           {/* Desktop: horizontal columns; Mobile: vertical stack with overflow
               scroll. Tablets keep the columns but enforce a minimum width per
               open column and scroll horizontally instead of crushing them. */}

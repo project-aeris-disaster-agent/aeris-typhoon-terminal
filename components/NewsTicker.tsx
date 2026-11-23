@@ -20,12 +20,12 @@ function TickerSegment({
       href={item.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex shrink-0 items-center gap-2 max-w-[min(42vw,28rem)] text-body-sm text-aeris-text transition-colors hover:text-aeris-accent"
+      className="inline-flex shrink-0 items-center gap-2 max-w-[min(42vw,28rem)] text-body-sm font-bold text-aeris-text transition-colors hover:text-aeris-accent"
       title={item.title}
       aria-hidden={hidden || undefined}
       tabIndex={hidden ? -1 : undefined}
     >
-      <span className="text-body-sm font-semibold text-aeris-accent shrink-0">
+      <span className="text-[0.6875rem] font-black uppercase tracking-[0.12em] text-aeris-kicker-ink shrink-0">
         {item.source}
       </span>
       <span className="truncate">{item.title}</span>

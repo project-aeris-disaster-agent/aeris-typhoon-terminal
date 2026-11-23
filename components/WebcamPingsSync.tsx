@@ -7,6 +7,7 @@ import type { YtVideo } from "@/services/youtube-feeds";
 import {
   clearWebcamsFromMap,
   renderWebcamsOnMap,
+  WEBCAM_MAP_LAYER_IDS,
 } from "@/services/webcam-pings";
 
 /**
@@ -25,6 +26,10 @@ export const WebcamPingsSync = memo(function WebcamPingsSync({
     if (!map) return;
 
     const rehydrate = () => {
+      // Only after a style reload dropped the layers; `styledata` also fires
+      // on every paint change (see ReportPingsSync).
+      if (latestRef.current.length === 0) return;
+      if (WEBCAM_MAP_LAYER_IDS.every((id) => map.getLayer(id))) return;
       renderWebcamsOnMap(map, latestRef.current);
     };
 

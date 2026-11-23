@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Nunito } from "next/font/google";
 import "./globals.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { SWRegister } from "@/components/SWRegister";
@@ -10,10 +10,12 @@ import { RoleProvider } from "@/services/role-context";
 import { ProfileProvider } from "@/services/profile-context";
 import { THEME_COLOR_LIGHT, THEME_INIT_SCRIPT } from "@/lib/theme-storage";
 
-const inter = Inter({
+// FLOOD CONTROL by bagyo.app type: Nunito, heavy weights (game theme tokens.ts FONT).
+const nunito = Nunito({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-inter",
+  weight: ["400", "600", "700", "800", "900"],
+  variable: "--font-nunito",
 });
 
 export const metadata: Metadata = {
@@ -50,11 +52,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className={inter.variable}>
+    <html lang="en" suppressHydrationWarning className={nunito.variable}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className={inter.className}>
+      <body className={nunito.className}>
         <ThemeProvider>
           <PrivyProviders>
             <RoleProvider>

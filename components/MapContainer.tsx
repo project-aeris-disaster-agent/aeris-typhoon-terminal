@@ -225,13 +225,18 @@ export const MapContainer = memo(function MapContainer({
   return (
     <div className="relative w-full h-full bg-aeris-bg">
       <Map2D mode={mode} theme={theme} onReady={handleReady} />
+      {/* Soft navy frame at the map edges (the game HUD's vignette). */}
+      <div className="aeris-map-vignette" aria-hidden />
       {mapOverlay}
       <DataLoadingPopup
         active={showLoadingPopup}
         blocking
         message={loadingMessage}
       />
-      <div className="absolute z-10 flex flex-col gap-2 top-3 left-3 max-md:bottom-[4.25rem] max-md:top-auto max-md:left-3 max-md:right-auto">
+      {/* Capped to the map's height and scrollable: with Live Updates open the
+          map is ~500px tall and the stacked cards would spill over the bottom
+          bar's controls. */}
+      <div className="absolute z-10 flex flex-col gap-2 top-3 left-3 max-md:bottom-[4.25rem] max-md:top-auto max-md:left-3 max-md:right-auto md:max-h-[calc(100%-1.5rem)] md:overflow-y-auto md:overscroll-contain md:pb-1 md:pr-1 [scrollbar-width:thin]">
         <LiveWeatherMapPanel map={map} />
         <MapModeToggle
           mode={mode}

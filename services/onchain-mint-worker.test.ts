@@ -6,6 +6,7 @@ jest.mock("@/lib/onchain/mint-queue", () => ({
   listQueuedMintReports: jest.fn(),
   applyMintTransition: jest.fn(),
   attemptCountFor: jest.fn(),
+  mintBookkeeping: jest.fn(),
 }));
 
 jest.mock("@/lib/onchain/ipfs", () => ({
@@ -67,6 +68,7 @@ describe("mintQueuedReports", () => {
     mockedClient.getMintClient.mockReturnValue(fakeClient as any);
     mockedClient.isAlreadyMinted.mockResolvedValue(false);
     mockedQueue.attemptCountFor.mockResolvedValue(0);
+    mockedQueue.mintBookkeeping.mockReturnValue({});
     mockedQueue.applyMintTransition.mockResolvedValue(true);
     mockedIpfs.pinJson.mockResolvedValue({
       uri: "ipfs://Qmtest",
@@ -107,6 +109,7 @@ describe("mintQueuedReports", () => {
     expect(mockedQueue.applyMintTransition).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ status: "minting" }),
+      { expectStatus: "queued" },
     );
     expect(mockedQueue.applyMintTransition).toHaveBeenCalledWith(
       expect.any(String),
@@ -158,6 +161,71 @@ describe("mintQueuedReports", () => {
     expect(mockedQueue.applyMintTransition).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ status: "failed" }),
+    );
+  });
+  it("skips without minting when another worker already claimed the row", async () => {
+    mockedQueue.listQueuedMintReports.mockResolvedValue([
+      makeReport("00000000-0000-0000-0000-00000000000e"),
+    ]);
+    mockedQueue.applyMintTransition.mockResolvedValueOnce(false);
+
+    const summary = await mintQueuedReports({ deadlineAt: Date.now() + 60_000 });
+
+    expect(summary.results[0]).toMatchObject({
+      status: "skipped",
+      reason: "claimed-elsewhere",
+    });
+    expect(mockedQueue.applyMintTransition).toHaveBeenCalledWith(
+      expect.any(String),
+      { status: "minting" },
+      { expectStatus: "queued" },
+    );
+    expect(mockedClient.mintReport).not.toHaveBeenCalled();
+  });
+
+  it("backs off instead of retrying a row a failure just re-queued", async () => {
+    mockedQueue.listQueuedMintReports.mockResolvedValue([
+      makeReport("00000000-0000-0000-0000-00000000000f"),
+    ]);
+    mockedQueue.attemptCountFor.mockResolvedValue(1);
+    mockedQueue.mintBookkeeping.mockReturnValue({
+      lastStatus: "queued",
+      lastUpdatedAt: Date.now() - 1_000,
+    });
+
+    const summary = await mintQueuedReports({ deadlineAt: Date.now() + 60_000 });
+
+    expect(summary.results[0]).toMatchObject({
+      status: "skipped",
+      reason: "retry-backoff",
+    });
+    expect(mockedQueue.applyMintTransition).not.toHaveBeenCalled();
+  });
+
+  it("leaves a fresh in-flight minting row alone but reclaims a stale one", async () => {
+    const minting = (id: string) =>
+      makeReport(id, {
+        onchain: {
+          mint: { network: "skale-base-testnet", chainId: 324705682, status: "minting" },
+        },
+      });
+    mockedQueue.listQueuedMintReports.mockResolvedValue([
+      minting("00000000-0000-0000-0000-000000000010"),
+      minting("00000000-0000-0000-0000-000000000011"),
+    ]);
+    mockedQueue.mintBookkeeping
+      .mockReturnValueOnce({ lastStatus: "minting", lastUpdatedAt: Date.now() - 5_000 })
+      .mockReturnValueOnce({ lastStatus: "minting", lastUpdatedAt: Date.now() - 60 * 60_000 });
+    mockedClient.mintReport.mockResolvedValue({ txHash: "0xaa" } as any);
+
+    const summary = await mintQueuedReports({ deadlineAt: Date.now() + 60_000 });
+
+    expect(summary.results[0]).toMatchObject({ status: "skipped", reason: "mint-in-flight" });
+    expect(summary.results[1].status).toBe("minted");
+    expect(mockedQueue.applyMintTransition).toHaveBeenCalledWith(
+      "00000000-0000-0000-0000-000000000011",
+      { status: "minting" },
+      { expectStatus: "minting" },
     );
   });
 });

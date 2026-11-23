@@ -6,6 +6,7 @@ import {
   clearReportsFromMap,
   fetchReports,
   renderReportsOnMap,
+  REPORTS_MAP_LAYER_IDS,
   type IncidentReport,
 } from "@/services/reports-client";
 import { markOverlayReady } from "@/lib/overlay-ready";
@@ -32,6 +33,11 @@ export const ReportPingsSync = memo(function ReportPingsSync({
 
     const rehydrateLayers = () => {
       if (disposed) return;
+      // `styledata` fires on every paint/layout change, including each frame
+      // of the ping pulse and every radar crossfade. Only re-attach when a
+      // style reload actually removed our layers; otherwise this re-sent all
+      // report features to the map worker many times a second.
+      if (REPORTS_MAP_LAYER_IDS.every((id) => map.getLayer(id))) return;
       // Re-attach report source/layers after style reloads without waiting
       // for the next network poll tick.
       renderReportsOnMap(map, latestReportsRef.current);

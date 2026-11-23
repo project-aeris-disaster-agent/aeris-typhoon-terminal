@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import maplibregl, { Map as MLMap, LngLatLike } from "maplibre-gl";
 import {
   PH_CENTER,
@@ -20,6 +20,7 @@ import {
   isCoarsePointerDevice,
 } from "@/lib/device-tier";
 import { readStoredTheme } from "@/lib/theme-storage";
+import { detectWebglSupport } from "@/lib/webgl-support";
 
 export type Map2DProps = {
   mode: MapMode;
@@ -50,6 +51,12 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
   const onReadyRef = useRef(onReady);
   const modeRef = useRef(mode);
   const themeRef = useRef(theme);
+  /**
+   * Set when WebGL is unavailable or MapLibre's constructor throws. The map
+   * then renders an explanation in place of the canvas instead of letting the
+   * throw escape render and take the whole terminal down with it.
+   */
+  const [renderFailure, setRenderFailure] = useState<string | null>(null);
 
   useEffect(() => {
     onReadyRef.current = onReady;
@@ -99,7 +106,12 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
       }
 
       const generation = ++themeSyncGenerationRef.current;
-      map.setStyle(styleUrl);
+      // `diff: false` forces a full style rebuild. With the default diff,
+      // MapLibre patches positron -> dark-matter in place via `setState`,
+      // which never fires `style.load`: the re-attach below never ran, so a
+      // theme toggle wiped report pings, flood, PAR and radar, and left the
+      // old sprite behind on the way back.
+      map.setStyle(styleUrl, { diff: false });
       map.once("style.load", () => {
         if (generation !== themeSyncGenerationRef.current) return;
         finishApply();
@@ -121,21 +133,48 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
     themeRef.current = initialTheme;
     const initialStyleUrl = getBasemapStyleUrl(initialTheme);
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: initialStyleUrl,
-      center: PH_CENTER as LngLatLike,
-      zoom: DEFAULT_ZOOM,
-      pitch: 0,
-      bearing: 0,
-      minZoom: MAP_2D_MIN_ZOOM,
-      maxZoom: MAX_ZOOM,
-      maxBounds: MAP_2D_MAX_BOUNDS,
-      attributionControl: false,
-      renderWorldCopies: false,
-      dragRotate: true,
-      pitchWithRotate: true,
-    });
+    /**
+     * MapLibre throws synchronously from `new Map()` when it cannot get a
+     * WebGL context. Unguarded, that throw escaped this effect and React tore
+     * the whole tree down — the alerts feed, live reports, typhoon bulletins
+     * and news died along with the map, leaving only "Application error: a
+     * client-side exception has occurred".
+     *
+     * Probe first, and still wrap the constructor: the probe can succeed and
+     * the real context creation fail anyway (context limits, driver resets).
+     * Either way the failure stays inside this panel.
+     */
+    if (detectWebglSupport() === "unavailable") {
+      setRenderFailure(
+        "This browser can't start WebGL, which the map needs. Turn on hardware acceleration in your browser settings, then reload.",
+      );
+      return;
+    }
+
+    let map: MLMap;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: initialStyleUrl,
+        center: PH_CENTER as LngLatLike,
+        zoom: DEFAULT_ZOOM,
+        pitch: 0,
+        bearing: 0,
+        minZoom: MAP_2D_MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
+        maxBounds: MAP_2D_MAX_BOUNDS,
+        attributionControl: false,
+        renderWorldCopies: false,
+        dragRotate: true,
+        pitchWithRotate: true,
+      });
+    } catch (error) {
+      console.error("[map2d] MapLibre failed to initialize", error);
+      setRenderFailure(
+        "The map could not start on this device. Every other panel still works; reload to try again.",
+      );
+      return;
+    }
 
     const tier = detectDeviceTier();
     map.setPixelRatio(
@@ -273,6 +312,27 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
     if (!map || !mapReadyRef.current) return;
     applyBasemapTheme(map, theme);
   }, [theme, applyBasemapTheme]);
+
+  if (renderFailure) {
+    return (
+      <div
+        ref={containerRef}
+        className={`${className ?? "w-full h-full"} flex items-center justify-center bg-aeris-bg p-6`}
+        role="status"
+      >
+        <div className="max-w-sm space-y-2 text-center">
+          <p className="chrome-label text-aeris-warn">MAP UNAVAILABLE</p>
+          <p className="text-body-sm leading-snug text-aeris-muted">
+            {renderFailure}
+          </p>
+          <p className="text-body-sm leading-snug text-aeris-muted/80">
+            Alerts, live reports, typhoon bulletins, forecast, and news are
+            unaffected.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return <div ref={containerRef} className={className ?? "w-full h-full"} />;
 }

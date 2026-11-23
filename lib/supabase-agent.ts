@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { serviceAuthHeaders } from "@/lib/supabase-rest";
 import type { NationalWeatherSnapshot } from "@/services/weather-snapshot";
 import type { WeatherReportType } from "@/services/weather-report-triggers";
@@ -84,23 +85,55 @@ function toPersisted(row: WeatherReportRow): PersistedWeatherReport {
   };
 }
 
-export async function listAgentMessages(limit = 50): Promise<AgentMessageRow[]> {
-  const cfg = supabaseConfig();
-  if (!cfg) return [];
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  const key = cfg.anonKey ?? cfg.serviceKey;
-  if (!key) return [];
+/**
+ * Stable `session_id` (a uuid column) for one dashboard user's AGENT AERIS
+ * history. Supabase user ids are already uuids; Privy DIDs are hashed into
+ * uuid shape so no schema change is needed.
+ */
+export function agentHistoryKey(userId: string): string {
+  if (UUID_RE.test(userId)) return userId.toLowerCase();
+  const hex = createHash("sha256").update(`aeris-agent:${userId}`).digest("hex");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `5${hex.slice(13, 16)}`,
+    `${((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join("-");
+}
+
+/**
+ * AGENT AERIS history for one viewer: their own conversation plus national
+ * weather-report broadcasts.
+ *
+ * Reads with the service key. `aeris_agent_messages` is service-role only
+ * since 20260810120000_close_anon_read_exposure.sql, so the anon key this used
+ * to prefer now gets `200 []` and the history panel was silently empty. The
+ * explicit filter is what keeps one user from seeing another's conversation.
+ */
+export async function listAgentMessages(
+  limit = 50,
+  opts: { userId?: string | null } = {},
+): Promise<AgentMessageRow[]> {
+  const cfg = supabaseConfig();
+  if (!cfg?.serviceKey) return [];
 
   const url = new URL(`${cfg.url}/rest/v1/aeris_agent_messages`);
+  url.searchParams.set("select", MESSAGE_COLUMNS);
   url.searchParams.set(
-    "select",
-    MESSAGE_COLUMNS,
+    "or",
+    opts.userId
+      ? `(session_id.eq.${agentHistoryKey(opts.userId)},source.eq.weather_report)`
+      : "(source.eq.weather_report)",
   );
   url.searchParams.set("order", "created_at.desc");
   url.searchParams.set("limit", String(Math.min(limit, 100)));
 
   const res = await fetch(url.toString(), {
-    headers: serviceAuthHeaders(key),
+    headers: serviceAuthHeaders(cfg.serviceKey),
     cache: "no-store",
   });
 
@@ -240,6 +273,8 @@ export type InsertAgentMessageOptions = {
   /** Optional caller-supplied UUID, propagated to Postgres so the client can
    *  reconcile optimistic UI state with the persisted row by stable id. */
   id?: string;
+  /** Dashboard user the message belongs to; scopes it to their history. */
+  userId?: string | null;
 };
 
 export async function insertUserAgentMessage(
@@ -255,6 +290,7 @@ export async function insertUserAgentMessage(
     content,
   };
   if (opts.id) payload.id = opts.id;
+  if (opts.userId) payload.session_id = agentHistoryKey(opts.userId);
 
   const res = await fetch(
     `${cfg.url}/rest/v1/aeris_agent_messages?select=${MESSAGE_COLUMNS}`,
@@ -402,6 +438,7 @@ export async function insertAssistantAgentMessage(
     content,
   };
   if (opts.id) payload.id = opts.id;
+  if (opts.userId) payload.session_id = agentHistoryKey(opts.userId);
 
   const res = await fetch(
     `${cfg.url}/rest/v1/aeris_agent_messages?select=${MESSAGE_COLUMNS}`,

@@ -144,7 +144,9 @@ export async function listStaleQueuedMintReports(
   const cutoffIso = new Date(Date.now() - minAgeSeconds * 1000).toISOString();
   const url = new URL(`${c.url}/rest/v1/disaster_reports`);
   url.searchParams.set("select", MINT_COLUMNS);
-  url.searchParams.set("onchain_mint_status", "eq.queued");
+  // `minting` is included so the sweep can reap rows a timed-out function
+  // left behind; the worker only reclaims those once they are stale.
+  url.searchParams.set("onchain_mint_status", "in.(queued,minting)");
   // updated/created comparison: use created_at so freshly-queued rows are
   // skipped until the webhook has had a chance to fire.
   url.searchParams.set("created_at", `lte.${cutoffIso}`);
@@ -266,9 +268,27 @@ export type MintTransitionUpdate = {
   photoCommitment?: string;
 };
 
+export type MintTransitionOptions = {
+  /**
+   * Only apply the transition if the row is still in this status. The PATCH
+   * is filtered on it server-side, so two workers racing for the same row
+   * cannot both claim it: the loser gets `false` back.
+   */
+  expectStatus?: string;
+};
+
+/**
+ * Write a mint-status transition and carry bookkeeping in `metadata.mint`.
+ *
+ * Every transition goes through the metadata read-modify-write, so
+ * `attempts` is incremented on each `minting` claim. (It used to be skipped
+ * for `minting`, which left `attempts` at 0 forever and let a persistent
+ * failure re-queue the row, and re-fire the pg_net webhook, indefinitely.)
+ */
 export async function applyMintTransition(
   reportId: string,
   update: MintTransitionUpdate,
+  opts: MintTransitionOptions = {},
 ): Promise<boolean> {
   const c = supabaseRestConfig();
   if (!c) return false;
@@ -287,19 +307,11 @@ export async function applyMintTransition(
   if (update.photoCommitment !== undefined)
     payload.photo_commitment = update.photoCommitment;
 
-  // We also stamp a small JSON note inside metadata for failure reasons /
-  // attempt counts, without overwriting the rest of metadata.
-  if (update.reason || update.status === "failed" || update.status === "minted") {
-    payload.metadata = {
-      // Postgres JSONB column - PostgREST will coalesce on the server with
-      // the `Prefer: resolution=merge-duplicates` header only when targeting
-      // upserts. For a column-level merge we read-modify-write below.
-    };
-  }
-
-  // Read-modify-write metadata so we can carry counters + reasons.
+  // Read-modify-write metadata so we can carry counters + reasons without
+  // overwriting the rest of the JSONB column (PostgREST has no column-level
+  // merge outside upserts).
   let mergedMetadata: Record<string, unknown> | null = null;
-  if (payload.metadata) {
+  {
     const readUrl = new URL(`${c.url}/rest/v1/disaster_reports`);
     readUrl.searchParams.set("select", "metadata");
     readUrl.searchParams.set("id", `eq.${reportId}`);
@@ -340,19 +352,45 @@ export async function applyMintTransition(
         },
       };
       payload.metadata = mergedMetadata;
-    } else {
-      delete payload.metadata;
     }
   }
 
   const patchUrl = new URL(`${c.url}/rest/v1/disaster_reports`);
   patchUrl.searchParams.set("id", `eq.${reportId}`);
+  if (opts.expectStatus) {
+    patchUrl.searchParams.set("onchain_mint_status", `eq.${opts.expectStatus}`);
+  }
   const res = await fetch(patchUrl.toString(), {
     method: "PATCH",
-    headers: { ...serviceAuthHeaders(c.serviceKey), prefer: "return=minimal" },
+    headers: {
+      ...serviceAuthHeaders(c.serviceKey),
+      prefer: opts.expectStatus ? "return=representation" : "return=minimal",
+    },
     body: JSON.stringify(payload),
   });
-  return res.ok;
+  if (!res.ok) return false;
+  if (!opts.expectStatus) return true;
+  // Conditional claim: zero rows back means another worker got there first.
+  const rows = (await res.json().catch(() => [])) as unknown[];
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+/** Bookkeeping the worker reads back from `metadata.mint`. */
+export function mintBookkeeping(report: PublicReport): {
+  lastStatus?: string;
+  lastUpdatedAt?: number;
+} {
+  const meta = report.metadata;
+  const mint =
+    meta && typeof meta === "object" && meta.mint && typeof meta.mint === "object"
+      ? (meta.mint as Record<string, unknown>)
+      : {};
+  const ts =
+    typeof mint.lastUpdatedAt === "string" ? Date.parse(mint.lastUpdatedAt) : NaN;
+  return {
+    lastStatus: typeof mint.lastStatus === "string" ? mint.lastStatus : undefined,
+    lastUpdatedAt: Number.isFinite(ts) ? ts : undefined,
+  };
 }
 
 export async function attemptCountFor(reportId: string): Promise<number> {

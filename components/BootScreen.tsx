@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { clsx } from "clsx";
 import { MapAdBanner } from "@/components/MapAdBanner";
+import { Kicker } from "@/components/ui/Kit";
 import {
   AerisCharIllustration,
   AerisLoadingLogo,
@@ -122,91 +124,96 @@ export function BootScreen() {
 
   const progressPct = total > 0 ? Math.round((done / total) * 100) : 0;
 
+  // FLOOD CONTROL loading screen: sky gradient, one frosted card, a chunky
+  // track-and-fill bar, and a chip per data feed so the wait reads as progress.
   return (
     <div
       role="status"
-      aria-live="polite"
       aria-label="Loading AERIS dashboard"
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-boot-sky p-6"
       style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 100,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "1.5rem",
-        background: "rgb(var(--aeris-bg))",
         opacity: leaving ? 0 : 1,
         transition: `opacity ${FADE_MS}ms ease`,
         pointerEvents: leaving ? "none" : "auto",
-        padding: "1.5rem",
       }}
     >
-      <AerisLoadingLogo size="lg" variant="splash" />
-
       <div
         aria-hidden
-        style={{
-          position: "fixed",
-          right: "1.5rem",
-          bottom: "1.5rem",
-          zIndex: 1,
-          pointerEvents: "none",
-        }}
+        className="pointer-events-none fixed bottom-0 right-6 z-[1] max-md:hidden"
       >
         <AerisCharIllustration size="lg" scale={4} />
       </div>
 
-      <div
-        style={{
-          position: "fixed",
-          top: "1.5rem",
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 1,
-          width: "min(640px, calc(100vw - 3rem))",
-        }}
-      >
+      <div className="fixed left-1/2 top-6 z-[1] w-[min(640px,calc(100vw-3rem))] -translate-x-1/2 overflow-hidden rounded-xl shadow-pill">
         <MapAdBanner />
       </div>
 
-      {/* Determinate progress bar reflecting verified systems. */}
-      <div
-        style={{
-          position: "relative",
-          width: 220,
-          height: 3,
-          overflow: "hidden",
-          borderRadius: 999,
-          background: "rgb(var(--aeris-elev))",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: `${Math.max(progressPct, 6)}%`,
-            borderRadius: 999,
-            background: "rgb(var(--aeris-accent))",
-            transition: "width 320ms ease",
-          }}
-        />
-      </div>
+      <div className="panel-glass aeris-rise relative z-[2] flex w-[min(25rem,100%)] flex-col gap-4 rounded-3xl !shadow-hero px-7 pb-6 pt-7">
+        <Kicker className="self-start">Philippines · Disaster dashboard</Kicker>
 
-      {/* Single-line status that changes to reflect boot progress. */}
-      <div
-        aria-live="polite"
-        style={{
-          fontSize: 12,
-          fontFamily:
-            "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-          color: "rgb(var(--aeris-muted))",
-          minHeight: "1.2em",
-          textAlign: "center",
-        }}
-      >
-        {statusLabel}
+        <div className="flex items-center gap-3">
+          <AerisLoadingLogo size="md" variant="glyph" className="shrink-0" />
+          <div className="min-w-0">
+            <h1 className="aeris-title-fill aeris-wave pb-2 text-[2.5rem] font-black leading-[0.95] tracking-[0.015em]">
+              A.E.R.I.S.
+            </h1>
+            <p className="mt-1 text-body-sm font-bold text-aeris-ink2">
+              Disaster reporting terminal
+            </p>
+          </div>
+        </div>
+
+        {/* Determinate progress: verified systems. */}
+        <div>
+          <div
+            className="h-2 w-full overflow-hidden rounded-full bg-aeris-text/10"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={total}
+            aria-valuenow={done}
+            aria-label="Data feeds verified"
+          >
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-aeris-accent2 to-aeris-accent"
+              style={{
+                width: `${Math.max(progressPct, 6)}%`,
+                transition: "width 320ms ease",
+              }}
+            />
+          </div>
+          <div
+            aria-live="polite"
+            className="mt-2 flex min-h-[1.2em] items-center justify-between gap-3 text-body-sm font-bold text-aeris-ink2"
+          >
+            <span className="truncate">{statusLabel}</span>
+            <span className="shrink-0 tabular-nums text-aeris-muted">
+              {done}/{total}
+            </span>
+          </div>
+        </div>
+
+        <ul className="flex flex-wrap gap-1.5" aria-label="Data feed checks">
+          {results.map((r) => (
+            <li
+              key={r.id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-aeris-border bg-aeris-surface px-2.5 py-1 text-[0.6875rem] font-extrabold text-aeris-ink2"
+            >
+              <span
+                aria-hidden
+                className={clsx(
+                  "h-1.5 w-1.5 rounded-full",
+                  r.status === "ok" && "bg-aeris-live",
+                  r.status === "warn" && "bg-aeris-warm",
+                  r.status === "fail" && "bg-aeris-danger",
+                  (r.status === "pending" || r.status === "running") &&
+                    "animate-pulse bg-aeris-muted/50",
+                )}
+              />
+              {r.label}
+              <span className="sr-only">: {r.status}</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

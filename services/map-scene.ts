@@ -1261,14 +1261,18 @@ export async function focusAddress3DContext(
     return;
   }
 
+  // Only tilt/rotate in 3D. In 2D, rotation controls are disabled and the
+  // compass is hidden, so a pitched, rotated 2D map left users stuck.
+  const is3D = getSceneState(map).terrainEnabled;
+
   beginMajorLoading(map, "Loading focused 3D context...");
   try {
     setActiveScenePreset(map, presetId);
     map.flyTo({
       center: [target.lon, target.lat],
       zoom: target.zoom ?? 15.5,
-      pitch: 62,
-      bearing: -18,
+      pitch: is3D ? 62 : 0,
+      bearing: is3D ? -18 : 0,
       duration: 1400,
       essential: true,
     });

@@ -44,9 +44,9 @@ export function NewsPanel() {
       </p>
       {error && <div className="text-xs text-aeris-danger">Error: {error}</div>}
       <FreshnessTag source="news" />
-      <div className="max-h-[280px] overflow-y-auto border border-aeris-border/30 rounded">
+      <div className="max-h-[280px] overflow-y-auto space-y-1.5 pr-0.5">
         {items.length === 0 ? (
-          <div className="flex items-center justify-center py-6 text-xs text-aeris-muted">
+          <div className="aeris-row flex items-center justify-center py-6 text-body-sm font-bold text-aeris-muted">
             {loading
               ? "Fetching news…"
               : error
@@ -74,9 +74,9 @@ function NewsRow({ item }: { item: NewsItem }) {
       href={item.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex gap-2 p-2 h-[72px] border-b border-aeris-border/40 hover:bg-aeris-elev transition-colors last:border-b-0"
+      className="aeris-row flex gap-2.5 p-2 h-[72px]"
     >
-      <div className="w-12 h-12 shrink-0 rounded overflow-hidden border border-aeris-border/40 bg-aeris-elev/60 flex items-center justify-center">
+      <div className="w-12 h-12 shrink-0 rounded-lg overflow-hidden bg-aeris-elev flex items-center justify-center">
         {showThumb ? (
           <img
             src={item.imageUrl}
@@ -101,10 +101,10 @@ function NewsRow({ item }: { item: NewsItem }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 mb-0.5">
-          <span className="text-body-sm font-mono uppercase text-aeris-muted truncate">
+          <span className="text-[0.6875rem] font-black uppercase tracking-[0.1em] text-aeris-kicker-ink truncate">
             {item.source}
           </span>
-          <span className="text-body-sm font-mono text-aeris-muted/70 shrink-0">
+          <span className="text-[0.6875rem] font-bold tabular-nums text-aeris-muted shrink-0">
             {new Date(item.publishedAt).toLocaleString("en-PH", {
               month: "short",
               day: "2-digit",
@@ -113,7 +113,7 @@ function NewsRow({ item }: { item: NewsItem }) {
             })}
           </span>
         </div>
-        <div className="text-xs text-aeris-text line-clamp-2">{item.title}</div>
+        <div className="text-[0.8125rem] font-bold leading-snug text-aeris-text line-clamp-2">{item.title}</div>
       </div>
     </a>
   );

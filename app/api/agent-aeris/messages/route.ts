@@ -1,4 +1,5 @@
 import { jsonError, jsonOkNoStore } from "@/lib/api-response";
+import { resolveSessionUserId } from "@/lib/session-auth";
 import { listAgentMessages, supabaseAgentEnabled } from "@/lib/supabase-agent";
 
 export const runtime = "nodejs";
@@ -17,6 +18,7 @@ export async function GET(request: Request) {
     return jsonError("Invalid limit.", 400);
   }
 
-  const messages = await listAgentMessages(limit);
+  const userId = await resolveSessionUserId();
+  const messages = await listAgentMessages(limit, { userId });
   return jsonOkNoStore({ messages, configured: true });
 }

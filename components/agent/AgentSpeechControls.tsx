@@ -18,7 +18,7 @@ export function AgentSpeechControls({
         onClick={onToggleMute}
         aria-label={muted ? "Unmute Agent AERIS voice" : "Mute Agent AERIS voice"}
         aria-pressed={muted}
-        className="rounded-md border border-aeris-border/60 bg-aeris-bg/80 p-1 text-aeris-muted transition-colors hover:border-aeris-accent/40 hover:text-aeris-accent"
+        className="aeris-round !h-7 !min-w-7 !px-0"
       >
         {muted ? (
           <VolumeX className="h-3.5 w-3.5" aria-hidden />

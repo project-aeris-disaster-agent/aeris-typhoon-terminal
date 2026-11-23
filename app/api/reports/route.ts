@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { store } from "@/lib/kv";
+import { kvEnabled, store } from "@/lib/kv";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { sanitizeText, isSafeUrl, isSpam } from "@/lib/sanitize";
 import { PH_BBOX } from "@/config/region";
@@ -183,9 +183,20 @@ export async function POST(req: NextRequest) {
           headers: { "cache-control": "no-store" },
         },
       );
-    } catch {
-      // Fall through to KV. This preserves local/dev behavior and prevents a
-      // reporting outage if the shared intake database is temporarily down.
+    } catch (error) {
+      console.error("[reports] Supabase insert failed:", (error as Error).message);
+      // Only fall back to KV when KV is a real shared store. Without it the
+      // fallback is one serverless instance's memory: invisible to operators
+      // (GET reads Supabase) and gone on the next cold start, while the
+      // reporter was told "saved". A 503 lets the service worker queue the
+      // report and replay it instead.
+      if (!kvEnabled && process.env.NODE_ENV === "production") {
+        return jsonError(
+          "Report could not be saved right now. It will be retried automatically.",
+          503,
+          { retryable: true },
+        );
+      }
     }
   }
 

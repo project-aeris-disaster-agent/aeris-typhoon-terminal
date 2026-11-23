@@ -9,6 +9,14 @@ import {
   getEmbedUrl,
   type YtVideo,
 } from "@/services/youtube-feeds";
+import { shouldIgnoreHotkey } from "@/lib/hotkeys";
+import { MapPin, Pencil, Plus, RefreshCw, X } from "lucide-react";
+
+/** Round white button over a video tile (the game's map buttons). Fixed light
+ *  colours on purpose: it sits on video, not on the themed surface. */
+const CAM_BTN =
+  "flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-[#39536f] shadow-pill transition-colors hover:text-[#1f6fd1]";
+
 const SLOT_STORAGE_KEY = "aeris.liveWebcams.slotIds.v1";
 
 const isPlayableVideo = (video: YtVideo) => video.embeddable !== false;
@@ -91,10 +99,8 @@ function SlotFrame({
 
   return (
     <div
-      className={`relative h-full min-h-0 bg-black rounded overflow-hidden border transition-colors ${
-        isPickTarget
-          ? "border-aeris-accent ring-1 ring-aeris-accent"
-          : "border-aeris-border"
+      className={`relative h-full min-h-0 bg-black rounded-xl overflow-hidden transition-shadow ${
+        isPickTarget ? "ring-2 ring-aeris-accent" : "shadow-pill"
       }`}
       // 16:9 is only a fallback minimum — inside the auto-rows-fr grid the
       // h-full wins so tiles fill their row and no gaps open between rows.
@@ -115,44 +121,50 @@ function SlotFrame({
             <div className="absolute inset-0 z-[1]" aria-hidden="true" />
           </div>
           {/* Overlay label */}
-          <div className="absolute bottom-0 left-0 right-0 px-1.5 py-0.5 bg-black/60 flex items-center justify-between gap-1 pointer-events-none">
-            <span className="text-chrome font-mono text-white/80 truncate">
-              {hasGeocode && <span className="text-aeris-accent mr-0.5">📍</span>}
+          {/* Overlay label: the game's floating map label (white pill). */}
+          <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between gap-1 pointer-events-none">
+            <span className="min-w-0 truncate rounded-full bg-white/90 px-2 py-0.5 text-[0.6875rem] font-extrabold text-[#0f2a47] shadow-pill">
+              {hasGeocode && <MapPin size={10} className="mr-0.5 inline text-[#1f6fd1]" aria-hidden />}
               {locLabel ?? video.title.slice(0, 28)}
             </span>
-            {video.isLikeLive && (
-              <span className="text-chrome font-mono text-aeris-danger shrink-0">
-                ● LIVE
-              </span>
-            )}
           </div>
-          {/* Control buttons */}
-          <div className="absolute top-1 right-1 z-[2] flex gap-1 pointer-events-auto">
+          {/* LIVE sits top-left so narrow tiles never clip it. */}
+          {video.isLikeLive && (
+            <span className="pointer-events-none absolute left-1.5 top-1.5 z-[2] flex items-center gap-1 rounded-full bg-[#c8363c] px-1.5 py-0.5 text-[0.5625rem] font-black uppercase tracking-[0.1em] text-white shadow-pill">
+              <span className="h-1.5 w-1.5 rounded-full bg-white" aria-hidden />
+              Live
+            </span>
+          )}
+          {/* Control buttons: round white map buttons. */}
+          <div className="absolute top-1.5 right-1.5 z-[2] flex gap-1 pointer-events-auto">
             {hasGeocode && (
               <button
                 type="button"
                 onClick={() => onShowOnMap(video)}
-                className="px-1.5 py-0.5 rounded text-chrome font-mono bg-black/60 text-aeris-accent hover:bg-aeris-accent/80 hover:text-black transition-colors"
+                className={CAM_BTN}
                 title={`Show on map · ${video.location?.label ?? ""}`}
+                aria-label="Show on map"
               >
-                📍
+                <MapPin size={12} aria-hidden />
               </button>
             )}
             <button
               type="button"
               onClick={() => onNextCamera(slotIndex)}
-              className="px-1.5 py-0.5 rounded text-chrome font-mono bg-black/60 text-white/70 hover:bg-aeris-accent/80 hover:text-black transition-colors"
+              className={CAM_BTN}
               title="Next camera"
+              aria-label="Next camera"
             >
-              ⟳
+              <RefreshCw size={12} aria-hidden />
             </button>
             <button
               type="button"
               onClick={() => onPick(slotIndex)}
-              className="px-1.5 py-0.5 rounded text-chrome font-mono bg-black/60 text-white/70 hover:bg-aeris-accent/80 hover:text-black transition-colors"
+              className={CAM_BTN}
               title="Pick camera"
+              aria-label="Pick camera"
             >
-              ✎
+              <Pencil size={12} aria-hidden />
             </button>
           </div>
         </>
@@ -160,10 +172,10 @@ function SlotFrame({
         <button
           type="button"
           onClick={() => onPick(slotIndex)}
-          className="w-full h-full flex flex-col items-center justify-center text-aeris-muted hover:text-aeris-accent transition-colors gap-1"
+          className="w-full h-full flex flex-col items-center justify-center bg-aeris-elev text-aeris-ink2 hover:text-aeris-accent transition-colors gap-1"
         >
-          <span className="text-lg">+</span>
-          <span className="text-chrome font-mono">Add Stream</span>
+          <Plus size={18} aria-hidden />
+          <span className="text-[0.6875rem] font-black uppercase tracking-[0.12em]">Add stream</span>
         </button>
       )}
     </div>
@@ -305,7 +317,7 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (shouldIgnoreHotkey(e)) return;
       const num = parseInt(e.key, 10);
       if (!Number.isNaN(num) && num >= 1 && num <= gridSize) {
         e.preventDefault();
@@ -333,17 +345,14 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
             ) : (
               <Pill tone="default">RECENT</Pill>
             )}
-            <div className="flex items-center gap-1 pl-1.5 border-l border-aeris-border/70">
+            <div className="aeris-seg" role="group" aria-label="Webcam grid size">
               {GRID_LAYOUTS.map((size) => (
                 <button
                   key={size}
                   type="button"
                   onClick={() => handleGridChange(size)}
-                  className={`w-6 h-6 rounded text-body-sm font-mono border transition-colors ${
-                    gridSize === size
-                      ? "bg-aeris-accent/10 border-aeris-accent/30 text-aeris-accent"
-                      : "border-aeris-border text-aeris-muted hover:text-aeris-text"
-                  }`}
+                  aria-pressed={gridSize === size}
+                  className="aeris-seg-btn h-6 w-6 !flex-none text-[0.75rem] tabular-nums"
                   title={`${size} stream${size > 1 ? "s" : ""}`}
                 >
                   {size}
@@ -359,9 +368,9 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
           <button
             type="button"
             onClick={() => setPickMode(null)}
-            className="px-2 py-0.5 text-chrome font-mono text-aeris-muted border border-aeris-border rounded hover:text-aeris-text"
+            className="aeris-btn-soft h-7 px-3 text-[0.75rem]"
           >
-            ✕ Cancel
+            <X size={12} aria-hidden /> Cancel
           </button>
         </div>
       )}
@@ -373,7 +382,7 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
           {visibleSlots.map((_, i) => (
             <div
               key={i}
-              className="bg-aeris-elev animate-pulse rounded"
+              className="bg-aeris-elev animate-pulse rounded-xl"
               style={{ aspectRatio: "16/9" }}
             />
           ))}
@@ -391,7 +400,7 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
               the column has no dead space below the grid. */}
           {!pickMode && (
             <div
-              className={`grid ${GRID_COLS[gridSize]} auto-rows-fr gap-1 flex-1 min-h-0`}
+              className={`grid ${GRID_COLS[gridSize]} auto-rows-fr gap-1.5 flex-1 min-h-0`}
             >
               {visibleSlots.map((video, i) => (
                 <SlotFrame
@@ -411,10 +420,10 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
           {pickMode && (
             <div className="flex-1 min-h-0 flex flex-col space-y-1">
               <div className="flex items-center justify-between px-0.5">
-                <div className="text-body-sm font-mono text-aeris-accent">
-                  Select stream for Slot {pickMode.slotIndex + 1}
+                <div className="aeris-title">
+                  Select stream for slot {pickMode.slotIndex + 1}
                 </div>
-                <label className="flex items-center gap-1 text-body-sm font-mono text-aeris-muted cursor-pointer select-none">
+                <label className="flex items-center gap-1.5 text-body-sm font-bold text-aeris-ink2 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={pickerLiveOnly}
@@ -426,8 +435,8 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
               </div>
               {/* Current slot preview */}
               {slots[pickMode.slotIndex] && (
-                <div className="flex items-center justify-between px-1.5 py-1 rounded bg-aeris-elev border border-aeris-border text-body-sm">
-                  <span className="text-aeris-muted font-mono truncate">
+                <div className="flex items-center justify-between rounded-xl bg-aeris-chip-on px-2.5 py-1.5 text-body-sm">
+                  <span className="truncate font-bold text-aeris-ink2">
                     Current: {slots[pickMode.slotIndex]?.title.slice(0, 40)}
                   </span>
                   <button
@@ -436,7 +445,7 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
                       handleClearSlot(pickMode.slotIndex);
                       setPickMode(null);
                     }}
-                    className="text-aeris-danger hover:text-aeris-danger/70 font-mono ml-2 shrink-0"
+                    className="ml-2 shrink-0 font-black text-aeris-danger hover:underline"
                   >
                     Clear
                   </button>
@@ -456,31 +465,31 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
                       type="button"
                       onClick={() => handleAssignVideo(v)}
                       disabled={isInSlot && slots[pickMode.slotIndex]?.id !== v.id}
-                      className={`w-full flex items-start gap-2 p-1.5 rounded text-left transition-colors ${
+                      className={`aeris-row w-full flex items-start gap-2.5 p-1.5 text-left ${
                         isInSlot && slots[pickMode.slotIndex]?.id !== v.id
-                          ? "opacity-40 cursor-not-allowed border border-transparent"
-                          : "hover:bg-aeris-elev border border-transparent hover:border-aeris-accent/30"
+                          ? "opacity-40 cursor-not-allowed"
+                          : ""
                       }`}
                     >
                       <img
                         src={v.thumbnailUrl}
                         alt={v.title}
-                        className="w-16 h-9 rounded object-cover shrink-0 bg-aeris-elev"
+                        className="w-16 h-9 rounded-lg object-cover shrink-0 bg-aeris-elev"
                         loading="lazy"
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="text-body-sm text-aeris-text leading-tight line-clamp-2">
+                        <div className="text-body-sm font-bold text-aeris-text leading-tight line-clamp-2">
                           {v.title}
                         </div>
                         <div className="flex items-center gap-1 mt-0.5">
                           {v.isLikeLive && (
-                            <span className="text-chrome font-mono text-aeris-danger">
+                            <span className="text-[0.625rem] font-black uppercase tracking-[0.1em] text-aeris-danger">
                               ● LIVE
                             </span>
                           )}
                           {loc && (
                             <span
-                              className={`text-chrome font-mono truncate ${
+                              className={`text-[0.6875rem] font-bold truncate ${
                                 hasGeo ? "text-aeris-accent" : "text-aeris-muted"
                               }`}
                               title={
@@ -493,7 +502,7 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
                             </span>
                           )}
                           {isInSlot && slots[pickMode.slotIndex]?.id === v.id && (
-                            <span className="text-chrome font-mono text-aeris-warn">
+                            <span className="text-[0.6875rem] font-black text-aeris-warn">
                               ← current
                             </span>
                           )}
@@ -506,7 +515,7 @@ export function LiveWebcamsPanel({ map }: { map: MLMap | null }) {
             </div>
           )}
 
-          <div className="text-chrome text-aeris-muted font-mono shrink-0 mt-auto">
+          <div className="text-[0.6875rem] font-bold text-aeris-muted shrink-0 mt-auto">
             {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Loading…"}
             {" "}· @JazBazPhilippines
           </div>

@@ -8,6 +8,9 @@ import { LIVE_WEATHER_PANEL } from "@/config/panels";
 import { PanelIcon } from "@/components/PanelIcon";
 import { LiveWeatherFrameIndicator } from "@/components/LiveWeatherFrameHud";
 import { PanelSkeleton } from "@/components/ui/PanelSkeleton";
+import { shouldIgnoreHotkey } from "@/lib/hotkeys";
+import { HotkeyCap } from "@/components/ui/Kit";
+import { ChevronDown } from "lucide-react";
 
 const SatelliteRadarPanel = dynamic(
   () =>
@@ -32,7 +35,7 @@ export function LiveWeatherMapPanel({ map }: { map: MLMap | null }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (shouldIgnoreHotkey(e)) return;
       if (e.key === LIVE_WEATHER_PANEL.hotkey) {
         e.preventDefault();
         toggle();
@@ -43,26 +46,38 @@ export function LiveWeatherMapPanel({ map }: { map: MLMap | null }) {
   }, [toggle]);
 
   return (
-    <div className="panel-glass rounded-md font-mono text-body-sm w-full max-w-[280px]">
+    <div className="panel-glass rounded-xl text-body-sm w-full max-w-[280px]">
       <button
         type="button"
         onClick={toggle}
-        className="w-full flex items-center gap-1.5 px-1.5 py-1 text-aeris-muted hover:text-aeris-text transition-colors"
+        className="group w-full flex items-center gap-2 py-1.5 pl-1.5 pr-2.5 text-left"
         aria-expanded={open}
         aria-controls="live-weather-map-panel"
         title={`${LIVE_WEATHER_PANEL.label} (${LIVE_WEATHER_PANEL.hotkey})`}
       >
-        <PanelIcon id="satellite" size={13} className="text-aeris-accent/80" />
-        <span className="shrink-0 text-chrome uppercase tracking-wider">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-aeris-kicker text-aeris-kicker-ink">
+          <PanelIcon id="satellite" size={15} className="!text-current" />
+        </span>
+        <span className="aeris-title shrink-0 group-hover:text-aeris-accent">
           {LIVE_WEATHER_PANEL.label}
         </span>
-        <LiveWeatherFrameIndicator variant="panel" />
-        <span className="ml-auto shrink-0 text-body-sm">{open ? "−" : "+"}</span>
+        <span className="min-w-0 flex-1 truncate">
+          <LiveWeatherFrameIndicator variant="panel" />
+        </span>
+        <HotkeyCap className="shrink-0">{LIVE_WEATHER_PANEL.hotkey}</HotkeyCap>
+        <ChevronDown
+          size={16}
+          aria-hidden
+          className={clsx(
+            "shrink-0 text-aeris-muted transition-transform group-hover:text-aeris-accent",
+            open && "rotate-180",
+          )}
+        />
       </button>
       {open && (
         <div
           id="live-weather-map-panel"
-          className={clsx("px-1.5 pb-1.5", !map && "opacity-60")}
+          className={clsx("mx-2 border-t border-aeris-border/70 pb-2 pt-2", !map && "opacity-60")}
         >
           <SatelliteRadarPanel map={map} />
         </div>

@@ -48,13 +48,14 @@ export function MobileTabBar({
   onChange: (tab: MobileTab) => void;
 }) {
   return (
+    // The game's dock: a white pill holding a segmented track, on the sky.
     <nav
       className={clsx(
-        "md:hidden shrink-0 border-t border-aeris-border bg-aeris-surface/98",
-        "flex items-stretch h-14 shadow-[var(--aeris-shadow-up)]",
+        "aeris-sky md:hidden shrink-0 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5",
       )}
       aria-label="Mobile navigation"
     >
+      <div className="aeris-pill-surface flex h-14 items-stretch gap-1 rounded-2xl p-1.5">
       <TabButton
         label="Map"
         active={active === "map"}
@@ -69,6 +70,7 @@ export function MobileTabBar({
       >
         <ReportsIcon className="h-5 w-5" />
       </TabButton>
+      </div>
     </nav>
   );
 }
@@ -90,14 +92,14 @@ function TabButton({
       onClick={onClick}
       aria-pressed={active}
       className={clsx(
-        "flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[44px] text-body-sm transition-colors",
+        "flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[44px] rounded-xl transition-colors",
         active
-          ? "text-aeris-accent bg-aeris-accent/5"
-          : "text-aeris-muted hover:text-aeris-text",
+          ? "bg-aeris-chip-on text-aeris-kicker-ink"
+          : "text-aeris-ink2 hover:text-aeris-accent",
       )}
     >
       {children}
-      <span className="text-body-sm font-medium">{label}</span>
+      <span className="text-[0.75rem] font-extrabold">{label}</span>
     </button>
   );
 }

@@ -13,7 +13,10 @@ import {
   usePanelBadge,
 } from "@/components/panel-header-badge";
 import { PanelIcon } from "@/components/PanelIcon";
-import { BAGYO_LOGO, SIDEBAR_AD_GIF } from "@/lib/aeris-brand-assets";
+import { HotkeyCap } from "@/components/ui/Kit";
+import { ChevronDown, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { SIDEBAR_AD_GIF } from "@/lib/aeris-brand-assets";
+import { shouldIgnoreHotkey } from "@/lib/hotkeys";
 
 // On mobile, the sidebar becomes the "Reports" tab. We curate it down to the
 // panels that actually help an operator monitor incoming ground reports:
@@ -88,7 +91,7 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (shouldIgnoreHotkey(e)) return;
       const panel = SIDEBAR_PANELS.find((p) => p.hotkey === e.key);
       if (panel) {
         e.preventDefault();
@@ -111,17 +114,15 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
   // untouched and panel state stays isolated to the active layout.
   if (mobileMode) {
     return (
-      <aside className="md:hidden flex flex-col w-full h-full bg-aeris-surface/98">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-aeris-border bg-aeris-elev/35 shrink-0">
-          <span className="hud-text text-aeris-muted">
-            Ground reports
-          </span>
+      <aside className="aeris-sky md:hidden flex flex-col w-full h-full">
+        <div className="flex items-center justify-between px-3 py-2.5 shrink-0">
+          <span className="aeris-title">Ground reports</span>
           <LiveWeatherFrameIndicator variant="panel" />
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0">
+        <div className="flex-1 overflow-y-auto px-2.5 pb-3 space-y-2.5 min-h-0">
           {/* Primary: live ground reports list — embedded so users don't
               need to open the header popover on small screens. */}
-          <section className="border border-aeris-border rounded-lg bg-aeris-bg/35 shadow-sm p-2">
+          <section className="panel-glass rounded-xl p-2.5">
             <LiveReportsPanel map={map} embedded />
           </section>
           {MOBILE_PANEL_IDS.map((id) => {
@@ -147,28 +148,37 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
   return (
     <aside
       className={clsx(
-        "hidden md:flex flex-col md:border-l border-aeris-border bg-aeris-surface/95 backdrop-blur-md transition-[width] shadow-sm",
+        // FLOOD CONTROL drawer: no docked edge, just floating glass cards on the sky.
+        "aeris-sky hidden md:flex flex-col transition-[width]",
         // Mutually exclusive widths: both md:w-[360px] and md:w-10 would compile
         // with equal specificity — the wider rule can win and block minimize.
         "w-full",
         // Tablets get a narrower ops column so the map keeps usable width
         // (iPad portrait is only 768px total); full width from xl up.
-        collapsed ? "md:w-10" : "md:w-[320px] xl:w-[380px]",
+        collapsed ? "md:w-[4.5rem]" : "md:w-[320px] xl:w-[380px]",
         collapsed ? "h-auto md:h-full" : "h-full",
       )}
     >
-      <div className="flex items-center justify-between px-2 py-1.5 border-b border-aeris-border bg-aeris-elev/35">
+      <div
+        className={clsx(
+          "flex items-center gap-2 px-2.5 pt-2.5 pb-1.5",
+          collapsed ? "justify-center" : "justify-between",
+        )}
+      >
+        {!collapsed && <span className="aeris-title pl-1">Weather &amp; Alerts</span>}
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
-          className="hud-text text-aeris-muted hover:text-aeris-text px-2 py-0.5"
+          className="aeris-round !h-8 !min-w-8 !px-0"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand (\\)" : "Collapse (\\)"}
         >
-          {collapsed ? "»" : "«"}
+          {collapsed ? (
+            <ChevronsLeft size={15} aria-hidden />
+          ) : (
+            <ChevronsRight size={15} aria-hidden />
+          )}
         </button>
-        {!collapsed && (
-          <span className="hud-text text-aeris-muted">Weather & Alerts</span>
-        )}
       </div>
 
       {/*
@@ -178,7 +188,7 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
         cycles.
       */}
       {collapsed && (
-        <div className="flex flex-col items-center py-2 gap-1.5">
+        <div className="panel-glass mx-2 mt-1 flex flex-col items-stretch gap-1 rounded-xl p-1.5">
           {SIDEBAR_PANELS.map((p) => (
             <CollapsedPanelRailButton
               key={p.id}
@@ -204,20 +214,17 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
       */}
       <div
         className={clsx(
-          "flex-1 overflow-y-auto p-2 space-y-2",
+          "flex-1 overflow-y-auto px-2.5 pb-3 pt-1 space-y-2.5",
           collapsed && "hidden",
         )}
         aria-hidden={collapsed}
       >
-        <div className="flex justify-center px-1">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={BAGYO_LOGO}
-            alt="bagyo.app — powered by A.E.R.I.S."
-            className="w-[40%] h-auto object-contain"
+        <div className="panel-glass flex flex-col items-center gap-2 rounded-xl px-3 pb-3 pt-3.5">
+          <span
+            role="img"
+            aria-label="bagyo.app — powered by A.E.R.I.S."
+            className="aeris-brand-mark w-[46%]"
           />
-        </div>
-        <div className="px-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={SIDEBAR_AD_GIF}
@@ -284,20 +291,28 @@ function CollapsedPanelRailButton({
   onClick: () => void;
 }) {
   const badge = usePanelBadge(id);
+  // The game's left rail (`.sh-rail-btn`): icon over a short label, hotkey cap
+  // in the corner, active state in the chip blue.
   return (
     <button
       type="button"
       onClick={onClick}
       className={clsx(
-        "w-8 rounded flex flex-col items-center justify-center gap-0.5 py-1 text-chrome border",
+        "relative flex w-full flex-col items-center justify-center gap-0.5 rounded-lg px-1 pb-1.5 pt-2 text-[0.625rem] font-extrabold transition-colors",
         active
-          ? "bg-aeris-accent/10 text-aeris-accent border-aeris-accent/30"
-          : "border-aeris-border text-aeris-muted hover:text-aeris-text",
+          ? "bg-aeris-chip-on text-aeris-kicker-ink"
+          : "text-aeris-ink2 hover:bg-aeris-elev hover:text-aeris-accent",
       )}
       title={`${label} (${hotkey})`}
       aria-label={`${label} (${hotkey})`}
     >
-      <PanelIcon id={id} size={14} />
+      <HotkeyCap className="absolute left-0.5 top-0.5 !h-3.5 !min-w-3.5 !text-[0.5625rem]">
+        {hotkey}
+      </HotkeyCap>
+      <PanelIcon id={id} size={17} className="!text-current" />
+      <span className="max-w-full truncate leading-tight">
+        {label.split(" ")[0]}
+      </span>
       {badge ? (
         <span className="max-w-full scale-[0.9] origin-center [&_span]:!px-1 [&_span]:!py-0 [&_span]:!text-chrome [&_span]:truncate [&_span]:max-w-[30px] [&_span]:block">
           {badge}
@@ -325,28 +340,39 @@ function PanelWrapper({
   const badge = usePanelBadge(id);
 
   return (
-    <section className="border border-aeris-border rounded-lg bg-aeris-bg/35 shadow-sm">
-      <div className="flex items-center hud-text text-aeris-muted">
+    // Game panel card (`.hud-panel` + `.hud-h`): glass, 18px radius, spaced-caps
+    // title with an icon tile, hotkey cap and a chevron instead of "+/−".
+    <section className="panel-glass rounded-xl">
+      <div className="flex items-center">
         <button
           type="button"
           onClick={onToggle}
-          className="flex flex-1 items-center gap-2 min-w-0 px-2 py-1.5 hover:bg-aeris-elev/40 hover:text-aeris-text transition-colors rounded-l-lg"
+          className="group flex flex-1 items-center gap-2.5 min-w-0 rounded-l-xl py-2 pl-2.5 pr-1.5 text-left"
           aria-expanded={open}
           aria-controls={`panel-${id}`}
           title={`${label} (${hotkey})`}
         >
-          <span className="flex shrink-0 items-center gap-2 min-w-0">
-            <PanelIcon id={id} />
-            <span className="truncate">{label}</span>
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-aeris-kicker text-aeris-kicker-ink">
+            <PanelIcon id={id} size={15} className="!text-current" />
           </span>
+          <span className="aeris-title truncate group-hover:text-aeris-accent">
+            {label}
+          </span>
+          <HotkeyCap className="shrink-0">{hotkey}</HotkeyCap>
           {!open && badge ? (
             <span className="ml-auto shrink-0">{badge}</span>
           ) : null}
-          <span className={clsx("shrink-0 text-body-sm", !open && badge && "ml-1")}>
-            {open ? "−" : "+"}
-          </span>
+          <ChevronDown
+            size={16}
+            aria-hidden
+            className={clsx(
+              "shrink-0 text-aeris-muted transition-transform group-hover:text-aeris-accent",
+              !(!open && badge) && "ml-auto",
+              open && "rotate-180",
+            )}
+          />
         </button>
-        <span className="px-2">
+        <span className="pr-2.5">
           <HelpHint helpId={`panel.${id}` as HelpId} side="left" />
         </span>
       </div>
@@ -356,7 +382,10 @@ function PanelWrapper({
       */}
       <div
         id={`panel-${id}`}
-        className={clsx("px-2 pb-2", !open && "hidden")}
+        className={clsx(
+          "mx-2.5 border-t border-aeris-border/70 pb-2.5 pt-2",
+          !open && "hidden",
+        )}
         aria-hidden={!open}
       >
         {children}

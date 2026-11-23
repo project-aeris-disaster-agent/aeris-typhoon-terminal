@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { X } from "lucide-react";
 import { AerisLoadingLogo } from "@/components/ui/AerisLoadingLogo";
 
 export type PdfOverlayConfig = {
@@ -149,7 +150,7 @@ export function PdfOverlay({
   // inside the sidebar's local paint order and renders it under the map).
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] bg-aeris-bg/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] bg-aeris-navy/35 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label={config.title}
@@ -158,32 +159,28 @@ export function PdfOverlay({
       }}
     >
       <div
-        className="absolute flex flex-col overflow-hidden rounded-xl border border-aeris-border bg-aeris-surface shadow-2xl"
+        // The game's settings sheet: frosted card, hero shadow, kicker header.
+        className="panel-glass absolute flex flex-col overflow-hidden rounded-2xl !shadow-hero"
         style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
       >
         <div
-          className="flex shrink-0 cursor-move touch-none items-center justify-between gap-2 border-b border-aeris-border bg-aeris-elev/60 px-3 py-2"
+          className="flex shrink-0 cursor-move touch-none items-center justify-between gap-2 border-b border-aeris-border/70 px-3.5 py-2.5"
           onPointerDown={beginDrag("move")}
         >
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-aeris-accent" />
-            <div className="min-w-0">
-              <div className="truncate text-body-sm font-semibold text-aeris-text">
-                {config.title}
-              </div>
-              <div className="truncate text-chrome font-mono uppercase tracking-wider text-aeris-muted">
-                {config.subtitle}
-              </div>
+          <div className="min-w-0">
+            <span className="aeris-kicker max-w-full truncate">{config.subtitle}</span>
+            <div className="mt-1 truncate text-body font-black text-aeris-text">
+              {config.title}
             </div>
           </div>
           <div
-            className="flex shrink-0 items-center gap-1"
+            className="flex shrink-0 items-center gap-1.5"
             onPointerDown={(e) => e.stopPropagation()}
           >
             <button
               type="button"
               onClick={popOut}
-              className="rounded border border-aeris-border px-2 py-1 text-body-sm font-mono text-aeris-muted transition-colors hover:border-aeris-border/60 hover:bg-aeris-elev/50 hover:text-aeris-text"
+              className="aeris-btn-soft h-8 px-3 text-body-sm"
               title="Pop out into its own window"
             >
               Pop out ⇱
@@ -192,7 +189,7 @@ export function PdfOverlay({
               href={config.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded border border-aeris-border px-2 py-1 text-body-sm font-mono text-aeris-muted transition-colors hover:border-aeris-border/60 hover:bg-aeris-elev/50 hover:text-aeris-text"
+              className="aeris-btn-soft h-8 px-3 text-body-sm"
               title="Open original source in new tab"
             >
               Open ↗
@@ -200,20 +197,20 @@ export function PdfOverlay({
             <button
               type="button"
               onClick={onClose}
-              className="rounded border border-aeris-border px-2 py-1 text-body-sm font-mono text-aeris-muted transition-colors hover:border-aeris-danger/60 hover:bg-aeris-danger/5 hover:text-aeris-danger"
+              className="aeris-round !h-8 !min-w-8 !px-0 hover:!text-aeris-danger"
               title="Close (Esc)"
               aria-label="Close"
             >
-              ✕ Close
+              <X size={15} aria-hidden />
             </button>
           </div>
         </div>
 
         <div className="relative flex-1 bg-black">
           {!loaded && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-aeris-bg/60">
-              <AerisLoadingLogo size="md" variant="splash" />
-              <div className="text-body-sm font-mono uppercase tracking-wider text-aeris-muted">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-aeris-surface">
+              <AerisLoadingLogo size="md" variant="glyph" />
+              <div className="aeris-label">
                 Loading bulletin…
               </div>
             </div>
