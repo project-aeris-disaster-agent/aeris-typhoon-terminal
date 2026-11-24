@@ -3,7 +3,8 @@ export type PanelId =
   | "satellite"
   | "forecast"
   | "alerts"
-  | "news";
+  | "news"
+  | "relief";
 
 export type PanelDef = {
   id: PanelId;
@@ -41,6 +42,13 @@ export const SIDEBAR_PANELS: PanelDef[] = [
     label: "News",
     hotkey: "5",
     description: "Philippine news RSS aggregation.",
+    defaultOpen: false,
+  },
+  {
+    id: "relief",
+    label: "Relief Ops",
+    hotkey: "7",
+    description: "Relief releases on ReQuest: passes issued vs. released per pickup site.",
     defaultOpen: false,
   },
 ];

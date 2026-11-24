@@ -20,6 +20,7 @@ export type HelpId =
   | "panel.forecast"
   | "panel.alerts"
   | "panel.news"
+  | "panel.relief"
   | "panel.reports"
   | "panel.agent"
   // Intel Feeds subpanels
@@ -72,6 +73,12 @@ export const HELP: Record<HelpId, HelpEntry> = {
     tip: "Aggregated Philippine news headlines (RSS). Cross-reference reports against official advisories and ground coverage.",
     detail:
       "The News panel aggregates Philippine news headlines via RSS. Use it to cross-reference dashboard data against on-the-ground reporting and official advisories.",
+  },
+  "panel.relief": {
+    title: "Relief Ops",
+    tip: "Relief releases running on ReQuest. Each pickup site shows passes issued vs. released; open the ReQuest event to manage it.",
+    detail:
+      "Relief Ops is the Command Board for relief releases. Each pickup site is one ReQuest event; households pre-register and receive a pass, and officers scan it on relief day. The panel shows passes issued, released, still to claim, and the share served, per site and per operation. Sites furthest behind are listed first. AERIS reads counts only, never resident names, and staff manage events in ReQuest.",
   },
   "panel.reports": {
     title: "Live Reports",

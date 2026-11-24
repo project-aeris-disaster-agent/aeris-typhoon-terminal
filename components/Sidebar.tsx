@@ -54,6 +54,13 @@ const NewsPanel = dynamic(
   () => import("./panels/NewsPanel").then((m) => ({ default: m.NewsPanel })),
   { ssr: false, loading: PanelSkeleton },
 );
+const ReliefOpsPanel = dynamic(
+  () =>
+    import("./panels/ReliefOpsPanel").then((m) => ({
+      default: m.ReliefOpsPanel,
+    })),
+  { ssr: false, loading: PanelSkeleton },
+);
 const LiveReportsPanel = dynamic(
   () =>
     import("./panels/LiveReportsPanel").then((m) => ({
@@ -405,6 +412,8 @@ function PanelBody({ id, map }: { id: PanelId; map: MLMap | null }) {
       return <AlertsFeedPanel />;
     case "news":
       return <NewsPanel />;
+    case "relief":
+      return <ReliefOpsPanel map={map} />;
     default:
       return null;
   }
