@@ -15,6 +15,7 @@ import { ProfileOverlay } from "@/components/ProfileOverlay";
 import { NewsTicker } from "@/components/NewsTicker";
 import { useUnreadLiveReports } from "@/hooks/useUnreadLiveReports";
 import { isTypingTarget } from "@/lib/hotkeys";
+import { TUTORIAL_OPEN_EVENT } from "@/lib/tutorial/storage";
 
 function AlertTriangleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -168,6 +169,15 @@ export const Header = memo(function Header({
         <NewsTicker className="aeris-pill-surface hidden h-9 rounded-full px-3 lg:flex max-w-[min(38vw,36rem)] xl:max-w-[min(52vw,36rem)]" />
         <button
           type="button"
+          onClick={() => window.dispatchEvent(new Event(TUTORIAL_OPEN_EVENT))}
+          className="aeris-round shrink-0 !px-0 text-body-sm font-black"
+          aria-label="Show the dashboard tutorial"
+          title="Tutorial (A.E.R.I.S. and Disaster Minds)"
+        >
+          ?
+        </button>
+        <button
+          type="button"
           onClick={toggleTheme}
           className="aeris-round shrink-0 !px-0"
           aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
@@ -182,6 +192,7 @@ export const Header = memo(function Header({
         <div className="relative" ref={liveReportsTriggerRef}>
           <button
             type="button"
+            data-tour="reports"
             onClick={toggleLiveReports}
             className={clsx(
               "aeris-round shrink-0 sm:!px-3.5",

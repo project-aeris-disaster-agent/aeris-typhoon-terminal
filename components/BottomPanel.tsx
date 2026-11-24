@@ -98,6 +98,7 @@ export function BottomPanel({
 
   return (
     <div
+      data-tour="live-updates"
       className={clsx(
         "w-full bg-aeris-surface transition-[height] duration-300 shadow-[var(--aeris-shadow-up)]",
         collapsed ? "h-10" : "h-[38vh] min-h-[200px] max-h-[500px]",

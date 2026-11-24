@@ -14,6 +14,7 @@ import {
   type CheckStatus,
   type PreflightResult,
 } from "@/lib/preflight-checks";
+import { signalBootDone } from "@/lib/tutorial/storage";
 
 /**
  * Cold-start boot screen.
@@ -81,7 +82,10 @@ export function BootScreen() {
       if (disposed) return;
       setLeaving(true);
       window.setTimeout(() => {
-        if (!disposed) setMounted(false);
+        if (!disposed) {
+          setMounted(false);
+          signalBootDone();
+        }
       }, FADE_MS);
     };
 

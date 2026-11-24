@@ -244,7 +244,7 @@ export const MapContainer = memo(function MapContainer({
           onOpenPanahon={() => setExternalFrame("panahon")}
           allow3d={allow3d}
         />
-        <div className="hidden md:flex flex-col gap-2">
+        <div data-tour="layers" className="hidden md:flex flex-col gap-2">
           <QuickViewsPanel map={map} mode={mode} />
           <LayerLegend map={map} mode={mode} />
         </div>

@@ -32,6 +32,7 @@ import {
   type AgentExplainRequest,
 } from "@/lib/help/agent-explain";
 import { FloodAutomationProvider } from "@/components/providers/FloodAutomationProvider";
+import { FirstRunTutorial } from "@/components/FirstRunTutorial";
 
 export default function HomePage() {
   const [map, setMap] = useState<MLMap | null>(null);
@@ -134,6 +135,7 @@ export default function HomePage() {
     <YouTubeFeedsProvider feedsExpanded={!intelFeedsCollapsed}>
     <FloodAutomationProvider selectedLocation={selectedLocation}>
     <BootScreen />
+    <FirstRunTutorial />
     <div className="h-screen [@supports(height:100dvh)]:h-[100dvh] w-screen flex flex-col">
       <Header
         liveReportsOpen={liveReportsOpen}
@@ -161,7 +163,7 @@ export default function HomePage() {
                 className="aeris-sky lg:hidden shrink-0 px-2 pt-1 pb-2"
               />
             )}
-            <main className="flex-1 relative min-h-0 min-w-0">
+            <main data-tour="map" className="flex-1 relative min-h-0 min-w-0">
               <MapContainer
                 layoutActive={mobileTab === "map"}
                 onMapReady={handleMapReady}

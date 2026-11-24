@@ -147,6 +147,7 @@ export function Sidebar({ map, onCollapsedChange, mobileMode }: SidebarProps) {
 
   return (
     <aside
+      data-tour="alerts"
       className={clsx(
         // FLOOD CONTROL drawer: no docked edge, just floating glass cards on the sky.
         "aeris-sky hidden md:flex flex-col transition-[width]",
