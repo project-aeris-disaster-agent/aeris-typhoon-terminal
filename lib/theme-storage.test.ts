@@ -5,6 +5,7 @@ import {
   STORAGE_KEY,
   THEME_COLOR_DARK,
   THEME_COLOR_LIGHT,
+  THEME_INIT_SCRIPT,
 } from "./theme-storage";
 
 describe("resolveStoredTheme", () => {
@@ -72,5 +73,12 @@ describe("readDocumentTheme", () => {
 describe("STORAGE_KEY", () => {
   it("matches aeris-theme", () => {
     expect(STORAGE_KEY).toBe("aeris-theme");
+  });
+});
+
+describe("THEME_INIT_SCRIPT", () => {
+  it("paints the same theme-color as applyThemeToDocument", () => {
+    expect(THEME_INIT_SCRIPT).toContain(`"${THEME_COLOR_DARK}"`);
+    expect(THEME_INIT_SCRIPT).toContain(`"${THEME_COLOR_LIGHT}"`);
   });
 });

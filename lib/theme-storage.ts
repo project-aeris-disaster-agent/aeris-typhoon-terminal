@@ -47,7 +47,11 @@ export function applyThemeToDocument(theme: AppTheme): void {
   meta.setAttribute("content", color);
 }
 
-/** Inline script body for layout.tsx — must stay self-contained (no imports). */
+/**
+ * Inline script body for layout.tsx — must stay self-contained (no imports).
+ * The theme colours are interpolated at build time so they can't drift from the
+ * constants above.
+ */
 export const THEME_INIT_SCRIPT = `
 (() => {
   try {
@@ -61,7 +65,7 @@ export const THEME_INIT_SCRIPT = `
     const root = document.documentElement;
     root.classList.toggle("dark", theme === "dark");
     root.setAttribute("data-theme", theme);
-    const color = theme === "dark" ? "#0a0e13" : "#f4f8fc";
+    const color = theme === "dark" ? "${THEME_COLOR_DARK}" : "${THEME_COLOR_LIGHT}";
     let meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) {
       meta = document.createElement("meta");
