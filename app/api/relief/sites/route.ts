@@ -4,6 +4,7 @@ import {
   getRequestEvent,
   parseRequestEventId,
   REQUEST_EVENT_ID_RE,
+  requestApiConfig,
 } from "@/lib/request-api";
 import { getOperation, insertSite, ReliefStoreError } from "@/lib/relief-ops";
 import {
@@ -35,7 +36,9 @@ const EVENT_ISSUE_MESSAGES = {
 
 /**
  * POST (admin): link a ReQuest event to a relief operation as a pickup site.
- * The event is checked against ReQuest before it is saved.
+ * With REQUEST_API_KEY set, the event is checked against ReQuest before it is
+ * saved. Without it (link-only mode) the link is saved as entered: AERIS only
+ * sends people to the ReQuest event page.
  */
 export async function POST(request: Request) {
   const auth = await authorizeReliefAdmin();
@@ -75,13 +78,16 @@ export async function POST(request: Request) {
     if (!operation) return jsonError("Relief operation not found.", 404);
     if (operation.status !== "active") return jsonError("That relief operation is closed.", 409);
 
-    let eventTitle: string | null;
-    try {
-      eventTitle = (await getRequestEvent(requestEventId)).title;
-    } catch (err) {
-      const issue = classifyRequestError(err);
-      const status = issue === "not_configured" ? 503 : issue === "unavailable" ? 502 : 422;
-      return jsonError(EVENT_ISSUE_MESSAGES[issue], status, { issue });
+    const verified = requestApiConfig() != null;
+    let eventTitle: string | null = null;
+    if (verified) {
+      try {
+        eventTitle = (await getRequestEvent(requestEventId)).title;
+      } catch (err) {
+        const issue = classifyRequestError(err);
+        const status = issue === "not_configured" ? 503 : issue === "unavailable" ? 502 : 422;
+        return jsonError(EVENT_ISSUE_MESSAGES[issue], status, { issue });
+      }
     }
 
     const site = await insertSite({
@@ -98,7 +104,7 @@ export async function POST(request: Request) {
       pack,
       createdBy: auth.userId,
     });
-    return jsonOkNoStore({ site, eventTitle }, 201);
+    return jsonOkNoStore({ site, eventTitle, verified }, 201);
   } catch (err) {
     if (err instanceof InputError) return jsonError(err.message, 400);
     if (err instanceof ReliefStoreError) return jsonError(err.message, err.status);

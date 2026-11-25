@@ -76,9 +76,9 @@ export const HELP: Record<HelpId, HelpEntry> = {
   },
   "panel.relief": {
     title: "Relief Ops",
-    tip: "Relief releases running on ReQuest. Each pickup site shows passes issued vs. released; open the ReQuest event to manage it.",
+    tip: "Relief releases running on ReQuest. Each pickup site links to its ReQuest event page, where households register and passes are scanned.",
     detail:
-      "Relief Ops is the Command Board for relief releases. Each pickup site is one ReQuest event; households pre-register and receive a pass, and officers scan it on relief day. The panel shows passes issued, released, still to claim, and the share served, per site and per operation. Sites furthest behind are listed first. AERIS reads counts only, never resident names, and staff manage events in ReQuest.",
+      "Relief Ops is the Command Board for relief releases. Each pickup site is one ReQuest event; households pre-register and receive a pass, and officers scan it on relief day. Open in ReQuest takes you to the site's event page, where claims are managed. When AERIS is connected to ReQuest, the panel also shows passes issued, released, still to claim, and the share served, per site and per operation, with the sites furthest behind listed first. AERIS reads counts only, never resident names.",
   },
   "panel.reports": {
     title: "Live Reports",

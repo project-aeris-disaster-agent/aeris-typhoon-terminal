@@ -48,6 +48,7 @@ function call(body: unknown) {
 describe("POST /api/relief/sites", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.REQUEST_API_KEY = "rq_test_abc";
     mockRole.mockResolvedValue({ userId: "did:privy:admin", role: "admin" });
     mockGetOperation.mockResolvedValue({ id: OP_ID, status: "active" });
     mockGetEvent.mockResolvedValue({ id: "0s1Q73YjSj0qH7", title: "Relief Pack A" });
@@ -80,6 +81,29 @@ describe("POST /api/relief/sites", () => {
         createdBy: "did:privy:admin",
       }),
     );
+  });
+
+  it("saves the link without checking ReQuest when no key is set (link-only mode)", async () => {
+    delete process.env.REQUEST_API_KEY;
+    const res = await call(VALID);
+    expect(res.status).toBe(201);
+    expect(mockGetEvent).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.verified).toBe(false);
+    expect(body.eventTitle).toBeNull();
+    expect(mockInsertSite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestEventId: "0s1Q73YjSj0qH7",
+        requestEventUrl: VALID.requestEventUrl,
+      }),
+    );
+  });
+
+  it("still refuses an http link in link-only mode", async () => {
+    delete process.env.REQUEST_API_KEY;
+    const res = await call({ ...VALID, requestEventUrl: "http://request.example/events/0s1Q73YjSj0qH7" });
+    expect(res.status).toBe(400);
+    expect(mockInsertSite).not.toHaveBeenCalled();
   });
 
   it("refuses an http link", async () => {

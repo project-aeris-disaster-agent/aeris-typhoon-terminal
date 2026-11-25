@@ -111,6 +111,23 @@ describe("GET /api/relief/operations", () => {
     expect(op.sites[1].counts).toBeNull();
   });
 
+  it("lists sites without calling ReQuest when no key is set (link-only mode)", async () => {
+    delete process.env.REQUEST_API_KEY;
+    fetchMock
+      .mockResolvedValueOnce(rest([OP]))
+      .mockResolvedValueOnce(rest([site("s1", "evtAAAAAA1", "Triangulo")]));
+    const body = await (await GET(new Request("http://localhost/api/relief/operations"))).json();
+    expect(mockCounts).not.toHaveBeenCalled();
+    expect(body.configured).toEqual({ store: true, request: false });
+    const [op] = body.operations;
+    expect(op.sites[0]).toMatchObject({
+      requestEventUrl: "https://request.example/events/evtAAAAAA1",
+      counts: null,
+      countsIssue: null,
+    });
+    expect(op.totals).toEqual({ issued: 0, claimed: 0, sitesReporting: 0, sitesTotal: 1 });
+  });
+
   it("caches counts per event between refreshes", async () => {
     fetchMock.mockImplementation(async (url: string) =>
       url.includes("relief_operations") ? rest([OP]) : rest([site("s1", "evtAAAAAA1", "Triangulo")]),

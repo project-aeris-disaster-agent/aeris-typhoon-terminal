@@ -229,12 +229,14 @@ function openPopup(map: MLMap, lngLat: [number, number], p: SiteProps): void {
     ${p.pickupPoint ? `<div style="font-size:12px;color:rgb(var(--aeris-ink2))">${escapeHtml(String(p.pickupPoint))}</div>` : ""}
     ${p.window ? `<div style="font-size:12px;color:rgb(var(--aeris-muted))">${escapeHtml(String(p.window))}</div>` : ""}
     ${
+      // No counts (link-only mode, or ReQuest didn't answer): the panel says
+      // why; the card just leads to the event page.
       pct == null
-        ? `<div style="font-size:12px;font-weight:700;color:rgb(var(--aeris-muted))">Pass counts unavailable</div>`
+        ? ""
         : `<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:800"><span>${Number(p.claimed).toLocaleString()} of ${Number(p.issued).toLocaleString()} households</span><span>${pct}%</span></div>
            <div style="height:6px;border-radius:999px;background:rgb(var(--aeris-text) / .09);overflow:hidden"><div style="height:100%;width:${pct}%;border-radius:999px;background:linear-gradient(90deg,#43a8ff,#1f6fd1)"></div></div>`
     }
-    ${safeUrl ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="margin-top:2px;font-size:12px;font-weight:800;color:rgb(var(--aeris-accent));text-decoration:none">Open in ReQuest ↗</a>` : ""}
+    ${safeUrl ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="aeris-btn-cta" style="margin-top:4px;gap:4px;padding:7px 10px;font-size:11px;text-decoration:none">Open in ReQuest ↗</a>` : ""}
   `;
 
   const popup = new maplibregl.Popup({

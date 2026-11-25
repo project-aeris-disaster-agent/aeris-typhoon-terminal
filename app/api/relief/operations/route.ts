@@ -23,8 +23,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * GET: active relief operations with their pickup sites and live ReQuest pass
- * counts. Any signed-in user (middleware): counts only, no resident data.
+ * GET: active relief operations with their pickup sites and, when
+ * REQUEST_API_KEY is set, live ReQuest pass counts. Any signed-in user
+ * (middleware): counts only, no resident data.
  */
 export async function GET(request: Request) {
   const limit = await rateLimit({
@@ -44,9 +45,11 @@ export async function GET(request: Request) {
 
   try {
     const rows = await listActiveOperations();
-    const counts = await loadCounts(
-      rows.flatMap((r) => r.sites.map((s) => s.request_event_id)),
-    );
+    // Link-only mode (no REQUEST_API_KEY): don't call ReQuest at all; sites
+    // carry no counts and no issue, just their event link.
+    const counts = configured.request
+      ? await loadCounts(rows.flatMap((r) => r.sites.map((s) => s.request_event_id)))
+      : new Map();
     const operations = rows.map((r) => toOperationView(r.operation, r.sites, counts));
     return jsonOkNoStore({ configured, operations, fetchedAt: new Date().toISOString() });
   } catch (err) {

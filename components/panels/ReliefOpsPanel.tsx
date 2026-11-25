@@ -3,8 +3,9 @@
 /**
  * Relief Ops (v1): the Command Board for relief releases that run on ReQuest.
  *
- * Each pickup site is one ReQuest event; AERIS reads its pass counts (issued
- * vs. scanned) and links staff to the ReQuest event page by hand. Styled with
+ * Each pickup site is one ReQuest event. With REQUEST_API_KEY set, AERIS reads
+ * its pass counts (issued vs. scanned). Without it (link-only mode) the board
+ * lists the sites and sends people to each ReQuest event page. Styled with
  * the FLOOD CONTROL by bagyo.app day theme through the shared Kit and
  * `aeris-*` classes, like every other panel.
  */
@@ -41,6 +42,8 @@ export function ReliefOpsPanel({ map }: { map: MLMap | null }) {
   const { status, data, error } = useReliefOps();
   const { role } = useAerisRole();
   const isAdmin = role === "admin";
+  /** No ReQuest key: no counts, the board only links out to ReQuest. */
+  const linkOnly = data != null && !data.configured.request;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -69,7 +72,9 @@ export function ReliefOpsPanel({ map }: { map: MLMap | null }) {
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between gap-2">
-        <Kicker live={status === "ready" && !error}>Live from ReQuest</Kicker>
+        <Kicker live={status === "ready" && !error && !linkOnly}>
+          {linkOnly ? "Relief pickups" : "Live from ReQuest"}
+        </Kicker>
         <div className="flex items-center gap-1.5">
           {data?.fetchedAt ? (
             <span className="text-chrome font-bold text-aeris-muted">
@@ -85,7 +90,7 @@ export function ReliefOpsPanel({ map }: { map: MLMap | null }) {
             className="aeris-round !h-7 !min-w-7 !px-0"
             onClick={refresh}
             disabled={refreshing}
-            aria-label="Refresh relief counts"
+            aria-label="Refresh relief operations"
             title="Refresh"
           >
             <RefreshCw size={13} aria-hidden className={clsx(refreshing && "animate-spin")} />
@@ -109,10 +114,10 @@ export function ReliefOpsPanel({ map }: { map: MLMap | null }) {
         </Notice>
       ) : null}
 
-      {data?.configured.store && !data.configured.request ? (
-        <Notice tone="warn" title="ReQuest isn't connected">
-          Set <code className="font-code text-[0.75rem]">REQUEST_API_KEY</code> to show pass
-          counts. Sites still link to their ReQuest events.
+      {data?.configured.store && linkOnly && operations.length > 0 ? (
+        <Notice tone="muted" title="Claims run in ReQuest">
+          Open a pickup site&apos;s ReQuest event to see its schedule, passes, and claim
+          status.
         </Notice>
       ) : null}
 
@@ -142,8 +147,12 @@ export function ReliefOpsPanel({ map }: { map: MLMap | null }) {
               </select>
             </label>
           ) : null}
-          <OperationSummary operation={operation} served={served} />
-          <SiteList operation={operation} map={map} />
+          {linkOnly ? (
+            <OperationHeader operation={operation} />
+          ) : (
+            <OperationSummary operation={operation} served={served} />
+          )}
+          <SiteList operation={operation} map={map} linkOnly={linkOnly} />
         </>
       ) : null}
 
@@ -179,6 +188,29 @@ function Notice({
   );
 }
 
+function OperationTitle({ operation }: { operation: ReliefOperationView }) {
+  const sub = [operation.lgu, operation.incidentRef].filter(Boolean).join(" · ");
+  return (
+    <div className="min-w-0">
+      <div className="aeris-title truncate">{operation.name}</div>
+      {sub ? <div className="text-body-sm text-aeris-muted truncate">{sub}</div> : null}
+    </div>
+  );
+}
+
+/** Link-only mode: no counts to summarise, just what the operation is. */
+function OperationHeader({ operation }: { operation: ReliefOperationView }) {
+  const n = operation.sites.length;
+  return (
+    <div className="aeris-row space-y-1 p-3">
+      <OperationTitle operation={operation} />
+      <p className="text-chrome font-bold text-aeris-muted">
+        {n} pickup site{n === 1 ? "" : "s"}
+      </p>
+    </div>
+  );
+}
+
 function OperationSummary({
   operation,
   served,
@@ -187,15 +219,11 @@ function OperationSummary({
   served: number | null;
 }) {
   const { issued, claimed, sitesReporting, sitesTotal } = operation.totals;
-  const sub = [operation.lgu, operation.incidentRef].filter(Boolean).join(" · ");
   const pct = served == null ? null : Math.round(served * 100);
 
   return (
     <div className="aeris-row space-y-2.5 p-3">
-      <div className="min-w-0">
-        <div className="aeris-title truncate">{operation.name}</div>
-        {sub ? <div className="text-body-sm text-aeris-muted truncate">{sub}</div> : null}
-      </div>
+      <OperationTitle operation={operation} />
       <div className="grid grid-cols-2 gap-2">
         <Stat label="Passes issued" value={issued.toLocaleString()} />
         <Stat label="Released" value={claimed.toLocaleString()} tone="ok" />
@@ -258,19 +286,34 @@ function ProgressBar({ ratio, label }: { ratio: number | null; label: string }) 
   );
 }
 
-/** Sites furthest behind first, so laggard pickup points surface at the top. */
+/**
+ * Sites furthest behind first, so laggard pickup points surface at the top.
+ * Sites without counts (all of them in link-only mode) follow, earliest
+ * pickup first.
+ */
 function sortSites(sites: ReliefSiteView[]): ReliefSiteView[] {
+  const start = (s: ReliefSiteView) => (s.pickupStart ? Date.parse(s.pickupStart) : Infinity);
   return [...sites].sort((a, b) => {
     const ra = servedRatio(a.counts);
     const rb = servedRatio(b.counts);
-    if (ra == null && rb == null) return a.barangay.localeCompare(b.barangay);
+    if (ra == null && rb == null) {
+      return start(a) - start(b) || a.barangay.localeCompare(b.barangay);
+    }
     if (ra == null) return 1;
     if (rb == null) return -1;
     return ra - rb;
   });
 }
 
-function SiteList({ operation, map }: { operation: ReliefOperationView; map: MLMap | null }) {
+function SiteList({
+  operation,
+  map,
+  linkOnly,
+}: {
+  operation: ReliefOperationView;
+  map: MLMap | null;
+  linkOnly: boolean;
+}) {
   const sites = useMemo(() => sortSites(operation.sites), [operation.sites]);
   if (sites.length === 0) {
     return (
@@ -284,7 +327,13 @@ function SiteList({ operation, map }: { operation: ReliefOperationView; map: MLM
       <SectionLabel as="h3">Pickup sites · {sites.length}</SectionLabel>
       <ul className="space-y-1.5">
         {sites.map((site) => (
-          <SiteRow key={site.id} site={site} operationName={operation.name} map={map} />
+          <SiteRow
+            key={site.id}
+            site={site}
+            operationName={operation.name}
+            map={map}
+            linkOnly={linkOnly}
+          />
         ))}
       </ul>
     </div>
@@ -295,10 +344,12 @@ function SiteRow({
   site,
   operationName,
   map,
+  linkOnly,
 }: {
   site: ReliefSiteView;
   operationName: string;
   map: MLMap | null;
+  linkOnly: boolean;
 }) {
   const ratio = servedRatio(site.counts);
   const when = formatPickupWindow(site.pickupStart, site.pickupEnd);
@@ -338,7 +389,10 @@ function SiteRow({
           href={site.requestEventUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="aeris-btn-soft px-2.5 py-1 text-chrome"
+          className={clsx(
+            "px-2.5 py-1 text-chrome",
+            linkOnly ? "aeris-btn-cta !gap-1.5" : "aeris-btn-soft",
+          )}
         >
           <ExternalLink size={12} aria-hidden />
           Open in ReQuest
