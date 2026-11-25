@@ -1,6 +1,6 @@
 "use client";
 
-import type { Map as MLMap } from "maplibre-gl";
+import type { GeoJSONSource, Map as MLMap } from "maplibre-gl";
 import { layerBeforeDynamicOverlays, whenStyleReady } from "@/config/map-layers";
 import type { LngLat } from "@/config/region";
 import type {
@@ -391,7 +391,7 @@ function renderReportsOnMapNow(map: MLMap, reports: IncidentReport[]) {
   reportCountByMap.set(map, reports.length);
   const src = map.getSource(REPORTS_SOURCE_ID);
   if (src && "setData" in src) {
-    (src as maplibregl.GeoJSONSource).setData(data);
+    (src as GeoJSONSource).setData(data);
   } else {
     map.addSource(REPORTS_SOURCE_ID, { type: "geojson", data });
   }

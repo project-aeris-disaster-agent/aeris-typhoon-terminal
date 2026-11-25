@@ -1,4 +1,5 @@
-import maplibregl, { type Map as MLMap } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import { type Map as MLMap } from "maplibre-gl";
 import { layerBeforeDynamicOverlays, whenStyleReady } from "@/config/map-layers";
 
 type WaterLevelStation = {

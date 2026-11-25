@@ -1,6 +1,6 @@
 "use client";
 
-import type { Map as MLMap } from "maplibre-gl";
+import type { AddLayerObject, GeoJSONSource, Map as MLMap } from "maplibre-gl";
 import { layerBeforeDynamicOverlays } from "@/config/map-layers";
 import type { LngLat } from "@/config/region";
 import { buildForecastCone, circlePolygon } from "@/lib/tc-geometry";
@@ -869,13 +869,13 @@ function setOrUpdateGeoJson(
 ) {
   const existing = map.getSource(id);
   if (existing && "setData" in existing) {
-    (existing as maplibregl.GeoJSONSource).setData(data);
+    (existing as GeoJSONSource).setData(data);
   } else {
     map.addSource(id, { type: "geojson", data });
   }
 }
 
-function ensureLayer(map: MLMap, id: string, spec: maplibregl.AddLayerObject) {
+function ensureLayer(map: MLMap, id: string, spec: AddLayerObject) {
   if (map.getLayer(id)) return;
   map.addLayer(spec, layerBeforeDynamicOverlays(map));
 }

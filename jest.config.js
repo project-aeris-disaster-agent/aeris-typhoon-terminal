@@ -10,6 +10,8 @@ const customJestConfig = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
     "^@vercel/kv$": "<rootDir>/test/mocks/vercel-kv.ts",
+    // maplibre-gl 6 is ESM-only; see the stub for why tests never need the real one.
+    "^maplibre-gl$": "<rootDir>/test/mocks/maplibre-gl.ts",
     "^@animocabrands/minds-client-lib$":
       "<rootDir>/test/mocks/minds-client-lib.ts",
   },

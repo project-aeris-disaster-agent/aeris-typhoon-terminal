@@ -1,4 +1,5 @@
-import maplibregl, { Map as MLMap, Popup } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import { Map as MLMap, Popup } from "maplibre-gl";
 import { createRoot, type Root } from "react-dom/client";
 import { HazardPopupContent } from "@/components/HazardPopupContent";
 import type { HazardPopupContentProps, HazardPopupReport } from "@/components/HazardPopupContent";

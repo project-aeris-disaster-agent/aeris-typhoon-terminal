@@ -1,4 +1,5 @@
-import maplibregl, { type GeoJSONSource, type Map as MLMap } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import { type GeoJSONSource, type Map as MLMap } from "maplibre-gl";
 import { notifyMapViewModeForSatelliteImagery } from "@/services/satellite-frames";
 import { notifyLiveWeatherMapMode } from "@/services/live-weather-overlay";
 import { setReportPingMapMode } from "@/services/reports-client";

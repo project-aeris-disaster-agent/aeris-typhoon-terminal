@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import maplibregl, { Map as MLMap, LngLatLike } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import { Map as MLMap, LngLatLike } from "maplibre-gl";
 import {
   PH_CENTER,
   MAP_2D_MAX_BOUNDS,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/device-tier";
 import { readStoredTheme } from "@/lib/theme-storage";
 import { detectWebglSupport } from "@/lib/webgl-support";
+import { configureMaplibreWorker } from "@/lib/maplibre-worker";
 
 export type Map2DProps = {
   mode: MapMode;
@@ -150,6 +152,8 @@ export function Map2D({ mode, theme, onReady, className }: Map2DProps) {
       );
       return;
     }
+
+    configureMaplibreWorker();
 
     let map: MLMap;
     try {

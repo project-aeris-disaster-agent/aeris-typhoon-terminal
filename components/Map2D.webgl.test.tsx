@@ -15,13 +15,13 @@ const mapConstructor = jest.fn();
 
 jest.mock("maplibre-gl", () => ({
   __esModule: true,
-  default: {
-    Map: jest.fn().mockImplementation((...args: unknown[]) => mapConstructor(...args)),
-    AttributionControl: jest.fn(),
-    NavigationControl: jest.fn(),
-    ScaleControl: jest.fn(),
-  },
+  Map: jest.fn().mockImplementation((...args: unknown[]) => mapConstructor(...args)),
+  AttributionControl: jest.fn(),
+  NavigationControl: jest.fn(),
+  ScaleControl: jest.fn(),
 }));
+
+jest.mock("@/lib/maplibre-worker", () => ({ configureMaplibreWorker: jest.fn() }));
 
 jest.mock("@/lib/webgl-support", () => ({
   detectWebglSupport: jest.fn(),

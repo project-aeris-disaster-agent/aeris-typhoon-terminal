@@ -16,7 +16,7 @@
     "predeploy": "npm run typecheck && npm test && npm run build && npm run test:e2e",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium",
-    "postinstall": "node scripts/copy-piper-vendor.mjs",
+    "postinstall": "node scripts/copy-piper-vendor.mjs && node scripts/copy-maplibre-worker.mjs",
     "smoke:reports": "node scripts/smoke_supabase_reports.mjs",
     "smoke:reports:insert": "node scripts/smoke_supabase_reports.mjs --insert",
     "smoke:mint": "npx tsx scripts/mint-testnet.ts",
@@ -31,7 +31,7 @@
     "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@pixiv/three-vrm": "^3.5.2",
     "@privy-io/node": "^0.21.0",
-    "@privy-io/react-auth": "^3.29.2",
+    "@privy-io/react-auth": "^3.52.1",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.1",
     "@turf/bbox": "^7.1.0",
@@ -40,7 +40,7 @@
     "@vercel/kv": "^3.0.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
-    "maplibre-gl": "^4.7.1",
+    "maplibre-gl": "^6.19.0",
     "next": "^15.5.29",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -75,13 +75,16 @@
     "glob": "^10.5.0",
     "tmp": "^0.2.7",
     "postcss": "^8.5.23",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.5",
     "test-exclude": "^7.0.1",
     "ws": "^8.21.3",
-    "axios": "^1.19.0",
+    "axios": "^1.21.1",
+    "zod": "^4.6.6",
+    "abitype": "^1.2.3",
+    "@coinbase/cdp-sdk": "~1.60.0",
     "eslint": {
       "minimatch": {
-        "brace-expansion": "^1.1.18"
+        "brace-expansion": "^1.1.22"
       }
     }
   }

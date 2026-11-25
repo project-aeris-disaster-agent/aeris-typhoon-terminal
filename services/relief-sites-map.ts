@@ -1,6 +1,7 @@
 "use client";
 
-import maplibregl, { Map as MLMap, Popup } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import { Map as MLMap, Popup } from "maplibre-gl";
 import { layerBeforeDynamicOverlays, whenStyleReady } from "@/config/map-layers";
 import { escapeHtml } from "@/lib/sanitize";
 import type { ReliefSiteView } from "@/lib/relief-ops";
