@@ -4,6 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
   CloudRain,
+  HandHeart,
   Newspaper,
   Satellite,
   Wind,
@@ -17,6 +18,7 @@ const PANEL_ICON_MAP: Record<PanelId, LucideIcon> = {
   forecast: CloudRain,
   alerts: AlertTriangle,
   news: Newspaper,
+  relief: HandHeart,
 };
 
 export function PanelIcon({

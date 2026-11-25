@@ -16,6 +16,7 @@ import { BottomPanel } from "@/components/BottomPanel";
 import { MobileTabBar, type MobileTab } from "@/components/MobileTabBar";
 import { ReportPingsSync } from "@/components/ReportPingsSync";
 import { WebcamPingsSync } from "@/components/WebcamPingsSync";
+import { ReliefSitesSync } from "@/components/ReliefSitesSync";
 import { BootScreen } from "@/components/BootScreen";
 import { LG_UP, MD_UP, useMediaQuery } from "@/hooks/useMediaQuery";
 import { ReportToasts } from "@/components/ReportToasts";
@@ -249,6 +250,7 @@ export default function HomePage() {
               />
               <ReportPingsSync map={map} />
               <WebcamPingsSync map={map} />
+              <ReliefSitesSync map={map} />
             </main>
           </div>
 
