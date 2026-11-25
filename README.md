@@ -191,6 +191,33 @@ reference, not a direct code lift.
 - **3D terrain** requires a pre-baked heightmap at `public/dem/ph-heightmap.png`
   (Mapbox Terrain-RGB format). See `public/dem/README.md` for bake instructions.
 
+## Dependency audit
+
+CI runs `npm audit --audit-level=high`, so a new high or critical advisory
+fails the build. Moderate advisories (mostly the eslint 8 / jest 29 toolchain's
+`minimatch` and `glob`, dev-only) are below that bar.
+
+Some `overrides` in `package.json` exist only to clear advisories that
+upstream has not fixed. Revisit them when the owning package ships a fix:
+
+- `zod` `^4.6.6` (GHSA-mrhx-c7xc-m3w5). `@reown/appkit-wallet` (through
+  WalletConnect, which Privy pins exactly) still pins zod 3.22.4, and
+  `@coinbase/cdp-sdk` wants `^3.25.76`. Both use only the parts of zod that
+  zod 4 kept: `object`, `string`, `enum`, `extend`, two-argument `record`,
+  `discriminatedUnion`, and `safeParse`.
+- `abitype` `^1.2.3`. `@coinbase/cdp-sdk` pins 1.0.6, which depends on
+  vulnerable zod. Same major, so the override is compatible.
+- `@coinbase/cdp-sdk` `~1.60.0`. It comes in as an optional dependency of
+  WalletConnect's Base account connector. From 1.61 it moves to
+  `@solana/kit` 8. That breaks `npm ci` against `@privy-io/node`'s
+  `@solana/kit` `^5.1.0` peer, so the tree stays on kit 5. Drop this
+  override once `@privy-io/node` accepts kit 8.
+- `axios`, `sharp`, `brace-expansion` (under eslint): raised to the patched
+  releases.
+
+On Windows, run npm with Node 22 (`fnm use 22`). npm on Node 24 crashes on
+this tree.
+
 ## Attribution
 
 - **Project NOAH** / UP Resilience Institute — hazard layers

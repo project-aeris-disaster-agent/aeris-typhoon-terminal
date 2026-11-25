@@ -4,6 +4,9 @@ out/
 build/
 dist/
 
+# Copied from node_modules at postinstall (scripts/copy-maplibre-worker.mjs).
+public/vendor/maplibre/
+
 # Ignore every env variant (incl. .env.production / .env.development); keep the
 # committed template so no real secret file can be added by accident.
 .env

@@ -1,4 +1,5 @@
-import maplibregl, { type Map as MLMap, type MapGeoJSONFeature } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import { type Map as MLMap, type MapGeoJSONFeature } from "maplibre-gl";
 import { layerBeforeBasemapLabels } from "@/config/map-layers";
 import { readDocumentTheme } from "@/lib/theme-storage";
 import { escapeHtml } from "@/lib/sanitize";

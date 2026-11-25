@@ -1,6 +1,10 @@
 "use client";
 
-import type { Map as MLMap, RasterTileSource } from "maplibre-gl";
+import type {
+  Map as MLMap,
+  RasterLayerSpecification,
+  RasterTileSource,
+} from "maplibre-gl";
 import { recordFailure, recordSuccess } from "@/services/data-freshness";
 import {
   AERIS_OVERLAY_TOP_LAYER_ID,
@@ -734,7 +738,7 @@ export function raiseImageryBufferSlot(
   pinSatelliteRastersToTop(map);
 }
 
-type RasterPaintSpec = Record<string, string | number>;
+type RasterPaintSpec = NonNullable<RasterLayerSpecification["paint"]>;
 
 /**
  * Himawari tiles are full-frame imagery (non-transparent backgrounds), unlike
@@ -801,8 +805,8 @@ function applyRasterPaint(
   paint: RasterPaintSpec,
 ) {
   if (!map.getLayer(layerId)) return;
-  for (const [key, value] of Object.entries(paint)) {
-    map.setPaintProperty(layerId, key, value);
+  for (const key of Object.keys(paint) as (keyof RasterPaintSpec)[]) {
+    map.setPaintProperty(layerId, key, paint[key]);
   }
 }
 

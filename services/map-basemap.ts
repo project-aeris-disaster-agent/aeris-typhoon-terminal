@@ -50,8 +50,8 @@ function ensureOverlayAnchorSource(map: MLMap) {
 function applyMajorCityMarkerPaint(map: MLMap, theme: BasemapTheme) {
   if (!map.getLayer(BASEMAP_MARKERS_LAYER_ID)) return;
   const paint = majorCityDotPaint(theme);
-  for (const [key, value] of Object.entries(paint)) {
-    map.setPaintProperty(BASEMAP_MARKERS_LAYER_ID, key, value);
+  for (const key of Object.keys(paint) as (keyof typeof paint)[]) {
+    map.setPaintProperty(BASEMAP_MARKERS_LAYER_ID, key, paint[key]);
   }
 }
 

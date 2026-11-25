@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import maplibregl, {
+import * as maplibregl from "maplibre-gl";
+import {
   type CustomLayerInterface,
   type Map as MLMap,
 } from "maplibre-gl";
@@ -1337,7 +1338,7 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
 
       rebuild();
     },
-    render(_gl, matrix) {
+    render(_gl, options) {
       if (!renderer || !scene || !camera || !origin) return;
 
       const t0 = perfStart("render");
@@ -1345,7 +1346,10 @@ export function createThreeSceneLayer(mapRef: MapRef): ThreeSceneHandle {
 
       const animateFlood = shouldAnimateFlood();
       if (animateFlood) applyFloodOpacity(time, true);
-      projectionMatrix.fromArray(matrix);
+      // MapLibre 5+ passes an options object. `mainMatrix` maps 0..1 web
+      // mercator coordinates to clip space, which is what the old `matrix`
+      // argument did, and suffices because this map never uses globe.
+      projectionMatrix.fromArray(options.defaultProjectionData.mainMatrix);
       meterScaleVec.set(meterScale, -meterScale, meterScale);
       localMatrix
         .makeTranslation(origin.x, origin.y, origin.z)

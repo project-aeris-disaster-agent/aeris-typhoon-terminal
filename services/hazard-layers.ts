@@ -1,4 +1,7 @@
-import type { Map as MLMap } from "maplibre-gl";
+import type {
+  DataDrivenPropertyValueSpecification,
+  Map as MLMap,
+} from "maplibre-gl";
 import { layerBeforeBasemapLabels } from "@/config/map-layers";
 import { PAR_POLYGON } from "@/config/region";
 import {
@@ -271,7 +274,7 @@ export function applyFloodMapLibreVisualization(
       map.setPaintProperty(
         fill,
         "fill-opacity",
-        tintOpacityExpr as Parameters<typeof map.setPaintProperty>[2],
+        tintOpacityExpr as DataDrivenPropertyValueSpecification<number>,
       );
     }
     const edge = edgeIdOf(pack);
