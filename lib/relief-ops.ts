@@ -1,7 +1,8 @@
 /**
- * Relief Ops v1 data access (server-only): operations and pickup sites in
- * Supabase, live pass counts from ReQuest. See
- * supabase/migrations/20261124100000_relief_operations.sql.
+ * Relief Ops data access (server-only, read-only): operations and pickup
+ * sites in Supabase, live pass counts from ReQuest. AERIS Relief
+ * (project-aeris-disaster-agent/aeris-relief) sets them up and owns the
+ * relief_* tables and their migrations; this dashboard only reads them.
  */
 
 import { serviceAuthHeaders, supabaseRestConfig } from "@/lib/supabase-rest";
@@ -110,15 +111,7 @@ async function restRequest<T>(
     const detail = await res.text().catch(() => "");
     // PGRST205 = table not in the schema cache: the migration isn't applied.
     if (detail.includes("PGRST205")) {
-      throw new ReliefStoreError("Relief tables are missing; apply the relief migration.", 503, true);
-    }
-    // PostgREST answers 409 for both; the Postgres code tells them apart.
-    // 23503 = foreign key (operation gone), 23505 = unique (event linked twice).
-    if (detail.includes("23503")) {
-      throw new ReliefStoreError("Relief operation not found.", 404);
-    }
-    if (detail.includes("23505")) {
-      throw new ReliefStoreError("That ReQuest event is already linked to this operation.", 409);
+      throw new ReliefStoreError("Relief tables are missing; apply the AERIS Relief migrations.", 503, true);
     }
     console.error(`[relief-ops] ${init.method ?? "GET"} ${path.split("?")[0]} failed (${res.status}): ${detail.slice(0, 200)}`);
     throw new ReliefStoreError("Relief data store request failed.", 502);
@@ -145,83 +138,6 @@ export async function listActiveOperations(): Promise<
     operation,
     sites: sites.filter((s) => s.operation_id === operation.id),
   }));
-}
-
-export async function getOperation(id: string): Promise<ReliefOperationRow | null> {
-  const rows = await restRequest<ReliefOperationRow[]>(
-    `relief_operations?id=eq.${encodeURIComponent(id)}&select=*&limit=1`,
-  );
-  return rows[0] ?? null;
-}
-
-export async function insertOperation(input: {
-  name: string;
-  lgu: string | null;
-  incidentRef: string | null;
-  createdBy: string;
-}): Promise<ReliefOperationRow> {
-  const rows = await restRequest<ReliefOperationRow[]>("relief_operations", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      name: input.name,
-      lgu: input.lgu,
-      incident_ref: input.incidentRef,
-      created_by: input.createdBy,
-    },
-  });
-  const row = rows[0];
-  if (!row) throw new ReliefStoreError("Relief operation insert returned no row.", 502);
-  return row;
-}
-
-export async function closeOperation(id: string): Promise<ReliefOperationRow | null> {
-  const rows = await restRequest<ReliefOperationRow[]>(
-    `relief_operations?id=eq.${encodeURIComponent(id)}&status=eq.active`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: { status: "closed", closed_at: new Date().toISOString() },
-    },
-  );
-  return rows[0] ?? null;
-}
-
-export async function insertSite(input: {
-  operationId: string;
-  requestEventId: string;
-  requestEventUrl: string;
-  barangay: string;
-  psgcCode: string | null;
-  pickupPoint: string | null;
-  lat: number | null;
-  lon: number | null;
-  pickupStart: string | null;
-  pickupEnd: string | null;
-  pack: string | null;
-  createdBy: string;
-}): Promise<ReliefSiteRow> {
-  const rows = await restRequest<ReliefSiteRow[]>("relief_sites", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      operation_id: input.operationId,
-      request_event_id: input.requestEventId,
-      request_event_url: input.requestEventUrl,
-      barangay: input.barangay,
-      psgc_code: input.psgcCode,
-      pickup_point: input.pickupPoint,
-      lat: input.lat,
-      lon: input.lon,
-      pickup_start: input.pickupStart,
-      pickup_end: input.pickupEnd,
-      pack_description: input.pack,
-      created_by: input.createdBy,
-    },
-  });
-  const row = rows[0];
-  if (!row) throw new ReliefStoreError("Relief site insert returned no row.", 502);
-  return row;
 }
 
 // ---- live counts ----------------------------------------------------------

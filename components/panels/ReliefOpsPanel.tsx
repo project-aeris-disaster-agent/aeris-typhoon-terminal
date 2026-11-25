@@ -10,10 +10,10 @@
  * `aeris-*` classes, like every other panel.
  */
 
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { clsx } from "clsx";
-import { ExternalLink, MapPin, Plus, RefreshCw, X } from "lucide-react";
+import { ExternalLink, MapPin, RefreshCw } from "lucide-react";
 import { Pill } from "@/components/ui/Card";
 import { Kicker, SectionLabel } from "@/components/ui/Kit";
 import { usePanelHeaderBadge } from "@/components/panel-header-badge";
@@ -35,6 +35,7 @@ const ISSUE_LABELS: Record<RequestCountsIssue, string> = {
   auth: "Key rejected",
   unavailable: "ReQuest unreachable",
 };
+
 
 const INPUT = "aeris-input w-full px-2.5 py-1.5 text-body-sm";
 
@@ -124,8 +125,8 @@ export function ReliefOpsPanel({ map }: { map: MLMap | null }) {
       {data?.configured.store && operations.length === 0 ? (
         <Notice tone="muted" title="No active relief operation">
           {isAdmin
-            ? "Start one below, then link each pickup point's ReQuest event."
-            : "An LGU admin starts an operation when relief is released."}
+            ? "LGU coordinators start operations and link pickup sites in AERIS Relief."
+            : "An LGU coordinator starts an operation when relief is released."}
         </Notice>
       ) : null}
 
@@ -156,9 +157,7 @@ export function ReliefOpsPanel({ map }: { map: MLMap | null }) {
         </>
       ) : null}
 
-      {isAdmin && data?.configured.store ? (
-        <AdminTools operation={operation} map={map} />
-      ) : null}
+      {isAdmin && data?.configured.store ? <ReliefAppLink /> : null}
 
       {error && status === "ready" ? (
         <p className="text-chrome font-bold text-aeris-warn">Last refresh failed: {error}</p>
@@ -414,275 +413,20 @@ function SiteRow({
 
 // ---- admin ---------------------------------------------------------------
 
-async function sendJson(url: string, method: string, body: unknown): Promise<string | null> {
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (res.ok) return null;
-    const data = (await res.json().catch(() => null)) as { error?: string } | null;
-    return data?.error ?? `Request failed (${res.status}).`;
-  } catch {
-    return "Network error. Try again.";
-  }
-}
+/** Where operations are set up now (AERIS Relief); hidden when the URL isn't configured. */
+const RELIEF_APP_URL = process.env.NEXT_PUBLIC_RELIEF_APP_URL?.trim().replace(/\/$/, "") ?? "";
 
-function AdminTools({
-  operation,
-  map,
-}: {
-  operation: ReliefOperationView | null;
-  map: MLMap | null;
-}) {
-  const [open, setOpen] = useState<"site" | "operation" | null>(null);
-  const [closing, setClosing] = useState(false);
-  const [closeError, setCloseError] = useState<string | null>(null);
-
-  const closeOperation = async () => {
-    if (!operation) return;
-    if (!window.confirm(`Close "${operation.name}"? It leaves the board and the map.`)) return;
-    setClosing(true);
-    const err = await sendJson("/api/relief/operations", "PATCH", {
-      id: operation.id,
-      status: "closed",
-    });
-    setClosing(false);
-    setCloseError(err);
-    if (!err) await refreshReliefOps();
-  };
-
+function ReliefAppLink() {
+  if (!/^https?:\/\//.test(RELIEF_APP_URL)) return null;
   return (
-    <div className="space-y-2 border-t border-aeris-border/70 pt-2.5">
-      <SectionLabel as="h3">Manage · admin</SectionLabel>
-      <div className="flex flex-wrap gap-1.5">
-        {operation ? (
-          <button
-            type="button"
-            className="aeris-btn-cta px-3 py-1.5 text-chrome"
-            aria-expanded={open === "site"}
-            onClick={() => setOpen(open === "site" ? null : "site")}
-          >
-            <Plus size={13} aria-hidden />
-            Link ReQuest event
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className={clsx(
-            "px-3 py-1.5 text-chrome",
-            operation ? "aeris-btn-soft" : "aeris-btn-cta",
-          )}
-          aria-expanded={open === "operation"}
-          onClick={() => setOpen(open === "operation" ? null : "operation")}
-        >
-          <Plus size={13} aria-hidden />
-          Start operation
-        </button>
-        {operation ? (
-          <button
-            type="button"
-            className="aeris-btn-soft px-3 py-1.5 text-chrome"
-            onClick={closeOperation}
-            disabled={closing}
-          >
-            <X size={13} aria-hidden />
-            {closing ? "Closing…" : "Close operation"}
-          </button>
-        ) : null}
-      </div>
-      {closeError ? <p className="text-chrome font-bold text-aeris-danger">{closeError}</p> : null}
-      {open === "site" && operation ? (
-        <AddSiteForm operation={operation} map={map} onDone={() => setOpen(null)} />
-      ) : null}
-      {open === "operation" ? <StartOperationForm onDone={() => setOpen(null)} /> : null}
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block space-y-1">
-      <SectionLabel as="span">{label}</SectionLabel>
-      {children}
-    </label>
-  );
-}
-
-function FormShell({
-  onSubmit,
-  busy,
-  error,
-  submitLabel,
-  children,
-}: {
-  onSubmit: (e: FormEvent<HTMLFormElement>) => void;
-  busy: boolean;
-  error: string | null;
-  submitLabel: string;
-  children: ReactNode;
-}) {
-  return (
-    <form className="aeris-row space-y-2 p-3" onSubmit={onSubmit}>
-      {children}
-      {error ? (
-        <p className="text-chrome font-bold text-aeris-danger" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <button type="submit" className="aeris-btn-cta w-full px-3 py-2 text-chrome" disabled={busy}>
-        {busy ? "Saving…" : submitLabel}
-      </button>
-    </form>
-  );
-}
-
-function StartOperationForm({ onDone }: { onDone: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    setBusy(true);
-    const err = await sendJson("/api/relief/operations", "POST", {
-      name: form.get("name"),
-      lgu: form.get("lgu"),
-      incidentRef: form.get("incidentRef"),
-    });
-    setBusy(false);
-    setError(err);
-    if (!err) {
-      await refreshReliefOps();
-      onDone();
-    }
-  };
-
-  return (
-    <FormShell onSubmit={submit} busy={busy} error={error} submitLabel="Start operation">
-      <Field label="Operation name">
-        <input name="name" required minLength={3} maxLength={120} className={INPUT} placeholder="Typhoon Pepito relief, Naga" />
-      </Field>
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="LGU">
-          <input name="lgu" maxLength={120} className={INPUT} placeholder="Naga City" />
-        </Field>
-        <Field label="Storm or incident">
-          <input name="incidentRef" maxLength={120} className={INPUT} placeholder="Pepito" />
-        </Field>
-      </div>
-    </FormShell>
-  );
-}
-
-function toIso(local: FormDataEntryValue | null): string | null {
-  if (typeof local !== "string" || !local) return null;
-  const t = Date.parse(local);
-  return Number.isFinite(t) ? new Date(t).toISOString() : null;
-}
-
-function AddSiteForm({
-  operation,
-  map,
-  onDone,
-}: {
-  operation: ReliefOperationView;
-  map: MLMap | null;
-  onDone: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lat, setLat] = useState("");
-  const [lon, setLon] = useState("");
-
-  const fillFromMapCenter = () => {
-    if (!map) return;
-    const c = map.getCenter();
-    setLat(c.lat.toFixed(5));
-    setLon(c.lng.toFixed(5));
-  };
-
-  const submit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    setBusy(true);
-    const err = await sendJson("/api/relief/sites", "POST", {
-      operationId: operation.id,
-      requestEventUrl: form.get("requestEventUrl"),
-      requestEventId: form.get("requestEventId"),
-      barangay: form.get("barangay"),
-      pickupPoint: form.get("pickupPoint"),
-      pickupStart: toIso(form.get("pickupStart")),
-      pickupEnd: toIso(form.get("pickupEnd")),
-      lat: lat || null,
-      lon: lon || null,
-      pack: form.get("pack"),
-    });
-    setBusy(false);
-    setError(err);
-    if (!err) {
-      await refreshReliefOps();
-      onDone();
-    }
-  };
-
-  return (
-    <FormShell onSubmit={submit} busy={busy} error={error} submitLabel="Link event">
-      <Field label="ReQuest event link">
-        <input
-          name="requestEventUrl"
-          type="url"
-          required
-          pattern="https://.*"
-          className={INPUT}
-          placeholder="https://…"
-        />
-      </Field>
-      <Field label="Event id (if not in the link)">
-        <input name="requestEventId" maxLength={64} className={INPUT} placeholder="0s1Q73YjSj0qH7" />
-      </Field>
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="Barangay">
-          <input name="barangay" required minLength={2} maxLength={120} className={INPUT} placeholder="Triangulo" />
-        </Field>
-        <Field label="Pickup point">
-          <input name="pickupPoint" maxLength={160} className={INPUT} placeholder="Covered court" />
-        </Field>
-        <Field label="Pickup starts">
-          <input name="pickupStart" type="datetime-local" className={INPUT} />
-        </Field>
-        <Field label="Pickup ends">
-          <input name="pickupEnd" type="datetime-local" className={INPUT} />
-        </Field>
-        <Field label="Latitude">
-          <input
-            inputMode="decimal"
-            className={INPUT}
-            value={lat}
-            onChange={(e) => setLat(e.target.value)}
-            placeholder="13.6218"
-          />
-        </Field>
-        <Field label="Longitude">
-          <input
-            inputMode="decimal"
-            className={INPUT}
-            value={lon}
-            onChange={(e) => setLon(e.target.value)}
-            placeholder="123.1948"
-          />
-        </Field>
-      </div>
-      {map ? (
-        <button type="button" className="aeris-btn-soft px-2.5 py-1 text-chrome" onClick={fillFromMapCenter}>
-          <MapPin size={12} aria-hidden />
-          Use map centre
-        </button>
-      ) : null}
-      <Field label="Relief pack">
-        <input name="pack" maxLength={200} className={INPUT} placeholder="Pack A: rice, canned goods, water" />
-      </Field>
-    </FormShell>
+    <a
+      href={RELIEF_APP_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="aeris-btn-soft w-full px-2.5 py-1.5 text-chrome"
+    >
+      <ExternalLink size={12} aria-hidden />
+      Set up and manage in AERIS Relief
+    </a>
   );
 }

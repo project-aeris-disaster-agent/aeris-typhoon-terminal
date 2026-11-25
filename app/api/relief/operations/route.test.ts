@@ -1,8 +1,5 @@
 /** @jest-environment node */
 
-jest.mock("@/lib/session-auth", () => ({
-  getSessionAerisRole: jest.fn(),
-}));
 jest.mock("@/lib/rate-limit", () => ({
   getClientIp: jest.fn(() => "1.2.3.4"),
   rateLimit: jest.fn(async () => ({ allowed: true, remaining: 59, resetSeconds: 60 })),
@@ -12,12 +9,10 @@ jest.mock("@/lib/request-api", () => {
   return { ...actual, getRequestPassCounts: jest.fn() };
 });
 
-import { GET, PATCH, POST } from "./route";
-import { getSessionAerisRole } from "@/lib/session-auth";
+import { GET } from "./route";
 import { getRequestPassCounts, RequestApiError } from "@/lib/request-api";
 import { resetReliefCountsCache } from "@/lib/relief-ops";
 
-const mockRole = getSessionAerisRole as jest.Mock;
 const mockCounts = getRequestPassCounts as jest.Mock;
 const fetchMock = jest.fn();
 
@@ -145,50 +140,5 @@ describe("GET /api/relief/operations", () => {
     mockCounts.mockResolvedValue({ issued: 10, claimed: 4 });
     const body = await (await GET(new Request("http://localhost/api/relief/operations"))).json();
     expect(JSON.stringify(body)).not.toContain("did:privy:admin");
-  });
-});
-
-describe("POST / PATCH /api/relief/operations", () => {
-  function call(handler: typeof POST, method: string, body: unknown) {
-    return handler(
-      new Request("http://localhost/api/relief/operations", {
-        method,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
-    );
-  }
-
-  it("refuses a non-admin", async () => {
-    mockRole.mockResolvedValue({ userId: "did:privy:vol", role: "volunteer" });
-    expect((await call(POST, "POST", { name: "Op" })).status).toBe(403);
-    expect((await call(PATCH, "PATCH", { id: OP.id, status: "closed" })).status).toBe(403);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("starts an operation for an admin", async () => {
-    mockRole.mockResolvedValue({ userId: "did:privy:admin", role: "admin" });
-    fetchMock.mockResolvedValueOnce(rest([OP], 201));
-    const res = await call(POST, "POST", { name: "Typhoon Pepito relief", lgu: "Naga City" });
-    expect(res.status).toBe(201);
-    const [, init] = fetchMock.mock.calls[0];
-    expect(JSON.parse(init.body)).toMatchObject({
-      name: "Typhoon Pepito relief",
-      lgu: "Naga City",
-      created_by: "did:privy:admin",
-    });
-  });
-
-  it("requires a name", async () => {
-    mockRole.mockResolvedValue({ userId: "did:privy:admin", role: "admin" });
-    expect((await call(POST, "POST", { name: "" })).status).toBe(400);
-  });
-
-  it("closes an active operation", async () => {
-    mockRole.mockResolvedValue({ userId: "did:privy:admin", role: "admin" });
-    fetchMock.mockResolvedValueOnce(rest([{ ...OP, status: "closed" }]));
-    const res = await call(PATCH, "PATCH", { id: OP.id, status: "closed" });
-    expect(res.status).toBe(200);
-    expect(String(fetchMock.mock.calls[0][0])).toContain("status=eq.active");
   });
 });
